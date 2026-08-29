@@ -16,9 +16,12 @@ const clientJs = fs.readFileSync(path.join(root, "media", "webviewClient.js"), "
 
 const css = `
 body { font-family: var(--vscode-editor-font-family, monospace); color: var(--vscode-editor-foreground); background: var(--vscode-editor-background); margin: 0; padding: 8px; }
-.toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12px; }
+.toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12px; flex-wrap: wrap; }
 .indicators { display: inline-flex; gap: 8px; flex-wrap: wrap; }
+.indicators-wrap { display: inline-flex; align-items: center; gap: 4px; }
 .ind-label { display: inline-flex; align-items: center; gap: 2px; font-size: 11px; }
+.hint { font-size: 11px; color: var(--vscode-descriptionForeground); font-style: italic; }
+.main { display: flex; flex-direction: column; }
 .ruler { position: relative; height: 14px; font-size: 9px; color: var(--vscode-descriptionForeground); border-bottom: 1px solid var(--vscode-panel-border); margin-bottom: 2px; }
 .page { border: 1px solid var(--vscode-panel-border); background: var(--vscode-editorWidget-background, #fff); overflow: auto; }
 .cell { font-family: monospace; font-size: 12px; line-height: 18px; white-space: pre; overflow: hidden; border: 1px dashed transparent; cursor: grab; box-sizing: border-box; }
@@ -26,7 +29,18 @@ body { font-family: var(--vscode-editor-font-family, monospace); color: var(--vs
 .cell.constant { color: var(--vscode-editor-foreground); }
 .cell.has-draw { outline: 1px solid var(--vscode-charts-orange, orange); }
 .cell:hover { border-color: var(--vscode-focusBorder); }
+.cell.selected { border: 1px solid var(--vscode-focusBorder); background: rgba(77,170,252,0.15); }
 .empty, .note { font-size: 12px; color: var(--vscode-descriptionForeground); margin-top: 8px; }
+.btn { font-size: 11px; padding: 3px 8px; background: var(--vscode-button-secondaryBackground, #3a3d41); color: var(--vscode-button-secondaryForeground, #fff); border: none; border-radius: 2px; cursor: pointer; }
+.btn:hover { opacity: 0.85; }
+.btn.active { background: var(--vscode-button-background, #0e639c); color: var(--vscode-button-foreground, #fff); }
+.btn.primary { background: var(--vscode-button-background, #0e639c); color: var(--vscode-button-foreground, #fff); }
+.btn.danger { background: var(--vscode-inputValidation-errorBackground, #a1260d); color: #fff; }
+.props { margin-top: 10px; padding: 8px 10px; border: 1px solid var(--vscode-panel-border); border-radius: 3px; max-width: 320px; background: var(--vscode-editorWidget-background); }
+.props h4 { margin: 0 0 8px 0; font-size: 12px; }
+.prop-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 11px; margin-bottom: 6px; }
+.prop-row input, .prop-row select { width: 140px; font-size: 11px; }
+.prop-buttons { display: flex; gap: 6px; margin-top: 8px; }
 `;
 
 const outDir = path.join(root, "out", "src");

@@ -130,6 +130,8 @@ export function parseSource(text: string): ParsedSource {
   let pendingKeywordText = "";
   let pendingJoinWithSpace = false;
   let pendingStartLine = -1;
+  let entryIdCounter = 0;
+  const nextId = () => "e" + entryIdCounter++;
 
   function flushPendingKeywords() {
     if (pendingKeywordTarget && pendingKeywordText.trim() !== "") {
@@ -231,6 +233,7 @@ export function parseSource(text: string): ParsedSource {
     } else if (name) {
       const field: FieldEntry = {
         kind: "field",
+        id: nextId(),
         sourceLineIndex: idx,
         name,
         reference: referenceFlag,
@@ -250,6 +253,7 @@ export function parseSource(text: string): ParsedSource {
     } else {
       const constant: ConstantEntry = {
         kind: "constant",
+        id: nextId(),
         sourceLineIndex: idx,
         line: lineNo,
         position,

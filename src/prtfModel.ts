@@ -81,6 +81,8 @@ export interface RecordFormatEntry extends BaseEntry {
 
 export interface FieldEntry extends BaseEntry {
   kind: "field";
+  /** Stable id assigned by the parser, used by the webview to reference this entry in edit messages instead of fragile name/position matching. */
+  id: string;
   name: string;
   reference: boolean;
   length?: number;
@@ -95,6 +97,8 @@ export interface FieldEntry extends BaseEntry {
 
 export interface ConstantEntry extends BaseEntry {
   kind: "constant";
+  /** Stable id assigned by the parser, used by the webview to reference this entry in edit messages instead of fragile name/position matching. */
+  id: string;
   /** Literal constant text, extracted from a keyword-area token of the form 'literal text'. Undefined if the constant is defined purely via a keyword like DATE/TIME/PAGNBR. */
   literal?: string;
   line?: number;

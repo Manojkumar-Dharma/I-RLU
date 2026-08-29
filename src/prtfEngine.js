@@ -106,6 +106,7 @@ function resolveLayout(model, recordName, indicatorState) {
       draws.push(parseDraw(drawKw, line, position, length));
     }
     cells.push({
+      id: entry.id,
       kind: entry.kind,
       name: entry.kind === "field" ? entry.name : undefined,
       text: entry.kind === "constant" ? entry.literal || "" : entry.name,
@@ -113,6 +114,12 @@ function resolveLayout(model, recordName, indicatorState) {
       position,
       length,
       hasDraw: !!drawKw,
+      // Extra properties so the webview's edit panel can prefill a form
+      // without a second round trip to the extension host.
+      dataType: entry.kind === "field" ? entry.dataType : undefined,
+      decimalPositions: entry.kind === "field" ? entry.decimalPositions : undefined,
+      usage: entry.kind === "field" ? entry.usage : undefined,
+      literal: entry.kind === "constant" ? entry.literal : undefined,
     });
 
     cursorLine = line;

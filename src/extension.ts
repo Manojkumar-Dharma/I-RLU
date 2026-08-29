@@ -71,26 +71,101 @@ class PrtfDesignerProvider implements vscode.CustomTextEditorProvider {
 
   /**
    * Applies a structured edit coming from the webview to the real document.
-   * v1 supports moving a field/constant to a new line/position (drag &
-   * drop in the preview); further edit kinds (resize, add field, add
-   * constant, edit keyword, delete) follow the same pattern: mutate the
-   * in-memory model, regenerate source text via prtfWriter, and replace the
+   * Every edit kind follows the same shape: mutate the in-memory model
+   * (model.records[*].fields and the matching entries in model.sequence
+   * must be kept in sync, since prtfWriter.regenerateSource walks
+   * model.sequence), regenerate source text via prtfWriter, and replace the
    * whole document via a single WorkspaceEdit so VS Code's undo stack sees
-   * one coherent change.
+   * one coherent change per user action.
    */
   private async applyEdit(document: vscode.TextDocument, model: ParsedSource, edit: any): Promise<void> {
-    if (edit.kind === "move") {
-      const record = model.records.find((r) => r.name === edit.recordName);
-      if (!record) return;
-      const target = record.fields.find((f: any) => {
-        if (f.kind === "field") return f.name === edit.name && f.line === edit.line && f.position === edit.position;
-        return f.literal === edit.text && f.line === edit.line && f.position === edit.position;
-      }) as any;
-      if (!target) return;
-      target.line = edit.newLine;
-      target.position = edit.newPosition;
-    } else {
-      return;
+    function findById(id: string): { record: any; entry: any; fieldsIndex: number } | null {
+      for (const record of model.records) {
+        const fieldsIndex = record.fields.findIndex((f: any) => f.id === id);
+        if (fieldsIndex !== -1) return { record, entry: record.fields[fieldsIndex], fieldsIndex };
+      }
+      return null;
+    }
+
+    switch (edit.kind) {
+      case "move": {
+        const found = findById(edit.id);
+        if (!found) return;
+        found.entry.line = edit.line;
+        found.entry.position = edit.position;
+        break;
+      }
+      case "updateField": {
+        const found = findById(edit.id);
+        if (!found || found.entry.kind !== "field") return;
+        Object.assign(found.entry, {
+          name: edit.name,
+          length: edit.length,
+          dataType: edit.dataType,
+          decimalPositions: edit.decimalPositions,
+          usage: edit.usage,
+          line: edit.line,
+          position: edit.position,
+        });
+        break;
+      }
+      case "updateConstant": {
+        const found = findById(edit.id);
+        if (!found || found.entry.kind !== "constant") return;
+        Object.assign(found.entry, { literal: edit.literal, line: edit.line, position: edit.position });
+        break;
+      }
+      case "delete": {
+        const found = findById(edit.id);
+        if (!found) return;
+        found.record.fields.splice(found.fieldsIndex, 1);
+        const seqIndex = model.sequence.indexOf(found.entry);
+        if (seqIndex !== -1) model.sequence.splice(seqIndex, 1);
+        break;
+      }
+      case "addField":
+      case "addConstant": {
+        const record = model.records.find((r) => r.name === edit.recordName);
+        if (!record) return;
+        const newEntry: any =
+          edit.kind === "addField"
+            ? {
+                kind: "field",
+                id: "tmp" + Date.now(),
+                sourceLineIndex: -1,
+                name: edit.name,
+                reference: false,
+                length: edit.length,
+                dataType: edit.dataType,
+                decimalPositions: edit.decimalPositions,
+                usage: edit.usage,
+                line: edit.line,
+                position: edit.position,
+                conditions: [],
+                keywords: [],
+              }
+            : {
+                kind: "constant",
+                id: "tmp" + Date.now(),
+                sourceLineIndex: -1,
+                literal: edit.literal,
+                line: edit.line,
+                position: edit.position,
+                conditions: [],
+                keywords: [],
+              };
+        record.fields.push(newEntry);
+        // Insert into the sequence right after this record's last existing
+        // field/constant (or right after the record entry itself if it had
+        // none), so the new line lands in a sensible place in the source.
+        const lastFieldOfRecord = record.fields.length > 1 ? record.fields[record.fields.length - 2] : null;
+        const anchor = lastFieldOfRecord || record;
+        const anchorIndex = model.sequence.indexOf(anchor);
+        model.sequence.splice(anchorIndex === -1 ? model.sequence.length : anchorIndex + 1, 0, newEntry);
+        break;
+      }
+      default:
+        return;
     }
 
     const newText = regenerateSource(model);
