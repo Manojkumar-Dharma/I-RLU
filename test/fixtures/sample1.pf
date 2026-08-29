@@ -1,0 +1,15 @@
+      * I-RLU sample printer file - customer invoice
+
+                                            PAGSIZE(66 132) PRTQLTY(*STD)
+                R HEADER                    SKIPB(1)
+                  CUSTNAME      30A  B  1 10
+        50        CUSTNBR        7S 0B  1 50DRAW
+                                        5 10'Invoice Date:' SPACEB(1)
+                  INVDATE        8A  O  5 25SPACEA(2)
+                R DETAIL                    OVERFLOW(60)
+                  ITEMDESC      20A  O  1 10
+                  ITEMQTY        5S 0O  1 32
+                  ITEMAMT        9S 2O  1 40EDTCDE(J)
+                R FOOTER                    SKIPB(2)
+                                        1  5'Page'
+                                        1 12PAGNBR

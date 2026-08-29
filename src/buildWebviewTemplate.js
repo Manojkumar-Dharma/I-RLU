@@ -1,0 +1,63 @@
+"use strict";
+// Bakes prtfEngine.js + afpFontMetrics.js + media/webviewClient.js + CSS into
+// a single self-contained HTML string, written to out/src/webviewTemplate.js
+// as a small CommonJS module exporting getWebviewHtml(nonce). Keeping the
+// webview to one inlined HTML blob (rather than several files loaded via
+// asWebviewUri) avoids CSP/URI-mapping complexity for a fairly small amount
+// of client code — same approach I-SDA's README describes for its own
+// designer webview.
+const fs = require("fs");
+const path = require("path");
+
+const root = path.join(__dirname, "..");
+const engineJs = fs.readFileSync(path.join(root, "src", "prtfEngine.js"), "utf8");
+const fontMetricsJs = fs.readFileSync(path.join(root, "src", "afpFontMetrics.js"), "utf8");
+const clientJs = fs.readFileSync(path.join(root, "media", "webviewClient.js"), "utf8");
+
+const css = `
+body { font-family: var(--vscode-editor-font-family, monospace); color: var(--vscode-editor-foreground); background: var(--vscode-editor-background); margin: 0; padding: 8px; }
+.toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12px; }
+.indicators { display: inline-flex; gap: 8px; flex-wrap: wrap; }
+.ind-label { display: inline-flex; align-items: center; gap: 2px; font-size: 11px; }
+.ruler { position: relative; height: 14px; font-size: 9px; color: var(--vscode-descriptionForeground); border-bottom: 1px solid var(--vscode-panel-border); margin-bottom: 2px; }
+.page { border: 1px solid var(--vscode-panel-border); background: var(--vscode-editorWidget-background, #fff); overflow: auto; }
+.cell { font-family: monospace; font-size: 12px; line-height: 18px; white-space: pre; overflow: hidden; border: 1px dashed transparent; cursor: grab; box-sizing: border-box; }
+.cell.field { color: var(--vscode-charts-blue, #4daafc); border-color: rgba(77,170,252,0.4); }
+.cell.constant { color: var(--vscode-editor-foreground); }
+.cell.has-draw { outline: 1px solid var(--vscode-charts-orange, orange); }
+.cell:hover { border-color: var(--vscode-focusBorder); }
+.empty, .note { font-size: 12px; color: var(--vscode-descriptionForeground); margin-top: 8px; }
+`;
+
+const outDir = path.join(root, "out", "src");
+fs.mkdirSync(outDir, { recursive: true });
+// Write the generated module with everything the function body needs
+// (engineJs/fontMetricsJs/clientJs/css) embedded as JSON-escaped constants
+// in its own scope, rather than relying on getWebviewHtml.toString() (which
+// would lose the closure over those outer variables).
+const generated =
+  "'use strict';\n" +
+  "const engineJs = " + JSON.stringify(engineJs) + ";\n" +
+  "const fontMetricsJs = " + JSON.stringify(fontMetricsJs) + ";\n" +
+  "const clientJs = " + JSON.stringify(clientJs) + ";\n" +
+  "const css = " + JSON.stringify(css) + ";\n" +
+  "function getWebviewHtml(nonce) {\n" +
+  "  return `<!DOCTYPE html>\n" +
+  "<html lang=\"en\">\n" +
+  "<head>\n" +
+  "<meta charset=\"UTF-8\">\n" +
+  "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';\">\n" +
+  "<style>${css}</style>\n" +
+  "</head>\n" +
+  "<body>\n" +
+  "<div id=\"root\"></div>\n" +
+  "<script nonce=\"${nonce}\">\n" +
+  "${engineJs}\n${fontMetricsJs}\n${clientJs}\n" +
+  "</script>\n" +
+  "</body>\n" +
+  "</html>`;\n" +
+  "}\n" +
+  "module.exports = { getWebviewHtml };\n";
+fs.writeFileSync(path.join(outDir, "webviewTemplate.js"), generated);
+
+console.log("Wrote", path.join(outDir, "webviewTemplate.js"));

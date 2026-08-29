@@ -1,0 +1,56 @@
+{
+  "name": "i-rlu",
+  "displayName": "I-RLU — Interactive Report Layout Utility",
+  "description": "Interactive, WYSIWYG designer for IBM i printer file DDS (RLU replacement), with live SCS/AFPDS page preview.",
+  "version": "0.0.1",
+  "publisher": "Manojkumar-Dharma",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Manojkumar-Dharma/I-RLU.git"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "i-rlu.designer",
+        "displayName": "I-RLU Designer",
+        "selector": [
+          { "filenamePattern": "*.pf" },
+          { "filenamePattern": "*.prtf" },
+          { "filenamePattern": "*.rlu" },
+          { "filenamePattern": "member:/**/*.pf" },
+          { "filenamePattern": "member:/**/*.prtf" },
+          { "filenamePattern": "streamfile:/**/*.pf" },
+          { "filenamePattern": "streamfile:/**/*.prtf" }
+        ],
+        "priority": "option"
+      }
+    ],
+    "commands": [
+      {
+        "command": "i-rlu.openDesigner",
+        "title": "I-RLU: Open Report Designer"
+      },
+      {
+        "command": "i-rlu.compilePrtf",
+        "title": "I-RLU: Compile Printer File (CRTPRTF)"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./ && node src/buildWebviewTemplate.js",
+    "watch": "tsc -p ./ -w",
+    "pretest": "tsc -p ./ && node src/buildWebviewTemplate.js && node -e \"require('fs').mkdirSync('out/test/fixtures',{recursive:true});require('fs').cpSync('test/fixtures','out/test/fixtures',{recursive:true})\"",
+    "test": "node --test out/test/prtfParser.test.js"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.4.0"
+  }
+}
