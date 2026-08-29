@@ -38,7 +38,7 @@ export interface ConditioningIndicator {
 
 /** One DDS keyword entry, possibly spanning multiple continuation lines. */
 export interface Keyword {
-  /** Keyword name, e.g. "SKIPB", "DRAW", "PAGSIZE". */
+  /** Keyword name, e.g. "SKIPB", "LINE", "PAGSIZE". */
   name: string;
   /** Raw parameter text inside (and including) the parentheses, e.g. "(3)". Empty string for valueless keywords. */
   params: string;

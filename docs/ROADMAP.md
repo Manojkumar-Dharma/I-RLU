@@ -15,7 +15,10 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       Round-trip verified byte-for-byte on the test fixture.
 - [x] Engine: page size resolution (`PAGSIZE`), sequential field placement
       via `SKIPB`/`SKIPA`/`SPACEB`/`SPACEA`, explicit `LINE`/`POSITION`
-      placement, indicator-based conditioning/filtering.
+      placement, indicator-based conditioning/filtering, and `LINE`/`BOX`
+      geometry (record-level, AFPDS-only, converted from physical units to
+      the character grid via CPI/LPI) — verified against IBM's DDS
+      reference after an earlier draft used a fictitious `DRAW` keyword.
 - [x] Placeholder AFP font-metrics module with a clear seam for real font
       data later.
 - [x] Extension host: `CustomTextEditorProvider` registered for `.pf`/
@@ -23,7 +26,8 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
 - [x] Webview: page-grid rendering, record-format switcher, indicator
       toggle panel, drag-to-reposition with edits written back through the
       real writer/model (single `WorkspaceEdit`, so undo/redo works
-      normally).
+      normally), and real `LINE`/`BOX` geometry rendering (flagged when a
+      program-to-system field parameter can't be resolved statically).
 - [x] Webview properties panel: click a field/constant to edit name,
       length, data type, decimals, usage, line/position (fields) or text +
       line/position (constants), or delete it.
@@ -31,22 +35,26 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       spot on the page, fill in a form, and the new entry is inserted into
       the source right after the record's last existing entry.
 - [x] `CRTPRTF` compile command via Code for i's `runCommand` API.
-- [x] Test suite (15 tests): parser correctness, round-trip fidelity,
-      engine resolution (incl. indicator toggling), id stability, and
+- [x] Test suite (17 tests): parser correctness, round-trip fidelity,
+      engine resolution (incl. indicator toggling, LINE/BOX geometry with
+      hand-verified expected coordinates), id stability, and
       edit-then-reparse round-trips for move/add field/add constant/
       delete/update.
 
 ## Next up (not started)
 
-- [ ] `DRAW` as real line/box geometry rather than a bounding outline.
 - [ ] `BARCODE` rendering (placeholder box acceptable for v1, per
       requirements doc).
 - [ ] Page segment / overlay resource placeholders (labeled boxes) once a
       resource-resolution strategy is decided.
 - [ ] Keyword-level editing in the properties panel (currently only the
       positional attributes and one literal/name field are editable;
-      arbitrary keywords like `EDTCDE`, `COLOR`, `DRAW` params aren't
-      exposed in the UI yet, though the writer/model already support them).
+      arbitrary keywords like `EDTCDE`, `COLOR`, `LINE`, `BOX` params
+      aren't exposed in the UI yet, though the writer/model already
+      support them).
+- [ ] `UOM` (unit of measure) isn't modeled yet — LINE/BOX conversion
+      currently assumes inches; needs to read the actual UOM keyword/
+      CRTPRTF setting once that's wired up.
 - [ ] `REF`/`REFFLD` resolution via Code for i (pull real type/length/
       decimals from the referenced physical file) — flagged in the
       requirements doc as something I-SDA also left as future work.

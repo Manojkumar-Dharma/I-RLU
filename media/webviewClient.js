@@ -81,6 +81,13 @@
         el("div", { class: "note" }, ["Hidden by indicator state: " + layout.skippedByIndicator.join(", ")])
       );
     }
+    if ((layout.draws || []).some((d) => d.approximate)) {
+      root.appendChild(
+        el("div", { class: "note" }, [
+          "One or more LINE/BOX positions depend on a program-to-system field and are shown at their default position — actual placement is set at print time.",
+        ])
+      );
+    }
   }
 
   function renderToolbar() {
@@ -173,12 +180,10 @@
     });
 
     layout.cells.forEach((cell) => {
-      const div = el(
         "div",
         {
           class:
             "cell" +
-            (cell.hasDraw ? " has-draw" : "") +
             (cell.kind === "constant" ? " constant" : " field") +
             (cell.id === state.selectedId ? " selected" : ""),
           style: `position:absolute;left:${(cell.position - 1) * CELL_W}px;top:${(cell.line - 1) * CELL_H}px;width:${
@@ -199,6 +204,35 @@
         ev.dataTransfer.setData("text/plain", cell.id);
       });
       page.appendChild(div);
+    });
+
+    (layout.draws || []).forEach((d) => {
+      if (d.type === "box") {
+        const top = Math.min(d.row1, d.row2);
+        const left = Math.min(d.col1, d.col2);
+        const h = Math.max(1, Math.abs(d.row2 - d.row1)) * CELL_H;
+        const w = Math.max(1, Math.abs(d.col2 - d.col1)) * CELL_W;
+        page.appendChild(
+          el("div", {
+            class: "draw-box" + (d.approximate ? " approximate" : ""),
+            style: `position:absolute;left:${(left - 1) * CELL_W}px;top:${(top - 1) * CELL_H}px;width:${w}px;height:${h}px;`,
+            title: d.approximate ? "Position depends on a program-to-system field value; shown at its default (0)." : "",
+          })
+        );
+      } else if (d.type === "line") {
+        const horizontal = d.direction === "horizontal";
+        const top = Math.min(d.row1, d.row2);
+        const left = Math.min(d.col1, d.col2);
+        const w = horizontal ? Math.max(1, Math.abs(d.col2 - d.col1)) * CELL_W : 1;
+        const h = horizontal ? 1 : Math.max(1, Math.abs(d.row2 - d.row1)) * CELL_H;
+        page.appendChild(
+          el("div", {
+            class: "draw-line" + (d.approximate ? " approximate" : ""),
+            style: `position:absolute;left:${(left - 1) * CELL_W}px;top:${(top - 1) * CELL_H}px;width:${w}px;height:${h}px;`,
+            title: d.approximate ? "Position depends on a program-to-system field value; shown at its default (0)." : "",
+          })
+        );
+      }
     });
 
     page.addEventListener("click", (ev) => {

@@ -19,7 +19,7 @@ written straight back into the fixed-column source.
 | Aspect | I-SDA (DSPF) | I-RLU (PRTF) |
 |---|---|---|
 | Canvas | 24x80 (or 27x132) interactive screen | Page grid — width/height driven by `PAGESIZE`/`PRTMAX`/measurements, printable in inches or characters |
-| Primary keywords | `DSPATR`, `COLOR`, `WINDOW`, `SFL`/`SFLCTL`, `CHCCTL` | `SKIPB`/`SKIPA`, `SPACEB`/`SPACEA`, `OVERLAY`, `DRAW`, `BARCODE`, `FONT`, `CPI`/`LPI`, `PAGSIZE`, `PRTQLTY` |
+| Primary keywords | `DSPATR`, `COLOR`, `WINDOW`, `SFL`/`SFLCTL`, `CHCCTL` | `SKIPB`/`SKIPA`, `SPACEB`/`SPACEA`, `OVERLAY`, `LINE`, `BOX`, `BARCODE`, `FONT`, `CPI`/`LPI`, `PAGSIZE`, `PRTQLTY` |
 | Interactivity model | Live "what would the 5250 screen show" incl. indicator toggling | Live "what would the printed page look like" incl. indicator toggling and page-break/overflow behavior |
 | Subfiles | Yes (`SFL`/`SFLCTL`) — major complexity driver | No subfiles in printer files — simpler in this respect |
 | Windows | Yes (`WINDOW` keyword, placeholder geometry) | No windows |
@@ -50,7 +50,7 @@ webview, no sibling-file bookkeeping.
   negation).
 - Printer-file-specific keyword set at minimum: `SKIPB(n)`, `SKIPA(n)`,
   `SPACEB(n)`, `SPACEA(n)`, `PAGSIZE(lines cols)`, `OVERLAY`, `PRTQLTY`,
-  `FONT(n)`, `CPI(n)`, `LPI(n)`, `DRAW`, `BARCODE`, `PAGNBR`, `DATE`, `TIME`,
+  `FONT(n)`, `CPI(n)`, `LPI(n)`, `LINE`, `BOX`, `BARCODE`, `PAGNBR`, `DATE`, `TIME`,
   `USRDFN`, `REF`/`REFFLD` (referenced field), `EDTCDE`/`EDTWRD`, `INDARA`,
   `OVERFLOW`, `TEXT`, `DFT`, `PASSWORD`(rare on PRTF but valid), `COLOR`
   (AFPDS-only, ignorable/flagged in SCS mode).
@@ -66,9 +66,13 @@ webview, no sibling-file bookkeeping.
 - `SKIPB`/`SKIPA`/`SPACEB`/`SPACEA` reflected as vertical whitespace/page
   advance in preview, since these are RLU's primary layout mechanism
   (no direct DSPF equivalent).
-- `DRAW` (lines/boxes) rendered as actual lines/boxes on the page grid —
-  this is a very commonly used RLU feature and should be high priority,
-  parallel to how I-SDA prioritized window geometry.
+- `LINE`/`BOX` (record-level, AFPDS-only) rendered as actual lines/boxes on
+  the page grid, converted from the physical units they're specified in
+  (inches, per unit of measure) to the character grid via CPI/LPI — this is
+  a commonly used RLU feature and was prioritized accordingly. Note: there
+  is no `DRAW` keyword in real DDS — an earlier draft of this document used
+  that name in error before the actual `LINE`/`BOX` syntax was verified
+  against IBM's DDS reference; corrected here and throughout the codebase.
 - Conditioning-indicator toggling in the preview (same UX as I-SDA: check
   boxes to flip indicators on/off and see the record re-resolve).
 - Overflow-record handling: distinguish the normal detail record(s) from the

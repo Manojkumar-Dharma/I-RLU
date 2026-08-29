@@ -75,8 +75,13 @@ npm run compile # compile + build webview template without running tests
   adding/deleting fields, resizing, and editing keywords through the UI are
   not wired up yet (the writer/engine already support arbitrary model edits
   — only the UI for triggering them is missing).
-- `DRAW` is rendered as a simple bounding outline around the field/constant
-  that carries the keyword, not a full line/box-geometry renderer.
+- `LINE`/`BOX` geometry is converted from physical units (inches, per the
+  printer file's unit of measure) into character-grid coordinates using
+  CPI/LPI (default 10/6 if not coded) — this is a rendering approximation
+  for preview purposes, not the actual sub-character-cell positioning AFPDS
+  uses at print time. Parameters given as program-to-system fields (`&NAME`)
+  can't be resolved without a live compile/run and are shown at a default
+  position, flagged in the preview.
 - `BARCODE` is not yet rendered.
 - Page segments, overlays, and other external AFP resource objects render
   as nothing (not yet stubbed as placeholder boxes) — see

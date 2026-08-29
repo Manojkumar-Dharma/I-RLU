@@ -27,9 +27,11 @@ body { font-family: var(--vscode-editor-font-family, monospace); color: var(--vs
 .cell { font-family: monospace; font-size: 12px; line-height: 18px; white-space: pre; overflow: hidden; border: 1px dashed transparent; cursor: grab; box-sizing: border-box; }
 .cell.field { color: var(--vscode-charts-blue, #4daafc); border-color: rgba(77,170,252,0.4); }
 .cell.constant { color: var(--vscode-editor-foreground); }
-.cell.has-draw { outline: 1px solid var(--vscode-charts-orange, orange); }
 .cell:hover { border-color: var(--vscode-focusBorder); }
 .cell.selected { border: 1px solid var(--vscode-focusBorder); background: rgba(77,170,252,0.15); }
+.draw-line { background: var(--vscode-charts-orange, orange); }
+.draw-box { border: 1px solid var(--vscode-charts-orange, orange); box-sizing: border-box; }
+.draw-line.approximate, .draw-box.approximate { opacity: 0.5; border-style: dashed; }
 .empty, .note { font-size: 12px; color: var(--vscode-descriptionForeground); margin-top: 8px; }
 .btn { font-size: 11px; padding: 3px 8px; background: var(--vscode-button-secondaryBackground, #3a3d41); color: var(--vscode-button-secondaryForeground, #fff); border: none; border-radius: 2px; cursor: pointer; }
 .btn:hover { opacity: 0.85; }

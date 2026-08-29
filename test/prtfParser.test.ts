@@ -214,3 +214,36 @@ test("edit: updateField changes attributes in place and round-trips", () => {
   assert.equal(updated.length, 25);
   assert.equal(updated.usage, "B");
 });
+
+test("engine: LINE and BOX are resolved into character-grid geometry from record-level keywords", () => {
+  const original = fs.readFileSync(fixturePath, "utf8");
+  const model = parseSource(original);
+  const layout = resolveLayout(model, "HEADER", {});
+  const box = layout.draws.find((d: any) => d.type === "box");
+  const line = layout.draws.find((d: any) => d.type === "line");
+  assert.ok(box, "BOX should produce a draw entry");
+  assert.ok(line, "LINE should produce a draw entry");
+  // BOX(0 0 1 6 *MEDIUM) with default CPI=10/LPI=6: row 0in*6lpi+1=1,
+  // col 0in*10cpi+1=1, to row 1in*6lpi+1=7, col 6in*10cpi+1=61.
+  assert.equal(box.row1, 1);
+  assert.equal(box.col1, 1);
+  assert.equal(box.row2, 7);
+  assert.equal(box.col2, 61);
+  assert.equal(box.approximate, false);
+  // LINE(1 0 6 *HRZ .01): horizontal, starts row 1in*6+1=7, col 0*10+1=1,
+  // length 6in*10cpi=60 -> col2 = 1+60 = 61.
+  assert.equal(line.direction, "horizontal");
+  assert.equal(line.row1, 7);
+  assert.equal(line.col1, 1);
+  assert.equal(line.col2, 61);
+});
+
+test("engine: LINE/BOX using a program-to-system field parameter is flagged approximate", () => {
+  const model = parseSource(fs.readFileSync(fixturePath, "utf8"));
+  const header = model.records.find((r) => r.name === "HEADER")!;
+  header.keywords.push({ name: "LINE", params: "(&FLD1 &FLD2 2 *VRT .015)", raw: "LINE(&FLD1 &FLD2 2 *VRT .015)", sourceLineIndex: -1 });
+  const layout = resolveLayout(model, "HEADER", {});
+  const fieldLine = layout.draws.find((d: any) => d.direction === "vertical");
+  assert.ok(fieldLine);
+  assert.equal(fieldLine.approximate, true);
+});

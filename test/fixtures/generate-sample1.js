@@ -23,13 +23,18 @@ push({
   keywords: [
     { name: "PAGSIZE", params: "(66 132)", raw: "PAGSIZE(66 132)" },
     { name: "PRTQLTY", params: "(*STD)", raw: "PRTQLTY(*STD)" },
+    { name: "DEVTYPE", params: "(*AFPDS)", raw: "DEVTYPE(*AFPDS)" },
   ],
 });
 push({
   kind: "record",
   name: "HEADER",
   conditions: [],
-  keywords: [{ name: "SKIPB", params: "(1)", raw: "SKIPB(1)" }],
+  keywords: [
+    { name: "SKIPB", params: "(1)", raw: "SKIPB(1)" },
+    { name: "BOX", params: "(0 0 1 6 *MEDIUM)", raw: "BOX(0 0 1 6 *MEDIUM)" },
+    { name: "LINE", params: "(1 0 6 *HRZ .01)", raw: "LINE(1 0 6 *HRZ .01)" },
+  ],
 });
 push({
   kind: "field",
@@ -54,7 +59,7 @@ push({
   line: 1,
   position: 50,
   conditions: [{ raw: "50", negate: false, indicator: "50" }],
-  keywords: [{ name: "DRAW", params: "", raw: "DRAW" }],
+  keywords: [],
 });
 push({
   kind: "constant",
