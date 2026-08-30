@@ -52,13 +52,27 @@ function toNumber(tok, fallback) {
 }
 
 /**
+ * Converts a physical measurement to inches, given the unit of measure it
+ * was coded in. LINE/BOX geometry and BARCODE's "(height *UOM)" form are
+ * always specified in whatever unit CRTPRTF's UOM parameter selects for
+ * that compile — there is no UOM keyword in DDS source itself, so this
+ * tool has no way to know that unit from the source alone. Callers pass it
+ * in explicitly (see resolveLayout's `uom` parameter), defaulting to
+ * "inch" (CRTPRTF's own default) unless the person configures
+ * i-rlu.unitOfMeasure to match what their shop actually compiles with.
+ */
+function toInches(value, uom) {
+  return uom === "cm" ? value / 2.54 : value;
+}
+
+/**
  * Resolves CPI (characters per inch) and LPI (lines per inch) for a
- * record, used to convert LINE/BOX geometry — specified in physical units
- * (inches, per the printer file's UOM, assumed *INCH here since UOM isn't
- * modeled yet) — into the same character-grid coordinates fields use.
- * Defaults (10 CPI, 6 LPI) match traditional SCS/line-printer defaults;
- * real AFPDS jobs may differ per font, so this is a rendering
- * approximation, not a production measurement.
+ * record, used to convert LINE/BOX/BARCODE geometry — specified in
+ * whatever physical unit CRTPRTF's UOM parameter selects (see toInches
+ * above) — into the same character-grid coordinates fields use. Defaults
+ * (10 CPI, 6 LPI) match traditional SCS/line-printer defaults; real AFPDS
+ * jobs may differ per font, so this is a rendering approximation, not a
+ * production measurement.
  */
 function resolveCpiLpi(record, fileLevel) {
   const cpiKw = findKeyword(record.keywords, "CPI") || findKeyword(fileLevel.keywords, "CPI");
@@ -72,14 +86,15 @@ function resolveCpiLpi(record, fileLevel) {
  * e.g. LINE(4 3 5 *HRZ .01) — verified against IBM's DDS reference for
  * printer files. Record-level keyword, AFPDS-only (requires
  * DEVTYPE(*AFPDS) on the CRTPRTF command — this tool doesn't check that,
- * it just renders what's coded).
+ * it just renders what's coded). Position/length values are in the
+ * compile's unit of measure — see toInches above.
  */
-function parseLineGeometry(kw, cpi, lpi) {
+function parseLineGeometry(kw, cpi, lpi, uom) {
   const t = paramTokens(kw);
   const approximate = t.slice(0, 3).some(isFieldRef);
-  const posDown = toNumber(t[0], 0);
-  const posAcross = toNumber(t[1], 0);
-  const length = toNumber(t[2], 1);
+  const posDown = toInches(toNumber(t[0], 0), uom);
+  const posAcross = toInches(toNumber(t[1], 0), uom);
+  const length = toInches(toNumber(t[2], 1), uom);
   const direction = (t[3] || "*HRZ").toUpperCase();
   const row = Math.round(posDown * lpi) + 1;
   const col = Math.round(posAcross * cpi) + 1;
@@ -95,13 +110,13 @@ function parseLineGeometry(kw, cpi, lpi) {
  * e.g. BOX(0 0 2 2 *MEDIUM) — verified against IBM's DDS reference.
  * Record-level, AFPDS-only, same caveats as LINE above.
  */
-function parseBoxGeometry(kw, cpi, lpi) {
+function parseBoxGeometry(kw, cpi, lpi, uom) {
   const t = paramTokens(kw);
   const approximate = t.slice(0, 4).some(isFieldRef);
-  const d1 = toNumber(t[0], 0);
-  const a1 = toNumber(t[1], 0);
-  const d2 = toNumber(t[2], 1);
-  const a2 = toNumber(t[3], 1);
+  const d1 = toInches(toNumber(t[0], 0), uom);
+  const a1 = toInches(toNumber(t[1], 0), uom);
+  const d2 = toInches(toNumber(t[2], 1), uom);
+  const a2 = toInches(toNumber(t[3], 1), uom);
   return {
     type: "box",
     row1: Math.round(d1 * lpi) + 1,
@@ -122,9 +137,10 @@ function parseBoxGeometry(kw, cpi, lpi) {
  * out of v1 scope per docs/REQUIREMENTS.md — this resolves just enough to
  * draw a labeled placeholder of roughly the right size: the bar-code-ID,
  * direction, and height (in character rows, converted from either a plain
- * line count or a "(height *UOM)" physical measurement via LPI).
+ * line count or a "(height *UOM)" physical measurement via LPI; that
+ * measurement is in the compile's unit of measure too — see toInches).
  */
-function parseBarcodeGeometry(kw, lpi) {
+function parseBarcodeGeometry(kw, lpi, uom) {
   const t = paramTokens(kw);
   const barCodeId = (t[0] || "").replace(/^\*/, "");
   const rest = t.slice(1);
@@ -147,7 +163,7 @@ function parseBarcodeGeometry(kw, lpi) {
       for (let i = 1; i < rest.length && !combined.endsWith(")"); i++) combined += " " + rest[i];
       const m = combined.match(/\(([\d.]+)/);
       if (m) {
-        heightLines = Math.max(1, Math.round(Number(m[1]) * lpi));
+        heightLines = Math.max(1, Math.round(toInches(Number(m[1]), uom) * lpi));
         approximateHeight = false;
       }
     }
@@ -176,8 +192,9 @@ function indicatorActive(conditions, indicatorState) {
   });
 }
 
-function resolveLayout(model, recordName, indicatorState) {
+function resolveLayout(model, recordName, indicatorState, uom) {
   indicatorState = indicatorState || {};
+  uom = uom === "cm" ? "cm" : "inch"; // default to inch, CRTPRTF's own default
   const record = model.records.find((r) => r.name === recordName) || model.records[0];
   if (!record) return null;
 
@@ -185,8 +202,8 @@ function resolveLayout(model, recordName, indicatorState) {
   const { cpi, lpi } = resolveCpiLpi(record, model.fileLevel);
 
   const draws = [
-    ...findAllKeywords(record.keywords, "LINE").map((kw) => parseLineGeometry(kw, cpi, lpi)),
-    ...findAllKeywords(record.keywords, "BOX").map((kw) => parseBoxGeometry(kw, cpi, lpi)),
+    ...findAllKeywords(record.keywords, "LINE").map((kw) => parseLineGeometry(kw, cpi, lpi, uom)),
+    ...findAllKeywords(record.keywords, "BOX").map((kw) => parseBoxGeometry(kw, cpi, lpi, uom)),
   ];
 
   let cursorLine = 1;
@@ -230,7 +247,7 @@ function resolveLayout(model, recordName, indicatorState) {
       decimalPositions: entry.kind === "field" ? entry.decimalPositions : undefined,
       usage: entry.kind === "field" ? entry.usage : undefined,
       literal: entry.kind === "constant" ? entry.literal : undefined,
-      barcode: barcodeKw ? parseBarcodeGeometry(barcodeKw, lpi) : undefined,
+      barcode: barcodeKw ? parseBarcodeGeometry(barcodeKw, lpi, uom) : undefined,
     });
 
     cursorLine = line;

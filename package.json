@@ -40,7 +40,18 @@
         "command": "i-rlu.compilePrtf",
         "title": "I-RLU: Compile Printer File (CRTPRTF)"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "I-RLU",
+      "properties": {
+        "i-rlu.unitOfMeasure": {
+          "type": "string",
+          "enum": ["inch", "cm"],
+          "default": "inch",
+          "description": "Unit of measure to assume when converting LINE/BOX/BARCODE physical measurements to the preview's character grid. There is no UOM keyword in DDS source — UOM is set on the CRTPRTF command that compiles this file, so I-RLU can't detect it from the source alone. Set this to match what your shop actually passes to CRTPRTF (its own default is *INCH); if you don't know, leave this as inch."
+        }
+      }
+    }
   },
   "scripts": {
     "compile": "tsc -p ./ && node src/buildWebviewTemplate.js",

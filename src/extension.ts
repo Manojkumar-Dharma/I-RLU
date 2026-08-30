@@ -37,8 +37,13 @@ class PrtfDesignerProvider implements vscode.CustomTextEditorProvider {
 
     let currentModel: ParsedSource = parseSource(document.getText());
 
+    function currentUom(): string {
+      const val = vscode.workspace.getConfiguration("i-rlu").get<string>("unitOfMeasure");
+      return val === "cm" ? "cm" : "inch";
+    }
+
     function postModel() {
-      webviewPanel.webview.postMessage({ type: "setModel", model: currentModel });
+      webviewPanel.webview.postMessage({ type: "setModel", model: currentModel, uom: currentUom() });
     }
 
     const changeSub = vscode.workspace.onDidChangeTextDocument((e) => {
@@ -48,8 +53,13 @@ class PrtfDesignerProvider implements vscode.CustomTextEditorProvider {
       }
     });
 
+    const configSub = vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration("i-rlu.unitOfMeasure")) postModel();
+    });
+
     webviewPanel.onDidDispose(() => {
       changeSub.dispose();
+      configSub.dispose();
     });
 
     webviewPanel.webview.onDidReceiveMessage(async (msg) => {

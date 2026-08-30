@@ -32,6 +32,7 @@
     model: null,
     recordName: null,
     indicators: {},
+    uom: "inch", // set from the extension host's i-rlu.unitOfMeasure setting; see setModel handler
     selectedId: null, // id of the currently selected cell, if any
     placing: null, // null | "field" | "constant" — armed "click to place" mode
     pendingNew: null, // { kind, line, position } — set right after a placement click, before Save
@@ -53,7 +54,7 @@
 
   function currentLayout() {
     if (!state.model || !state.recordName) return null;
-    return PrtfEngine.resolveLayout(state.model, state.recordName, state.indicators);
+    return PrtfEngine.resolveLayout(state.model, state.recordName, state.indicators, state.uom);
   }
 
   function render() {
@@ -150,6 +151,18 @@
         indPanel.appendChild(el("label", { class: "ind-label", for: id }, [cb, " " + ind]));
       });
       toolbar.appendChild(el("span", { class: "indicators-wrap" }, ["Indicators: ", indPanel]));
+    }
+
+    const hasGeometryKeywords =
+      PrtfEngine.findAllKeywords(record.keywords, "LINE").length > 0 ||
+      PrtfEngine.findAllKeywords(record.keywords, "BOX").length > 0 ||
+      record.fields.some((f) => (f.keywords || []).some((k) => k.name === "BARCODE"));
+    if (hasGeometryKeywords) {
+      toolbar.appendChild(
+        el("span", { class: "hint", title: "Set via the i-rlu.unitOfMeasure VS Code setting — I-RLU can't detect this from DDS source, since UOM is a CRTPRTF command parameter, not a DDS keyword." }, [
+          "Unit of measure: " + state.uom + " (assumed — set i-rlu.unitOfMeasure to match your CRTPRTF)",
+        ])
+      );
     }
 
     return toolbar;
@@ -458,6 +471,7 @@
     const msg = event.data;
     if (msg.type === "setModel") {
       state.model = msg.model;
+      if (msg.uom) state.uom = msg.uom;
       if (!state.model.records.find((r) => r.name === state.recordName)) {
         state.recordName = state.model.records[0] ? state.model.records[0].name : null;
       }

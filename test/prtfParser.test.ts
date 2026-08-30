@@ -271,3 +271,30 @@ test("engine: BARCODE without a recognized line-count height falls back to a fla
   assert.equal(cell.barcode.approximateHeight, true);
   assert.ok(cell.barcode.heightLines >= 1);
 });
+
+test("engine: uom defaults to inch when not specified (matches CRTPRTF's own default)", () => {
+  const model = parseSource(fs.readFileSync(fixturePath, "utf8"));
+  const layoutDefault = resolveLayout(model, "HEADER", {});
+  const layoutExplicitInch = resolveLayout(model, "HEADER", {}, "inch");
+  const box1 = layoutDefault.draws.find((d: any) => d.type === "box");
+  const box2 = layoutExplicitInch.draws.find((d: any) => d.type === "box");
+  assert.deepEqual(box1, box2);
+});
+
+test("engine: uom='cm' converts LINE/BOX/BARCODE measurements differently than inch, per CRTPRTF's UOM parameter (not a DDS keyword)", () => {
+  const model = parseSource(fs.readFileSync(fixturePath, "utf8"));
+  const layoutInch = resolveLayout(model, "HEADER", {}, "inch");
+  const layoutCm = resolveLayout(model, "HEADER", {}, "cm");
+  const boxInch = layoutInch.draws.find((d: any) => d.type === "box");
+  const boxCm = layoutCm.draws.find((d: any) => d.type === "box");
+  // BOX(0 0 1 6 *MEDIUM): if the coded "1" and "6" are read as inches, the
+  // box is 1in tall / 6in wide. If the same numbers are actually
+  // centimeters (uom='cm'), they convert to fewer inches (1/2.54, 6/2.54),
+  // so the resulting character-grid box must be smaller.
+  assert.ok(boxCm.row2 < boxInch.row2, "cm interpretation should yield a shorter box than inch interpretation");
+  assert.ok(boxCm.col2 < boxInch.col2, "cm interpretation should yield a narrower box than inch interpretation");
+  // Sanity check the actual numbers: 1cm -> 1/2.54 in * 6 lpi = 2.36 -> round 2, +1 = 3.
+  assert.equal(boxCm.row2, Math.round((1 / 2.54) * 6) + 1);
+  // 6cm -> 6/2.54 in * 10 cpi = 23.6 -> round 24, +1 = 25.
+  assert.equal(boxCm.col2, Math.round((6 / 2.54) * 10) + 1);
+});

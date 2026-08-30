@@ -38,11 +38,18 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       spot on the page, fill in a form, and the new entry is inserted into
       the source right after the record's last existing entry.
 - [x] `CRTPRTF` compile command via Code for i's `runCommand` API.
-- [x] Test suite (19 tests): parser correctness, round-trip fidelity,
+- [x] Test suite (21 tests): parser correctness, round-trip fidelity,
       engine resolution (incl. indicator toggling, LINE/BOX geometry with
       hand-verified expected coordinates, BARCODE line-count and
-      default-height cases), id stability, and edit-then-reparse
-      round-trips for move/add field/add constant/delete/update.
+      default-height cases, uom inch/cm conversion with hand-verified
+      math), id stability, and edit-then-reparse round-trips for move/add
+      field/add constant/delete/update.
+- [x] `i-rlu.unitOfMeasure` VS Code setting (inch/cm, default inch) so
+      LINE/BOX/BARCODE measurements convert correctly for shops that
+      compile with `CRTPRTF UOM(*CM)`. Important correction to an earlier
+      roadmap note: there is no `UOM` keyword in DDS source — it's a
+      CRTPRTF command parameter, so the tool can't detect it from source
+      alone and this has to be a user setting, not something parsed.
 
 ## Next up (not started)
 
@@ -57,9 +64,6 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       arbitrary keywords like `EDTCDE`, `COLOR`, `LINE`, `BOX` params
       aren't exposed in the UI yet, though the writer/model already
       support them).
-- [ ] `UOM` (unit of measure) isn't modeled yet — LINE/BOX conversion
-      currently assumes inches; needs to read the actual UOM keyword/
-      CRTPRTF setting once that's wired up.
 - [ ] `REF`/`REFFLD` resolution via Code for i (pull real type/length/
       decimals from the referenced physical file) — flagged in the
       requirements doc as something I-SDA also left as future work.

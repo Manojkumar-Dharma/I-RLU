@@ -61,6 +61,12 @@ proportional stand-in table, clearly marked as a placeholder. Swap in real
 font metrics there once that data is available — nothing else in the engine
 needs to change, since it only calls `getAdvanceWidth(fontId, char)`.
 
+## Settings
+
+| Setting | Default | What it does |
+|---|---|---|
+| `i-rlu.unitOfMeasure` | `inch` | Unit of measure I-RLU assumes when converting `LINE`/`BOX`/`BARCODE` physical measurements to the preview's character grid. There is no `UOM` DDS keyword — this is a `CRTPRTF` command parameter the tool can't see from source, so set this to match what your shop actually compiles with. |
+
 ## Building and testing
 
 ```
@@ -71,17 +77,24 @@ npm run compile # compile + build webview template without running tests
 
 ## Known limitations (v1)
 
-- Editing support in the webview currently covers drag-to-reposition only;
-  adding/deleting fields, resizing, and editing keywords through the UI are
-  not wired up yet (the writer/engine already support arbitrary model edits
-  — only the UI for triggering them is missing).
-- `LINE`/`BOX` geometry is converted from physical units (inches, per the
-  printer file's unit of measure) into character-grid coordinates using
-  CPI/LPI (default 10/6 if not coded) — this is a rendering approximation
-  for preview purposes, not the actual sub-character-cell positioning AFPDS
-  uses at print time. Parameters given as program-to-system fields (`&NAME`)
-  can't be resolved without a live compile/run and are shown at a default
-  position, flagged in the preview.
+- Editing through the webview covers move (drag), add, update, and delete
+  for fields and constants (via the properties panel), but not yet editing
+  arbitrary keywords directly (`EDTCDE`, `COLOR`, `LINE`/`BOX` params,
+  etc.) — the writer/engine already support arbitrary model edits, only the
+  UI for triggering keyword-level edits is missing.
+- `LINE`/`BOX`/`BARCODE` physical measurements are converted to the
+  preview's character grid via CPI/LPI and a unit-of-measure assumption.
+  **Important correction:** there is no `UOM` keyword in DDS source — unit
+  of measure is a parameter on the `CRTPRTF` command that compiles the
+  file, so I-RLU has no way to detect it by parsing source alone. It
+  defaults to inches (CRTPRTF's own default); set the
+  `i-rlu.unitOfMeasure` VS Code setting to `cm` if your shop's CRTPRTF
+  actually specifies `UOM(*CM)`. Getting this wrong scales every LINE/BOX/
+  BARCODE measurement by 2.54x in the wrong direction, so it's worth
+  checking if your printer files use those keywords. Separately, LINE/BOX
+  parameters given as program-to-system fields (`&NAME`) can't be resolved
+  without a live compile/run and are shown at a default position, flagged
+  in the preview.
 - `BARCODE` renders as a labeled placeholder box (symbology id + direction),
   not the actual bar symbol — real symbol rendering needs a barcode
   rendering library and is out of v1 scope. Height in whole print lines
