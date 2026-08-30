@@ -1,10 +1,10 @@
       * I-RLU sample printer file - AFPDS device type, expanded keyword coverage
 
-                                            PAGSIZE(66 132) DEVTYPE(*AFPDS)    +
+                                            PAGSIZE(66 132) DEVTYPE(*AFPDS)    -
                                             FONT(2304) DUPLEX(*YES) OUTBIN(1)
-                R STMTHDR                   STRPAGGRP SKIPB(1) PAGSEG(COMPLOGO +
+                R STMTHDR                   STRPAGGRP SKIPB(1) PAGSEG(COMPLOGO -
                                             0.5 0.5) OVERLAY(STMTFORM 0 0)
-                                        1 40'CUSTOMER STATEMENT' CDEFNT(920    +
+                                        1 40'CUSTOMER STATEMENT' CDEFNT(920    -
                                             *CURLIB) COLOR(*BLU)
                   CUSTNAME      30A  O  3 10CHRSIZ(1.5 1.5) COLOR(*RGB 0 0 0)
                   ACCTBAL       11S 2O  3 90CDEFNT(&CURFONT)

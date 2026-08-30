@@ -1,6 +1,6 @@
       * I-RLU sample printer file - SCS device type (no AFPDS keywords)
 
-                                            PAGSIZE(66 132) DEVTYPE(*SCS)      +
+                                            PAGSIZE(66 132) DEVTYPE(*SCS)      -
                                             CPI(10) LPI(6)
                 R HEADER                    SKIPB(1)
                                         1  1'MONTHLY SALES REPORT'

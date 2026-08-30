@@ -50,7 +50,7 @@ the commit message.
 | J | Compile command: library/source-file/member picker | n/a (tooling) | Not started | none |
 | K | Packaging (`.vsix`) | n/a (tooling) | Not started | ideally after A–I land, but can be prepped early |
 | L | Real AFP font metrics | n/a (data) | Blocked — needs font resource data, see REQUIREMENTS.md §9 | none |
-| M | **Bug fix:** writer emits wrong continuation character when wrapping mid-token | n/a (parser/writer correctness) | Not started — logged below, not yet fixed | none |
+| M | ~~**Bug fix:** writer emits wrong continuation character when wrapping mid-token~~ | n/a (parser/writer correctness) | **Done** | none |
 
 ## Batch detail
 
@@ -211,61 +211,52 @@ action until that's resolved. Don't start this batch without first checking
 whether that open question has been answered in a more recent conversation/
 commit than this task board.
 
-### Batch M — Fix writer's continuation-character bug
+### Batch M — Fix writer's continuation-character bug [DONE]
 **Found by:** `test/prtfFixtures.test.ts`'s round-trip test against
 `sample-afpds.pf` (added alongside `docs/KEYWORD-INVENTORY.md`), which
 failed 2/26 tests on first run.
 
-**The bug:** `src/prtfWriter.js` always emits `+` continuation when wrapping
-a record/field's keyword area onto a following line, regardless of whether
-the wrap point falls between two tokens that need a space preserved between
-them. Real DDS distinguishes `+` (no implied space at the join — used when
-wrapping mid-token, e.g. splitting a long name or literal) from `-` (implied
-single space at the join — used when wrapping between two space-separated
-tokens). Concretely:
+**The bug:** `src/prtfWriter.js` always emitted `+` continuation when
+wrapping a record/field's keyword area onto a following line, regardless of
+whether the wrap point fell between two tokens that need a space preserved
+between them. Real DDS distinguishes `+` (no implied space at the join —
+correct only for a split strictly inside one token) from `-` (implied single
+space at the join — correct between two separate tokens). Concretely,
+`PAGSEG(COMPLOGO 0.5 0.5)` wrapped after `COMPLOGO` with `+` continuation
+reparsed back as `PAGSEG(COMPLOGO0.5 0.5)` — silently corrupting the token.
 
-```
-PAGSEG(COMPLOGO 0.5 0.5)
-```
-wrapped by the writer at column 80 becomes:
-```
-PAGSEG(COMPLOGO +
-0.5 0.5)
-```
-(`+` continuation), which the parser correctly interprets as "no space at
-the join" per real DDS semantics — reparsing this reconstructs
-`PAGSEG(COMPLOGO0.5 0.5)`, silently corrupting the token. The writer should
-have chosen `-` continuation here, since the wrap point sits between
-`COMPLOGO` and `0.5` where a space belongs.
+**Root cause, once traced:** `emitWithKeywords`'s wrapping loop only ever
+moves whole whitespace-delimited tokens to the next line — it never splits
+inside a single token. That means every wrap point it can produce sits
+between two tokens that were space-separated in the original keyword text,
+so `-` (implied space) is the only continuation character this function
+should ever emit; there was no case where `+` was actually correct.
 
-**Why this went undetected until now:** the original `sample1.pf` fixture
-never happened to produce a keyword area that both (a) exceeds the line
-width and (b) wraps exactly at a space-separated token boundary. `PAGSEG`'s
-longer parameter list in `sample-afpds.pf` did.
+**Fix applied:** `emitWithKeywords` in `src/prtfWriter.js` now emits `-`
+instead of `+` for every continued line. Comment above the function updated
+to explain why '-' is unconditionally correct given how the wrapping loop
+actually works (see the comment in the source for the full reasoning).
 
-**What's already confirmed correct:** the parser's `keywordAreaOf` /
-continuation-join logic (`src/prtfParser.ts`) already handles `+` vs `-`
-correctly on read — this is purely a write-side bug in the continuation
-character *choice*, not in how either character is interpreted.
+**Regenerated fixtures:** all three `.pf` fixtures (`sample1.pf`,
+`sample-scs.pf`, `sample-afpds.pf`) were saved-to-disk output of the old
+buggy writer, so they needed regenerating via their `generate-*.js` scripts
+once the writer was fixed — `git diff` on `sample1.pf` confirms only the two
+continuation characters changed, nothing else.
 
-**Scope for whoever picks this up:**
-1. In `src/prtfWriter.js`, find where the keyword-area line-wrapping decides
-   the trailing continuation character (currently hardcoded to `+`) and make
-   it choose `-` when the wrap point falls immediately after a space in the
-   source keyword text (i.e. the next token would otherwise lose its
-   leading space), `+` otherwise (mid-token wraps, which should remain rare
-   given DDS keyword syntax but are valid for things like long literal
-   constants).
-2. Re-run `test/prtfFixtures.test.ts` — both currently-failing round-trip
-   assertions (`sample-afpds.pf`'s full round-trip, and the `STRPAGGRP`/
-   `PAGSEG`/`OVERLAY` content assertion that depends on it) should pass
-   without any fixture changes.
-3. Add a small, narrow regression test — e.g. force-wrap a keyword area at a
-   known space boundary and assert `-` continuation is chosen — rather than
-   relying solely on the AFPDS fixture happening to still exercise this path
-   if it's edited later.
-4. Do **not** touch `src/prtfParser.ts` for this batch — it's already
-   correct; changing it would risk masking the actual writer bug.
+**Tests added:** `test/prtfWriter.test.ts` — unit tests against
+`emitWithKeywords` directly (isolated from the parser), including a pinned
+regression test that a wrap between two space-separated tokens must use `-`,
+and a reassembly test that mirrors the parser's own join semantics. All 33
+tests pass (`test/prtfParser.test.ts` + `test/prtfFixtures.test.ts` +
+`test/prtfWriter.test.ts`).
+
+**Known, separate, out-of-scope limitation left as-is:** if a single
+keyword token itself exceeds the 34-column keyword width (e.g. an unusually
+long literal constant), `emitWithKeywords` doesn't split it mid-token — it
+gets silently truncated by `padRight`'s slice. This is a real gap but a
+different bug from Batch M (no continuation-character choice is involved
+since there's no token boundary to wrap at); flag as a new batch if a
+real-world source member surfaces this.
 
 
 ## Adding a new batch

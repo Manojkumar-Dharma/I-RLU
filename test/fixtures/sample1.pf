@@ -1,8 +1,8 @@
       * I-RLU sample printer file - customer invoice
 
-                                            PAGSIZE(66 132) PRTQLTY(*STD)      +
+                                            PAGSIZE(66 132) PRTQLTY(*STD)      -
                                             DEVTYPE(*AFPDS)
-                R HEADER                    SKIPB(1) BOX(0 0 1 6 *MEDIUM)      +
+                R HEADER                    SKIPB(1) BOX(0 0 1 6 *MEDIUM)      -
                                             LINE(1 0 6 *HRZ .01)
                   CUSTNAME      30A  B  1 10
         50        CUSTNBR        7S 0B  1 50

@@ -50,6 +50,12 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       roadmap note: there is no `UOM` keyword in DDS source — it's a
       CRTPRTF command parameter, so the tool can't detect it from source
       alone and this has to be a user setting, not something parsed.
+- [x] Fixed a writer bug (Batch M) where `prtfWriter.js` always emitted `+`
+      continuation when wrapping a keyword area, even at a space boundary
+      where `-` is needed to preserve the space — corrupted tokens like
+      `PAGSEG(COMPLOGO 0.5 0.5)` on round-trip. Caught by the
+      `sample-afpds.pf` fixture; see `docs/TASKS.md` Batch M for the full
+      root-cause writeup. Test suite now 33 tests, all passing.
 
 ## Next up
 
@@ -107,11 +113,6 @@ full detail, acceptance criteria, and file-level ownership per batch):
 - [ ] **Batch L — Real AFP font metrics**, once available (see README's
       "AFPDS font metrics" section) — the one open item from
       `docs/REQUIREMENTS.md` §9.
-- [ ] **Batch M — Bug fix:** `prtfWriter.js` always emits `+` continuation
-      when wrapping a keyword area, even at a space boundary where `-` is
-      needed to preserve the space — corrupts tokens like
-      `PAGSEG(COMPLOGO 0.5 0.5)` on round-trip. Found via the new
-      `sample-afpds.pf` fixture; full repro and fix scope in `docs/TASKS.md`.
 
 Each batch's keyword list, current model/parser/engine status
 (modeled/rendered/UI), and IBM-documented gotchas are detailed in

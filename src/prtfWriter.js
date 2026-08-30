@@ -65,9 +65,25 @@ function keywordsToText(keywords) {
 /**
  * Wraps keyword text into one or more 80-column physical lines, given a
  * 44-char positional prefix for the first line (continuation lines get a
- * blank 44-char prefix). Uses '+' continuation (no implied space at the
- * join) which is safe for any token boundary; splitting only ever happens
- * between separate keyword tokens, never inside one.
+ * blank 44-char prefix).
+ *
+ * Continuation character: real DDS distinguishes '-' (a single space is
+ * implied at the join when the line is reassembled) from '+' (no space is
+ * implied — used only when a split falls strictly inside a single token,
+ * e.g. a literal or name broken mid-word). This function only ever splits
+ * between separate whitespace-delimited keyword tokens (see the loop below
+ * — a token is moved to the next line whole, never divided), so the space
+ * that separated those two tokens in the original keyword text must always
+ * be preserved across the join. That makes '-' the correct choice in every
+ * case this function actually produces.
+ *
+ * (An earlier version of this function always emitted '+', on the reasoning
+ * that '+' is "safe for any token boundary" — that has it backwards: '+'
+ * drops the space, which silently corrupts any wrap that happens to land
+ * between two space-separated tokens, e.g. `PAGSEG(COMPLOGO 0.5 0.5)`
+ * wrapped after `COMPLOGO` round-tripped back as `PAGSEG(COMPLOGO0.5 0.5)`.
+ * See docs/TASKS.md Batch M and test/prtfFixtures.test.ts's
+ * sample-afpds.pf round-trip test, which is what caught this.)
  */
 function emitWithKeywords(positional44, keywordText) {
   const KEYWORD_WIDTH = 34; // columns 45-78; col 79 unused, col 80 reserved for +/-
@@ -78,7 +94,7 @@ function emitWithKeywords(positional44, keywordText) {
   const flush = (hasMore) => {
     const prefix = firstLine ? positional44 : " ".repeat(44);
     const body = padRight(current, KEYWORD_WIDTH) + " "; // col 79 blank
-    lines.push(prefix + body + (hasMore ? "+" : " "));
+    lines.push(prefix + body + (hasMore ? "-" : " "));
     firstLine = false;
     current = "";
   };
@@ -93,8 +109,8 @@ function emitWithKeywords(positional44, keywordText) {
   }
   if (current || lines.length === 0) flush(false);
   else {
-    // Replace trailing '+' of the last emitted line with a space since
-    // there's nothing more to say.
+    // Replace trailing continuation char of the last emitted line with a
+    // space since there's nothing more to say.
     lines[lines.length - 1] = lines[lines.length - 1].slice(0, -1) + " ";
   }
   return lines.map((l) => l.replace(/\s+$/, ""));
