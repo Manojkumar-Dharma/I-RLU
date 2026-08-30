@@ -32,6 +32,8 @@ body { font-family: var(--vscode-editor-font-family, monospace); color: var(--vs
 .draw-line { background: var(--vscode-charts-orange, orange); }
 .draw-box { border: 1px solid var(--vscode-charts-orange, orange); box-sizing: border-box; }
 .draw-line.approximate, .draw-box.approximate { opacity: 0.5; border-style: dashed; }
+.cell.barcode { background: repeating-linear-gradient(90deg, var(--vscode-charts-purple, #b180d7) 0 2px, transparent 2px 5px); border: 1px solid var(--vscode-charts-purple, #b180d7); display: flex; align-items: flex-end; justify-content: center; }
+.barcode-label { background: var(--vscode-editor-background); font-size: 9px; padding: 0 2px; }
 .empty, .note { font-size: 12px; color: var(--vscode-descriptionForeground); margin-top: 8px; }
 .btn { font-size: 11px; padding: 3px 8px; background: var(--vscode-button-secondaryBackground, #3a3d41); color: var(--vscode-button-secondaryForeground, #fff); border: none; border-radius: 2px; cursor: pointer; }
 .btn:hover { opacity: 0.85; }

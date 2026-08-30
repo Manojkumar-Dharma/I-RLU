@@ -12,6 +12,7 @@
                   ITEMDESC      20A  O  1 10
                   ITEMQTY        5S 0O  1 32
                   ITEMAMT        9S 2O  1 40EDTCDE(J)
+                  ITEMCODE      12A  O  2 10BARCODE(*3OF9 2 *HRZ)
                 R FOOTER                    SKIPB(2)
                                         1  5'Page'
                                         1 12PAGNBR

@@ -126,6 +126,18 @@ push({
   keywords: [{ name: "EDTCDE", params: "(J)", raw: "EDTCDE(J)" }],
 });
 push({
+  kind: "field",
+  name: "ITEMCODE",
+  reference: false,
+  length: 12,
+  dataType: "A",
+  usage: "O",
+  line: 2,
+  position: 10,
+  conditions: [],
+  keywords: [{ name: "BARCODE", params: "(*3OF9 2 *HRZ)", raw: "BARCODE(*3OF9 2 *HRZ)" }],
+});
+push({
   kind: "record",
   name: "FOOTER",
   conditions: [],

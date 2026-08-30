@@ -180,18 +180,31 @@
     });
 
     layout.cells.forEach((cell) => {
+      const isVerticalBarcode = cell.barcode && cell.barcode.direction === "vertical";
+      const w = (isVerticalBarcode ? cell.barcode.heightLines : cell.length) * CELL_W;
+      const h = (isVerticalBarcode ? cell.length : cell.barcode ? cell.barcode.heightLines : 1) * CELL_H;
+      const div = el(
         "div",
         {
           class:
             "cell" +
             (cell.kind === "constant" ? " constant" : " field") +
+            (cell.barcode ? " barcode" : "") +
             (cell.id === state.selectedId ? " selected" : ""),
-          style: `position:absolute;left:${(cell.position - 1) * CELL_W}px;top:${(cell.line - 1) * CELL_H}px;width:${
-            cell.length * CELL_W
-          }px;height:${CELL_H}px;`,
+          style: `position:absolute;left:${(cell.position - 1) * CELL_W}px;top:${(cell.line - 1) * CELL_H}px;width:${w}px;height:${h}px;`,
+          title: cell.barcode
+            ? "Barcode placeholder — " +
+              cell.barcode.barCodeId +
+              " (" +
+              cell.barcode.direction +
+              "). Actual bar symbol not rendered." +
+              (cell.barcode.approximateHeight ? " Height shown is a default estimate." : "")
+            : "",
           draggable: "true",
         },
-        [cell.kind === "constant" ? cell.text : "{" + cell.name + "}"]
+        cell.barcode
+          ? [el("span", { class: "barcode-label" }, [cell.barcode.barCodeId || "BARCODE"])]
+          : [cell.kind === "constant" ? cell.text : "{" + cell.name + "}"]
       );
       div.addEventListener("click", (ev) => {
         ev.stopPropagation();

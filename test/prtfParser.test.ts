@@ -247,3 +247,27 @@ test("engine: LINE/BOX using a program-to-system field parameter is flagged appr
   assert.ok(fieldLine);
   assert.equal(fieldLine.approximate, true);
 });
+
+test("engine: BARCODE resolves a labeled placeholder with symbology id, direction, and line-count height", () => {
+  const model = parseSource(fs.readFileSync(fixturePath, "utf8"));
+  const layout = resolveLayout(model, "DETAIL", {});
+  const cell = layout.cells.find((c: any) => c.name === "ITEMCODE");
+  assert.ok(cell.barcode, "ITEMCODE should carry barcode geometry");
+  assert.equal(cell.barcode.barCodeId, "3OF9");
+  assert.equal(cell.barcode.direction, "horizontal");
+  assert.equal(cell.barcode.heightLines, 2);
+  assert.equal(cell.barcode.approximateHeight, false);
+  assert.equal(cell.barcode.hri, true);
+});
+
+test("engine: BARCODE without a recognized line-count height falls back to a flagged default", () => {
+  const model = parseSource(fs.readFileSync(fixturePath, "utf8"));
+  const detail = model.records.find((r) => r.name === "DETAIL")!;
+  const itemcode = detail.fields.find((f: any) => f.name === "ITEMCODE") as any;
+  itemcode.keywords = [{ name: "BARCODE", params: "(*UPCA)", raw: "BARCODE(*UPCA)", sourceLineIndex: -1 }];
+  const layout = resolveLayout(model, "DETAIL", {});
+  const cell = layout.cells.find((c: any) => c.name === "ITEMCODE");
+  assert.equal(cell.barcode.barCodeId, "UPCA");
+  assert.equal(cell.barcode.approximateHeight, true);
+  assert.ok(cell.barcode.heightLines >= 1);
+});

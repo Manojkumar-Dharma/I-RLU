@@ -82,7 +82,14 @@ npm run compile # compile + build webview template without running tests
   uses at print time. Parameters given as program-to-system fields (`&NAME`)
   can't be resolved without a live compile/run and are shown at a default
   position, flagged in the preview.
-- `BARCODE` is not yet rendered.
+- `BARCODE` renders as a labeled placeholder box (symbology id + direction),
+  not the actual bar symbol — real symbol rendering needs a barcode
+  rendering library and is out of v1 scope. Height in whole print lines
+  (the common case) is resolved exactly; a height given in inches/cm, or no
+  height at all, falls back to a flagged default estimate. The tool doesn't
+  currently validate DDS's rule that `BARCODE` can't be combined with
+  `FONT`/`EDTCDE`/`EDTWRD`/`DATE`/`TIME`/`PAGNBR`/etc. on the same field —
+  that's a compile-time check `CRTPRTF` will still catch.
 - Page segments, overlays, and other external AFP resource objects render
   as nothing (not yet stubbed as placeholder boxes) — see
   `docs/REQUIREMENTS.md` §8 for why this is a hard limit regardless of

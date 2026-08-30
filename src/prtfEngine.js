@@ -8,10 +8,12 @@
  *
  * v1 scope: explicit line/position field placement (DDS "Location" columns
  * 39-44), sequential placement via SKIPB/SKIPA/SPACEB/SPACEA when
- * line/position are omitted, indicator conditioning, and geometry for the
+ * line/position are omitted, indicator conditioning, geometry for the
  * `LINE` and `BOX` keywords (record-level, AFPDS-only, specified in
  * physical units and converted here to the same character grid fields use
- * via CPI/LPI — see resolveCpiLpi below). AFPDS font-accurate character
+ * via CPI/LPI — see resolveCpiLpi below), and a labeled placeholder for
+ * `BARCODE` (field-level, IPDS/AFPDS-only — real symbol rendering is out
+ * of scope, see parseBarcodeGeometry). AFPDS font-accurate character
  * widths are applied when a non-default FONT keyword is present and
  * afpFontMetrics has a table for it; otherwise layout assumes a monospace
  * cell grid (accurate for SCS, an approximation for AFPDS pending real font
@@ -110,6 +112,50 @@ function parseBoxGeometry(kw, cpi, lpi) {
   };
 }
 
+/**
+ * BARCODE(bar-code-ID [height] [*HRZ|*VRT] [*HRI|*HRITOP|*NOHRI]
+ *         [*AST|*NOAST] [modifier] [unit-width] [symbol-width]
+ *         [wide/narrow-ratio] ...)
+ * Verified against IBM's DDS reference for printer files. Field-level
+ * (unlike LINE/BOX, which are record-level), valid only for
+ * IPDS/AFPDS-capable printer files. Real symbol rendering (actual bars) is
+ * out of v1 scope per docs/REQUIREMENTS.md — this resolves just enough to
+ * draw a labeled placeholder of roughly the right size: the bar-code-ID,
+ * direction, and height (in character rows, converted from either a plain
+ * line count or a "(height *UOM)" physical measurement via LPI).
+ */
+function parseBarcodeGeometry(kw, lpi) {
+  const t = paramTokens(kw);
+  const barCodeId = (t[0] || "").replace(/^\*/, "");
+  const rest = t.slice(1);
+  const direction = rest.some((x) => x.toUpperCase() === "*VRT") ? "vertical" : "horizontal";
+  const hri = !rest.some((x) => x.toUpperCase() === "*NOHRI");
+
+  let heightLines = 2; // placeholder default when height isn't a plain line count
+  let approximateHeight = true;
+  if (rest.length > 0) {
+    const h = rest[0];
+    if (/^\d+$/.test(h)) {
+      const n = Number(h);
+      if (n >= 1 && n <= 9) {
+        heightLines = n;
+        approximateHeight = false;
+      }
+    } else if (h.startsWith("(")) {
+      // "(height *UOM)" form, e.g. "(0.5 *IN)" — find the closing token.
+      let combined = h;
+      for (let i = 1; i < rest.length && !combined.endsWith(")"); i++) combined += " " + rest[i];
+      const m = combined.match(/\(([\d.]+)/);
+      if (m) {
+        heightLines = Math.max(1, Math.round(Number(m[1]) * lpi));
+        approximateHeight = false;
+      }
+    }
+  }
+
+  return { barCodeId, direction, hri, heightLines, approximateHeight };
+}
+
 function resolvePageSize(record, fileLevel) {
   const kw = findKeyword(record.keywords, "PAGSIZE") || findKeyword(fileLevel.keywords, "PAGSIZE");
   let lines = 66;
@@ -168,6 +214,7 @@ function resolveLayout(model, recordName, indicatorState) {
         : entry.literal
         ? entry.literal.length
         : entry.length || 1;
+    const barcodeKw = entry.kind === "field" ? findKeyword(entry.keywords, "BARCODE") : undefined;
 
     cells.push({
       id: entry.id,
@@ -183,6 +230,7 @@ function resolveLayout(model, recordName, indicatorState) {
       decimalPositions: entry.kind === "field" ? entry.decimalPositions : undefined,
       usage: entry.kind === "field" ? entry.usage : undefined,
       literal: entry.kind === "constant" ? entry.literal : undefined,
+      barcode: barcodeKw ? parseBarcodeGeometry(barcodeKw, lpi) : undefined,
     });
 
     cursorLine = line;

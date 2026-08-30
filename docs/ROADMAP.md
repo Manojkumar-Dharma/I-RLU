@@ -15,10 +15,12 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       Round-trip verified byte-for-byte on the test fixture.
 - [x] Engine: page size resolution (`PAGSIZE`), sequential field placement
       via `SKIPB`/`SKIPA`/`SPACEB`/`SPACEA`, explicit `LINE`/`POSITION`
-      placement, indicator-based conditioning/filtering, and `LINE`/`BOX`
+      placement, indicator-based conditioning/filtering, `LINE`/`BOX`
       geometry (record-level, AFPDS-only, converted from physical units to
       the character grid via CPI/LPI) — verified against IBM's DDS
-      reference after an earlier draft used a fictitious `DRAW` keyword.
+      reference after an earlier draft used a fictitious `DRAW` keyword —
+      and `BARCODE` (field-level, IPDS/AFPDS-only) resolved to a labeled
+      placeholder with symbology id, direction, and line-count height.
 - [x] Placeholder AFP font-metrics module with a clear seam for real font
       data later.
 - [x] Extension host: `CustomTextEditorProvider` registered for `.pf`/
@@ -26,8 +28,9 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
 - [x] Webview: page-grid rendering, record-format switcher, indicator
       toggle panel, drag-to-reposition with edits written back through the
       real writer/model (single `WorkspaceEdit`, so undo/redo works
-      normally), and real `LINE`/`BOX` geometry rendering (flagged when a
-      program-to-system field parameter can't be resolved statically).
+      normally), real `LINE`/`BOX` geometry rendering (flagged when a
+      program-to-system field parameter can't be resolved statically), and
+      a striped placeholder for `BARCODE` fields.
 - [x] Webview properties panel: click a field/constant to edit name,
       length, data type, decimals, usage, line/position (fields) or text +
       line/position (constants), or delete it.
@@ -35,16 +38,18 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       spot on the page, fill in a form, and the new entry is inserted into
       the source right after the record's last existing entry.
 - [x] `CRTPRTF` compile command via Code for i's `runCommand` API.
-- [x] Test suite (17 tests): parser correctness, round-trip fidelity,
+- [x] Test suite (19 tests): parser correctness, round-trip fidelity,
       engine resolution (incl. indicator toggling, LINE/BOX geometry with
-      hand-verified expected coordinates), id stability, and
-      edit-then-reparse round-trips for move/add field/add constant/
-      delete/update.
+      hand-verified expected coordinates, BARCODE line-count and
+      default-height cases), id stability, and edit-then-reparse
+      round-trips for move/add field/add constant/delete/update.
 
 ## Next up (not started)
 
-- [ ] `BARCODE` rendering (placeholder box acceptable for v1, per
-      requirements doc).
+- [ ] Real `BARCODE` symbol rendering (actual bars, not a labeled
+      placeholder) — needs a barcode-generation library and is a larger
+      lift than the other v1 items; placeholder box was the pragmatic
+      choice per the requirements doc.
 - [ ] Page segment / overlay resource placeholders (labeled boxes) once a
       resource-resolution strategy is decided.
 - [ ] Keyword-level editing in the properties panel (currently only the
