@@ -67,7 +67,7 @@ vice versa.
 | `REF`/`REFFLD` doesn't resolve real type/length/decimals from the referenced file | Actionable | Batch **H** |
 | `CRTPRTF` assumes `*CURLIB/QDDSSRC`, no library/source-file/member picker | Actionable | Batch **J** |
 | No packaging (`.vsix`) | Actionable | Batch **K** |
-| Font resource access unresolved (§9) — real AFP font metrics vs. placeholder | **Blocked**, needs font resource data or live IBM i access | Batch **L** |
+| Font resource access unresolved (§9) — real AFP font metrics vs. placeholder | **Partially done** — FGID identification verified/resolved; per-glyph proportional metrics and CDEFNT/FNTCHRSET/FONTNAME resolution still blocked | Batch **L** |
 
 ## Task board
 
@@ -85,7 +85,7 @@ vice versa.
 | I | ~~`UOM` modeling~~ **done elsewhere** (see `i-rlu.unitOfMeasure` setting, `docs/ROADMAP.md`) + file-level SKIPA/SKIPB *AFPDS validation still open | `SKIPA`, `SKIPB` (validation only) | UOM done; validation not started | none |
 | J | Compile command: library/source-file/member picker | n/a (tooling) | Not started | none |
 | K | Packaging (`.vsix`) | n/a (tooling) | Not started | ideally after A–I land, but can be prepped early |
-| L | Real AFP font metrics | n/a (data) | Blocked — needs font resource data, see REQUIREMENTS.md §9 | none |
+| L | Real AFP font metrics | n/a (data) | Partially done — FGID identification resolved; per-glyph proportional metrics + CDEFNT/FNTCHRSET/FONTNAME still blocked, see REQUIREMENTS.md §9 | none |
 | M | ~~**Bug fix:** writer emits wrong continuation character when wrapping mid-token~~ | n/a (parser/writer correctness) | **Done** | none |
 | N | `BARCODE` mutual-exclusion validation | `BARCODE` (validation vs. `FONT`, `EDTCDE`, `EDTWRD`, `DATE`, `TIME`, `PAGNBR`, etc.) | Not started | **C** |
 | O | Real AFP resource rendering (actual pixel content for page segments/overlays) | `PAGSEG`, `OVERLAY` (record-level) | Blocked — needs external resource files, see REQUIREMENTS.md §8 | **E** |
@@ -243,11 +243,51 @@ list), and confirming `npm run compile` output is what gets packaged.
 Low-risk to do early even if other batches aren't finished — packaging an
 incomplete-but-working extension is fine for internal testing.
 
-### Batch L — Real AFP font metrics
-**Blocked** pending font resource data per `docs/REQUIREMENTS.md` §9 — no
-action until that's resolved. Don't start this batch without first checking
-whether that open question has been answered in a more recent conversation/
-commit than this task board.
+### Batch L — Real AFP font metrics [PARTIALLY DONE]
+**FGID identification: done.** `src/afpFontMetrics.js` now resolves the
+`FONT` keyword's FGID parameter against a table verified against IBM's own
+FGID/typeface documentation (Printer Device Programming, the AFP Font
+Collection reference, IBM support pages on font substitution) — covers the
+Courier/Gothic fixed-pitch families, the Helvetica/Times New Roman
+proportional families, OCR A/B, and point-size-to-CPI conversion for
+scalable monospace fonts (12pt = 10 CPI, per IBM's documented reference
+point). `src/prtfEngine.js`'s `resolveFont`/`resolveLayout` apply
+field-over-record-over-file `FONT` precedence, matching DDS's own rules,
+and expose the resolved font (family/weight/style/spacing/pointSize) on
+each layout cell for the webview to render with real CSS font-family
+instead of a flat monospace assumption. The character grid itself is also
+now derived from CPI/LPI via the standard 96dpi formula
+(`cellWidthPx = 96/CPI`, `cellHeightPx = 96/LPI`) rather than hardcoded
+pixel constants.
+
+**Correction made along the way, worth flagging if you build on this:** an
+earlier reference this project drew on mislabeled FGID 416 as "Times
+Roman" — checked against IBM's own typeface/FGID table and found to
+actually be Courier Roman Medium (fixed/monospace, despite being
+scalable). Real Times New Roman Medium is FGID 2308. There's a regression
+test (`FGID 416 correctly resolves to Courier Roman Medium...` in
+`test/prtfParser.test.ts`) guarding against that resurfacing — don't
+remove or "fix" it back the other way without re-checking the source.
+
+**Still blocked, still needs font resource data or live IBM i access:**
+real per-glyph advance widths for the proportional (Helvetica/Times New
+Roman) families — current implementation uses a rough Helvetica-shaped
+placeholder table, not IBM's actual font character-set/code-page width
+data, so proportional text layout is still approximate. Also unresolved:
+`CDEFNT` (coded font), `FNTCHRSET` (host font character set + code page),
+and `FONTNAME` (TrueType/OpenType by name) — none of these three are
+parsed for font resolution at all yet; they reference host/IFS font
+objects this tool has no access to. One direction raised for closing this
+gap: extracting real font data from a connected IBM i (TrueType files
+under `/QIBM/UserData/OS400/Fonts/TTF/`, or FOCA font character-set
+metrics via host APIs) — worth pursuing, but those specific paths/API
+names haven't been independently verified, so don't build against them
+without checking first (same discipline that caught the FGID 416 error).
+
+Batch B's `FONT`/`CDEFNT`/`FNTCHRSET`/`FONTNAME` properties-panel editing
+work is unaffected by this and can proceed independently — it's about
+letting the user *set* these keywords' values through the UI, not about
+resolving their real metrics for rendering.
 
 ### Batch M — Fix writer's continuation-character bug [DONE]
 **Found by:** `test/prtfFixtures.test.ts`'s round-trip test against
