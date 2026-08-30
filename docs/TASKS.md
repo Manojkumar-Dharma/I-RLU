@@ -84,7 +84,7 @@ vice versa.
 | H | `REF`/`REFFLD` resolution via Code for i | `REF`, `REFFLD` | Not started | none (needs a live/mocked Code for i connection for full completion — can land the UI shape without it) |
 | I | ~~`UOM` modeling~~ **done elsewhere** (see `i-rlu.unitOfMeasure` setting, `docs/ROADMAP.md`) + file-level SKIPA/SKIPB *AFPDS validation | `SKIPA`, `SKIPB` (validation only) | **Done** (validation landed as part of Batch F — see `prtfEngine.js`'s `validateFileLevelKeywords`) | none |
 | J | Compile command: library/source-file/member picker | n/a (tooling) | Not started | none |
-| K | Packaging (`.vsix`) | n/a (tooling) | Not started | ideally after A–I land, but can be prepped early |
+| K | Packaging (`.vsix`) | n/a (tooling) | **Done** | ideally after A–I land, but can be prepped early |
 | L | Real AFP font metrics | n/a (data) | Partially done — FGID identification resolved; per-glyph proportional metrics + CDEFNT/FNTCHRSET/FONTNAME still blocked, see REQUIREMENTS.md §9 | none |
 | M | ~~**Bug fix:** writer emits wrong continuation character when wrapping mid-token~~ | n/a (parser/writer correctness) | **Done** | none |
 | N | `BARCODE` mutual-exclusion validation | `BARCODE` (validation vs. `FONT`, `EDTCDE`, `EDTWRD`, `DATE`, `TIME`, `PAGNBR`, etc.) | Not started | **C** |
@@ -261,7 +261,7 @@ already used for the compile command's other prompts (check I-SDA's
 `CRTMNU` command implementation for the equivalent picker pattern, since
 `docs/REQUIREMENTS.md` explicitly models this compile command on I-SDA's).
 
-### Batch K — Packaging
+### Batch K — Packaging [DONE]
 **Goal:** `vsce package` producing a real `.vsix`. Mostly checking
 `package.json` metadata (icon, categories, publisher, repository fields all
 already partially present per `package.json`), adding a `.vscodeignore` if
@@ -269,6 +269,36 @@ missing (I-SDA has one — copy its shape, adjust for I-RLU's actual file
 list), and confirming `npm run compile` output is what gets packaged.
 Low-risk to do early even if other batches aren't finished — packaging an
 incomplete-but-working extension is fine for internal testing.
+
+**Implementation notes:**
+- **Found and fixed a real activation-breaking bug while confirming
+  "`npm run compile` output is what gets packaged":** `package.json`'s
+  `"main"` pointed at `./out/extension.js`, but `tsconfig.json`'s
+  `rootDir: "."` means `src/extension.ts` actually compiles to
+  `./out/src/extension.js` — the old path didn't exist. A packaged/installed
+  build would have failed to activate at all. Fixed by correcting `"main"`
+  to `./out/src/extension.js`; verified against the real `.vsix` manifest
+  (`unzip -p i-rlu-*.vsix extension/package.json`) rather than just the
+  source `package.json`, in case packaging rewrites paths.
+- Added `.vscodeignore` (I-SDA wasn't reachable to copy its shape from — it
+  doesn't appear to be a public repo — so this follows standard `vsce`
+  convention instead: ship `out/**/*.js` plus `package.json`/`README.md`,
+  exclude `src/`, `media/`, `test/`, `docs/`, source maps, and
+  `node_modules/` since there are no runtime `dependencies`).
+- Added `@vscode/vsce` as a devDependency, plus `vscode:prepublish` (runs
+  `npm run compile` — `vsce` invokes this automatically before packaging)
+  and `package` (`vsce package`) npm scripts.
+- Verified end-to-end: `npm run package` produces `i-rlu-0.0.1.vsix`
+  (43.96 KB, 12 files) with the corrected `main` entry point; `npm test`
+  still passes (50/50) afterward.
+- **Not done, flagged rather than guessed at:** `vsce package` warns that
+  no `LICENSE`/`LICENSE.md`/`LICENSE.txt` is present. Not fixed here since
+  choosing a license is the repo owner's call, not a packaging-mechanics
+  decision — add one (and a matching `"license"` field in `package.json`)
+  whenever that's decided. No `icon` was added either, for the same
+  "needs a real decision, not a default" reason — `vsce` packages fine
+  without one, VS Code just shows a generic icon in the Marketplace/Extensions
+  view until it's set.
 
 ### Batch L — Real AFP font metrics [PARTIALLY DONE]
 **FGID identification: done.** `src/afpFontMetrics.js` now resolves the

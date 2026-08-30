@@ -122,8 +122,15 @@ full detail, acceptance criteria, and file-level ownership per batch):
       validation work above rather than kept as its own batch.
 - [ ] **Batch J — Compile command polish:** let the user pick
       library/source-file/member instead of assuming `*CURLIB/QDDSSRC`.
-- [ ] **Batch K — Packaging:** `vsce package` and a first `.vsix` for manual
-      install/testing.
+- [x] **Batch K — Packaging:** `vsce package` producing a real `.vsix`
+      (verified: `i-rlu-0.0.1.vsix`, 43.96 KB). Along the way, found and
+      fixed a real bug: `package.json`'s `"main"` pointed at a path that
+      didn't exist after `tsc` compiled (`./out/extension.js` vs. the
+      actual `./out/src/extension.js`), which would have made any
+      packaged/installed build fail to activate. See `docs/TASKS.md`
+      Batch K for the rest (`.vscodeignore`, `vsce` scripts, and the one
+      thing deliberately left open — no `LICENSE` file yet, since that's
+      the repo owner's call).
 - [x]/[ ] **Batch L — Real AFP font metrics — partially done.** `FONT`/FGID
       *identification* is now resolved: a verified FGID table (Courier/
       Gothic fixed families, Helvetica/Times New Roman proportional
