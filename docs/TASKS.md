@@ -15,6 +15,16 @@ read in this order:
    "in progress" if you're resuming your own prior work.
 5. `docs/ROADMAP.md` — tick off completed items there when you finish a batch.
 
+**Before your first commit in a session**, set the git identity for this
+repo (not global) so commits attribute correctly regardless of which
+session/environment made them:
+
+```
+git config user.name "Manojkumar-dharma"
+git config user.email "manojkumar.dharmalingam@gmail.com"
+```
+
+
 ## How the codebase is organized (so batches don't collide)
 
 | Area | File(s) | Touched by |
