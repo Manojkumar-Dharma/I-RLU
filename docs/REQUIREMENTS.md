@@ -119,18 +119,24 @@ webview, no sibling-file bookkeeping.
   normally on the real file.
 
 ## 6. Explicit known gaps to carry into a "Known limitations" section (draft)
+Each of these is tracked as a batch or explicit permanent constraint in
+`docs/TASKS.md`'s "Known limitations → task mapping" section.
 - AFPDS-specific rendering (real fonts, page segments, overlays as actual
   graphics) is a much bigger lift than SCS char-grid rendering — likely
   out of scope for an initial release; render AFPDS records in char-grid
-  mode with keyword values shown, not true WYSIWYG.
+  mode with keyword values shown, not true WYSIWYG. *(Permanent for v1; the
+  actionable slices are Batch L — font metrics — and Batch O — resource
+  pixel content, both blocked pending external data access)*
 - `BARCODE` rendering as an actual scannable barcode graphic vs. a labeled
-  placeholder box — placeholder is the pragmatic v1 choice.
+  placeholder box — placeholder is the pragmatic v1 choice. *(Batch D,
+  depends on Batch C)*
 - Numeric edit-code/edit-word formatting: same caveat I-SDA documents for
-  DSPF — approximate width only, no live-system verification.
+  DSPF — approximate width only, no live-system verification. *(Permanent,
+  explicit non-goal — see Batch A's detail in TASKS.md)*
 - Referenced-field resolution (`REF`/`REFFLD` pulling real type/length/decimals
   from a physical file) — I-SDA lists "Resolve Referenced Field via Code for
   i" as planned-not-built; I-RLU should plan for it from the start since PRTF
-  makes heavy use of `REF`.
+  makes heavy use of `REF`. *(Batch H)*
 
 ## 7. Decisions (confirmed)
 - **AFPDS is in scope from day one**, not deferred behind SCS. This changes

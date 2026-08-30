@@ -77,11 +77,15 @@ npm run compile # compile + build webview template without running tests
 
 ## Known limitations (v1)
 
+Each bullet below is tracked as a batch (or explicitly marked permanent) in
+`docs/TASKS.md`'s "Known limitations → task mapping" section — see there for
+dependencies and status; don't let this list and that mapping drift apart.
+
 - Editing through the webview covers move (drag), add, update, and delete
   for fields and constants (via the properties panel), but not yet editing
   arbitrary keywords directly (`EDTCDE`, `COLOR`, `LINE`/`BOX` params,
   etc.) — the writer/engine already support arbitrary model edits, only the
-  UI for triggering keyword-level edits is missing.
+  UI for triggering keyword-level edits is missing. *(Batches A, B, C, E, F, G)*
 - `LINE`/`BOX`/`BARCODE` physical measurements are converted to the
   preview's character grid via CPI/LPI and a unit-of-measure assumption.
   **Important correction:** there is no `UOM` keyword in DDS source — unit
@@ -91,26 +95,28 @@ npm run compile # compile + build webview template without running tests
   `i-rlu.unitOfMeasure` VS Code setting to `cm` if your shop's CRTPRTF
   actually specifies `UOM(*CM)`. Getting this wrong scales every LINE/BOX/
   BARCODE measurement by 2.54x in the wrong direction, so it's worth
-  checking if your printer files use those keywords. Separately, LINE/BOX
-  parameters given as program-to-system fields (`&NAME`) can't be resolved
-  without a live compile/run and are shown at a default position, flagged
-  in the preview.
+  checking if your printer files use those keywords. *(Done)* Separately,
+  LINE/BOX parameters given as program-to-system fields (`&NAME`) can't be
+  resolved without a live compile/run and are shown at a default position,
+  flagged in the preview. *(Permanent by design — not a task; see TASKS.md)*
 - `BARCODE` renders as a labeled placeholder box (symbology id + direction),
   not the actual bar symbol — real symbol rendering needs a barcode
   rendering library and is out of v1 scope. Height in whole print lines
   (the common case) is resolved exactly; a height given in inches/cm, or no
-  height at all, falls back to a flagged default estimate. The tool doesn't
-  currently validate DDS's rule that `BARCODE` can't be combined with
-  `FONT`/`EDTCDE`/`EDTWRD`/`DATE`/`TIME`/`PAGNBR`/etc. on the same field —
-  that's a compile-time check `CRTPRTF` will still catch.
+  height at all, falls back to a flagged default estimate. *(Batch D, depends
+  on Batch C)* The tool doesn't currently validate DDS's rule that `BARCODE`
+  can't be combined with `FONT`/`EDTCDE`/`EDTWRD`/`DATE`/`TIME`/`PAGNBR`/etc.
+  on the same field — that's a compile-time check `CRTPRTF` will still
+  catch. *(Batch N, depends on Batch C)*
 - Page segments, overlays, and other external AFP resource objects render
   as nothing (not yet stubbed as placeholder boxes) — see
   `docs/REQUIREMENTS.md` §8 for why this is a hard limit regardless of
-  priority.
+  priority. *(Batch E for placeholder boxes; Batch O for real pixel content,
+  blocked pending resource-file access, depends on Batch E)*
 - The `CRTPRTF` compile command assumes `*CURLIB/QDDSSRC` and derives the
   member name from the file name; it doesn't yet let you pick
-  library/source-file/member explicitly.
-- No packaging/publishing (`.vsix`) yet.
+  library/source-file/member explicitly. *(Batch J)*
+- No packaging/publishing (`.vsix`) yet. *(Batch K)*
 
 ## License
 

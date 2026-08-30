@@ -44,7 +44,33 @@ add a case to a shared switch/dispatch (e.g. a keyword-name switch in the
 engine or webview), add it as a narrow, additive change and say so plainly in
 the commit message.
 
+## Known limitations → task mapping
+
+Every bullet in README.md's "Known limitations (v1)" section and
+`docs/REQUIREMENTS.md` §6/§8/§9 is tracked here as either an actionable
+batch (with a dependency) or an explicitly permanent constraint (not a
+task — don't create one for it). Keep this mapping in sync: when a
+limitation bullet in README/REQUIREMENTS changes, update the row here, and
+vice versa.
+
+| Limitation (README/REQUIREMENTS wording) | Status | Tracked as |
+|---|---|---|
+| Keyword-level editing missing for `EDTCDE`, `COLOR`, `LINE`/`BOX` params, etc. | Actionable | Batches **A, B, C, E, F, G** collectively (each owns a keyword subset — see Task board below) |
+| LINE/BOX/BARCODE assume inches unless `i-rlu.unitOfMeasure` is set to `cm` | **Done** | Was Batch I (first half) |
+| LINE/BOX params given as `&NAME` (program-to-system field) can't be resolved, shown at default position | **Permanent, by design** | Not a task — there's no static value to resolve without a live compile/run. Batch B's P-field toggle (UI for *entering* `&NAME`) explicitly preserves this flagged-default treatment rather than trying to eliminate it; see Batch B detail. |
+| `BARCODE` renders as a labeled placeholder, not a real symbol | Actionable | Batch **D** (depends on **C**) |
+| `BARCODE`'s mutual-exclusion rule (can't combine with `FONT`/`EDTCDE`/`EDTWRD`/`DATE`/`TIME`/`PAGNBR`/etc.) isn't validated — `CRTPRTF` still catches it, but not surfaced live in the designer | Actionable, previously untracked | New **Batch N** (depends on **C** — needs BARCODE's parameter surface to attach the check to) |
+| Page segments/overlays render as nothing, not even a placeholder box | Actionable | Batch **E** |
+| Real pixel content for page segments/overlays (actual scanned logos/forms, not a placeholder) | **Blocked**, needs external resource files supplied to the tool (§8's documented hard limit — these are IFS/host AFP objects, not DDS source text) | New **Batch O** (depends on **E** landing first as the fallback baseline; blocked the same way **L** is, on external data access) |
+| AFPDS real font/graphics rendering broadly (vs. char-grid-with-keyword-labels) | **Permanent for v1, revisit only if scope changes** | Not a task on its own — the actionable slices of this are Batch **L** (font metrics) and Batch **O** (resource pixel content) above; true full-graphics AFPDS WYSIWYG beyond those two remains explicitly out of scope per REQUIREMENTS.md §6/§8. |
+| Numeric edit-code/edit-word formatting is approximate-width only, no live-system verification | **Permanent, explicit non-goal** | Not a task — Batch A's detail section explicitly excludes building a full edit-code formatter, to avoid scope creep. |
+| `REF`/`REFFLD` doesn't resolve real type/length/decimals from the referenced file | Actionable | Batch **H** |
+| `CRTPRTF` assumes `*CURLIB/QDDSSRC`, no library/source-file/member picker | Actionable | Batch **J** |
+| No packaging (`.vsix`) | Actionable | Batch **K** |
+| Font resource access unresolved (§9) — real AFP font metrics vs. placeholder | **Blocked**, needs font resource data or live IBM i access | Batch **L** |
+
 ## Task board
+
 
 | Batch | Description | Keywords in scope | Status | Depends on |
 |---|---|---|---|---|
@@ -61,6 +87,8 @@ the commit message.
 | K | Packaging (`.vsix`) | n/a (tooling) | Not started | ideally after A–I land, but can be prepped early |
 | L | Real AFP font metrics | n/a (data) | Blocked — needs font resource data, see REQUIREMENTS.md §9 | none |
 | M | ~~**Bug fix:** writer emits wrong continuation character when wrapping mid-token~~ | n/a (parser/writer correctness) | **Done** | none |
+| N | `BARCODE` mutual-exclusion validation | `BARCODE` (validation vs. `FONT`, `EDTCDE`, `EDTWRD`, `DATE`, `TIME`, `PAGNBR`, etc.) | Not started | **C** |
+| O | Real AFP resource rendering (actual pixel content for page segments/overlays) | `PAGSEG`, `OVERLAY` (record-level) | Blocked — needs external resource files, see REQUIREMENTS.md §8 | **E** |
 
 ## Batch detail
 
@@ -267,6 +295,61 @@ gets silently truncated by `padRight`'s slice. This is a real gap but a
 different bug from Batch M (no continuation-character choice is involved
 since there's no token boundary to wrap at); flag as a new batch if a
 real-world source member surfaces this.
+
+### Batch N — BARCODE mutual-exclusion validation
+**Source:** README.md's "Known limitations" section — `BARCODE` can't be
+combined with `FONT`/`EDTCDE`/`EDTWRD`/`DATE`/`TIME`/`PAGNBR`/etc. on the
+same field per IBM's DDS reference; today the tool doesn't check this at
+all, silently letting the designer create source that `CRTPRTF` will reject.
+
+**Depends on Batch C**: this validation needs to attach to BARCODE's full
+parameter surface (Batch C) in the properties panel — build it as part of,
+or immediately after, Batch C's form, not as a standalone check bolted onto
+the current placeholder.
+
+**Goal:** when a field has `BARCODE` plus any of the excluded keywords,
+surface a validation hint in the properties panel (matching the style
+already used for `HIGHLIGHT`+`CDEFNT`/`FNTCHRSET` in Batch A, and the
+`*AFPDS` file-level `SKIPA`/`SKIPB` check folded into Batch F) — this is a
+live-editor hint, not a hard block; `CRTPRTF` remains the actual
+enforcement point. Confirm the exact excluded-keyword list against IBM's DDS
+reference before implementing (README's list is the starting point, not
+necessarily exhaustive).
+- Tests: a field with `BARCODE` + `FONT` (or another excluded keyword)
+  triggers the validation hint; a field with `BARCODE` alone, or with
+  non-conflicting keywords, doesn't.
+
+### Batch O — Real AFP resource rendering (page segments/overlays as actual images)
+**Source:** `docs/REQUIREMENTS.md` §8's documented hard limit — page
+segments and overlays (scanned logos, pre-printed form images) are external
+AFP resource objects living on the IBM i's IFS/host, not part of the DDS
+source text itself. I-RLU can position and size their bounding box
+correctly (that's what Batch E's placeholder gives you) but can't show real
+pixel content without those resource files being supplied to the tool some
+other way.
+
+**Blocked, same shape as Batch L:** this isn't a coding task waiting to be
+picked up — it needs either (a) a way to export/fetch the actual page
+segment/overlay resource files from an IBM i (analogous to how Batch H
+needs Code for i for `REF`/`REFFLD`), or (b) sample resource files supplied
+directly for local rendering. Don't start this batch without first
+confirming resource access the same way Batch L is gated on font resource
+access — check whether that's been resolved more recently than this task
+board before assuming it's still blocked.
+
+**Depends on Batch E**: Batch E's placeholder-box treatment is the fallback
+this batch upgrades from — build real rendering as an enhancement layered on
+top of (or clearly seamed to replace) Batch E's existing labeled box, not as
+a parallel rendering path, so the tool degrades gracefully back to a
+placeholder when a given resource file genuinely isn't available even after
+this batch lands.
+
+**Goal once unblocked:** decode the AFP resource format (page segments are
+IOCA-based images; overlays are themselves small AFP data streams) and
+render the actual image/graphic at the position/size Batch E already
+computes.
+- Tests: will need real (or realistic sample) resource files as fixtures —
+  can't be meaningfully tested with synthetic data alone.
 
 
 ## Adding a new batch
