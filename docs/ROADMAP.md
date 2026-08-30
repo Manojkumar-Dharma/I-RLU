@@ -161,6 +161,11 @@ full detail, acceptance criteria, and file-level ownership per batch):
       create, rename, delete, or reorder one without editing raw DDS text.
       No dependency — builds directly on the existing `<select>` and
       `applyEdit` edit-kind pattern. See `docs/TASKS.md` Batch P.
+- [ ] **Batch Q — Copy/duplicate a field or constant:** add/update/delete
+      already exist for fields and constants, but not copy — cloning one
+      with its keywords intact currently means re-entering everything by
+      hand. No dependency — sits next to the existing Delete button and
+      reuses the add-field edit-kind shape. See `docs/TASKS.md` Batch Q.
 
 Each batch's keyword list, current model/parser/engine status
 (modeled/rendered/UI), and IBM-documented gotchas are detailed in

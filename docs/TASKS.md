@@ -69,6 +69,7 @@ vice versa.
 | No packaging (`.vsix`) | Actionable | Batch **K** |
 | Font resource access unresolved (§9) — real AFP font metrics vs. placeholder | **Partially done** — FGID identification verified/resolved; per-glyph proportional metrics and CDEFNT/FNTCHRSET/FONTNAME resolution still blocked | Batch **L** |
 | The record-format `<select>` dropdown (toolbar) only switches between record formats already present in the source — no way to add, rename, delete, or reorder a record format from the designer itself | Actionable, previously untracked (this isn't in README/REQUIREMENTS' Known-limitations lists at all — raised separately, added here for the same tracking discipline) | New **Batch P** (no dependency — the record `<select>` and `applyEdit`'s edit-kind dispatch already exist to build on) |
+| The properties panel supports add/update/delete for fields and constants, but not copy/duplicate — cloning a field with its keywords intact (a common RLU/SEU-era workflow for building up repetitive detail-line layouts) requires manually re-entering every attribute and keyword on a new field | Actionable, previously untracked | New **Batch Q** (no dependency — sits directly next to the existing Delete button in `renderEditPanel`, and can reuse `addField`/`addConstant`'s edit-kind shape) |
 
 ## Task board
 
@@ -91,6 +92,7 @@ vice versa.
 | N | `BARCODE` mutual-exclusion validation | `BARCODE` (validation vs. `FONT`, `EDTCDE`, `EDTWRD`, `DATE`, `TIME`, `PAGNBR`, etc.) | Not started | **C** |
 | O | Real AFP resource rendering (actual pixel content for page segments/overlays) | `PAGSEG`, `OVERLAY` (record-level) | Blocked — needs external resource files, see REQUIREMENTS.md §8 | **E** |
 | P | Add/rename/delete/reorder record formats from the designer | n/a (tooling/UI, not a keyword) | Not started | none |
+| Q | Copy/duplicate a field or constant | n/a (tooling/UI, not a keyword) | Not started | none |
 
 ## Batch detail
 
@@ -544,6 +546,58 @@ re-doing the field/constant properties panel.
   (already handles a record disappearing out from under the current
   selection, per the empty-file guard) still behaves correctly after a
   delete or reorder.
+
+### Batch Q — Copy/duplicate a field or constant
+**Source:** raised directly, same as Batch P — not from README/REQUIREMENTS'
+existing Known limitations lists. Add/update/delete already exist for
+fields and constants (`addField`, `addConstant`, `updateField`,
+`updateConstant`, `delete` in `src/extension.ts`'s `applyEdit`), but there's
+no copy/duplicate. This is a real gap for the common case of building up a
+detail line with several similarly-formatted fields (e.g. a row of
+right-justified numeric columns all sharing the same `EDTCDE`/`COLOR`/
+`FONT` keywords) — today that means re-entering every attribute and
+re-adding every keyword by hand for each one, when 90% of it is identical to
+a field that already exists.
+
+**No dependency**: the natural home for this is right next to the existing
+"Delete" button in `renderEditPanel` (`media/webviewClient.js`), and the
+edit it sends can reuse `addField`'s/`addConstant`'s existing shape almost
+exactly — this doesn't need any other batch to land first.
+
+**Goal:**
+1. Add a "Copy" button next to "Delete" in the field/constant properties
+   panel (`renderEditPanel`). Clicking it should **not** immediately mutate
+   the model — route it through the same "pending new entry" flow
+   `state.pendingNew` already uses for add (see `renderPropsPanel`/
+   `renderNewEntryPanel`), pre-filled with the source entry's values
+   (length, data type, decimals, usage, literal text) so the user picks a
+   new line/position (and, for fields, confirms/changes the name, since DDS
+   field names must be unique per record) rather than the copy landing
+   silently on top of the original.
+2. **Keywords must come along with the copy** — this is the actual point
+   of the feature, not just duplicating position/type. A copy that drops
+   the source field's `EDTCDE`/`COLOR`/`FONT`/etc. keywords isn't saving
+   any real work over "+ Field". Extend the `addField`/`addConstant` edit
+   payload (or add a `copyField`/`copyConstant` edit kind, if that proves
+   cleaner than overloading `addField` with an optional source-keywords
+   array — decide based on how invasive the plain-`addField` payload change
+   would be) to carry the source entry's `keywords` array through.
+3. **Name collision**: for fields specifically, since DDS requires unique
+   field names within a record, the pre-filled name in the pending-new form
+   should not be the exact source name — default to something like the
+   source name with a numeric suffix (truncated to fit the 10-char DDS name
+   limit) and let the user override it, rather than silently failing or
+   silently renaming without telling them.
+4. **Scope for v1**: same-record copy only (copy `CUSTNBR` from `DETAIL`
+   to a new field also in `DETAIL`). Cross-record copy (copy a field from
+   `HEADER` into `DETAIL`) is a reasonable stretch goal once same-record
+   copy works, but don't block v1 on it — flag it as a follow-up note in
+   whichever commit lands this, rather than scope-creeping this batch.
+- Tests: round-trip a copied field/constant through the model/writer and
+  confirm its keywords match the source; confirm the pre-filled name
+  suggestion avoids colliding with the source name; confirm copying doesn't
+  mutate the source entry itself (a bug where copy silently *moves* instead
+  of duplicates is the obvious failure mode to guard against explicitly).
 
 
 ## Adding a new batch
