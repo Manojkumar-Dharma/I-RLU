@@ -67,7 +67,7 @@ vice versa.
 | `REF`/`REFFLD` doesn't resolve real type/length/decimals from the referenced file | Part 1 done (UI shape + resolution logic); part 2 (live fetch) unverified, needs a real IBM i | Batch **H** |
 | `CRTPRTF` assumes `*CURLIB/QDDSSRC`, no library/source-file/member picker | Actionable | Batch **J** |
 | No packaging (`.vsix`) | Actionable | Batch **K** |
-| Font resource access unresolved (§9) — real AFP font metrics vs. placeholder | **Partially done** — FGID identification verified/resolved; per-glyph proportional metrics and CDEFNT/FNTCHRSET/FONTNAME resolution still blocked | Batch **L** |
+| Font resource access unresolved (§9) — real AFP font metrics vs. placeholder | **Mostly done** — FGID identification verified/resolved, proportional widths now use real Adobe AFM data for substitute fonts; CDEFNT/FNTCHRSET/FONTNAME resolution still blocked | Batch **L** |
 | The record-format `<select>` dropdown (toolbar) only switches between record formats already present in the source — no way to add, rename, delete, or reorder a record format from the designer itself | Actionable, previously untracked (this isn't in README/REQUIREMENTS' Known-limitations lists at all — raised separately, added here for the same tracking discipline) | New **Batch P** (no dependency — the record `<select>` and `applyEdit`'s edit-kind dispatch already exist to build on) |
 | The properties panel supports add/update/delete for fields and constants, but not copy/duplicate — cloning a field with its keywords intact (a common RLU/SEU-era workflow for building up repetitive detail-line layouts) requires manually re-entering every attribute and keyword on a new field | Actionable, previously untracked | New **Batch Q** (no dependency — sits directly next to the existing Delete button in `renderEditPanel`, and can reuse `addField`/`addConstant`'s edit-kind shape) |
 
@@ -87,7 +87,7 @@ vice versa.
 | I | ~~`UOM` modeling~~ **done elsewhere** (see `i-rlu.unitOfMeasure` setting, `docs/ROADMAP.md`) + file-level SKIPA/SKIPB *AFPDS validation | `SKIPA`, `SKIPB` (validation only) | **Done** (validation landed as part of Batch F — see `prtfEngine.js`'s `validateFileLevelKeywords`) | none |
 | J | Compile command: library/source-file/member picker | n/a (tooling) | Not started | none |
 | K | Packaging (`.vsix`) | n/a (tooling) | **Done** | ideally after A–I land, but can be prepped early |
-| L | Real AFP font metrics | n/a (data) | Partially done — FGID identification resolved; per-glyph proportional metrics + CDEFNT/FNTCHRSET/FONTNAME still blocked, see REQUIREMENTS.md §9 | none |
+| L | Real AFP font metrics | n/a (data) | Mostly done — FGID identification resolved; proportional widths now use real published Adobe AFM data (metric-compatible substitute fonts, not verified IBM FGID resource extraction); CDEFNT/FNTCHRSET/FONTNAME still unresolved, see REQUIREMENTS.md §9 | none |
 | M | ~~**Bug fix:** writer emits wrong continuation character when wrapping mid-token~~ | n/a (parser/writer correctness) | **Done** | none |
 | N | `BARCODE` mutual-exclusion validation | `BARCODE` (validation vs. `FONT`, `EDTCDE`, `EDTWRD`, `DATE`, `TIME`, `PAGNBR`, etc.) | Not started | **C** |
 | O | Real AFP resource rendering (actual pixel content for page segments/overlays) | `PAGSEG`, `OVERLAY` (record-level) | Blocked — needs external resource files, see REQUIREMENTS.md §8 | **E** |
@@ -350,7 +350,7 @@ incomplete-but-working extension is fine for internal testing.
   without one, VS Code just shows a generic icon in the Marketplace/Extensions
   view until it's set.
 
-### Batch L — Real AFP font metrics [PARTIALLY DONE]
+### Batch L — Real AFP font metrics [MOSTLY DONE]
 **FGID identification: done.** `src/afpFontMetrics.js` now resolves the
 `FONT` keyword's FGID parameter against a table verified against IBM's own
 FGID/typeface documentation (Printer Device Programming, the AFP Font
@@ -378,9 +378,14 @@ remove or "fix" it back the other way without re-checking the source.
 
 **Still blocked, still needs font resource data or live IBM i access:**
 real per-glyph advance widths for the proportional (Helvetica/Times New
-Roman) families — current implementation uses a rough Helvetica-shaped
-placeholder table, not IBM's actual font character-set/code-page width
-data, so proportional text layout is still approximate. Also unresolved:
+Roman) families now use the actual published Adobe AFM widths for the
+metric-compatible PostScript substitute fonts (Helvetica, Times-Roman/
+Bold/Italic/BoldItalic) — real, stable, industry-standard data, a genuine
+improvement over the earlier flat placeholder table. The honest caveat
+that remains: these are the substitute font's published metrics, not a
+verified extraction of IBM's own FGID resource data (which this tool has
+no access to) — don't treat this as guaranteed pixel-identical to a
+specific target printer's actual rendering. Also still unresolved:
 `CDEFNT` (coded font), `FNTCHRSET` (host font character set + code page),
 and `FONTNAME` (TrueType/OpenType by name) — none of these three are
 parsed for font resolution at all yet; they reference host/IFS font
