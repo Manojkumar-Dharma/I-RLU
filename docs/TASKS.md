@@ -79,10 +79,10 @@ vice versa.
 | C | `BARCODE` full parameter surface (still placeholder render) | `BARCODE` | Not started | none |
 | D | `BARCODE` real symbol rendering | `BARCODE` | Not started | **C** |
 | E | AFP page-group / resource keyword placeholders | `OVERLAY` (record), `PAGSEG`, `STRPAGGRP`, `ENDPAGGRP`, `DOCIDXTAG`, `AFPRSC`, `DTASTMCMD` | Not started | none |
-| F | Print/finishing keywords, validation-only | `DUPLEX`, `FORCE`, `OUTBIN`, `ZFOLD`, `STAPLE`, `INVMMAP` | Not started | none |
+| F | Print/finishing keywords, validation-only | `DUPLEX`, `FORCE`, `OUTBIN`, `ZFOLD`, `STAPLE`, `INVMMAP` | **Done** | none |
 | G | Field-level data/edit keywords + indicator text | `ALIAS`, `BLKFOLD`, `CVTDTA`, `DLTEDT`, `FLTFIXDEC`, `FLTPCN`, `TRNSPY`, `TXTRTT`, `INDTXT` | Not started | none |
 | H | `REF`/`REFFLD` resolution via Code for i | `REF`, `REFFLD` | Not started | none (needs a live/mocked Code for i connection for full completion — can land the UI shape without it) |
-| I | ~~`UOM` modeling~~ **done elsewhere** (see `i-rlu.unitOfMeasure` setting, `docs/ROADMAP.md`) + file-level SKIPA/SKIPB *AFPDS validation still open | `SKIPA`, `SKIPB` (validation only) | UOM done; validation not started | none |
+| I | ~~`UOM` modeling~~ **done elsewhere** (see `i-rlu.unitOfMeasure` setting, `docs/ROADMAP.md`) + file-level SKIPA/SKIPB *AFPDS validation | `SKIPA`, `SKIPB` (validation only) | **Done** (validation landed as part of Batch F — see `prtfEngine.js`'s `validateFileLevelKeywords`) | none |
 | J | Compile command: library/source-file/member picker | n/a (tooling) | Not started | none |
 | K | Packaging (`.vsix`) | n/a (tooling) | Not started | ideally after A–I land, but can be prepped early |
 | L | Real AFP font metrics | n/a (data) | Partially done — FGID identification resolved; per-glyph proportional metrics + CDEFNT/FNTCHRSET/FONTNAME still blocked, see REQUIREMENTS.md §9 | none |
@@ -174,7 +174,7 @@ mentioned in the roadmap, and make the keyword's params editable.
   field and don't need deep parameter modeling.
 - Tests: round-trip + confirm placeholder box appears in engine output.
 
-### Batch F — Print/finishing keywords (validation only)
+### Batch F — Print/finishing keywords (validation only) [DONE]
 **Goal:** these don't change the page layout at all — they affect physical
 printer behavior. Just: (1) let them be added/edited/removed through the
 properties panel like any other keyword, (2) add validation warnings per
@@ -182,6 +182,33 @@ IBM's documented restrictions — `ZFOLD`, `STAPLE`, and `GDF` (if later added)
 are PSF-only; surfacing "this requires PSF printing" as a hint is enough,
 don't try to detect the target printer's actual capabilities.
 - Tests: round-trip only; no rendering test needed.
+
+**Implementation notes:**
+- `DUPLEX` takes `*NO`/`*YES`/`*TUMBLE`; `OUTBIN` takes `1`–`65535` or
+  `*DEVD`; `INVMMAP` takes a medium-map name. `FORCE`, `ZFOLD`, and `STAPLE`
+  take no parameters at all and must be emitted bare (`ZFOLD`, not
+  `ZFOLD()`) — confirmed against IBM's DDS reference before implementing.
+- `src/prtfEngine.js` adds `validateRecordKeywords(record)` (the
+  `ZFOLD`/`STAPLE` PSF-only hint) and `validateFileLevelKeywords(model)`
+  (the file-level `*AFPDS` `SKIPA`/`SKIPB` restriction, folded in from
+  Batch I per the row above). Both are validation-only — nothing here
+  blocks an edit; `CRTPRTF` remains the real enforcement point.
+- The `*AFPDS` check can't always know the target device type for certain
+  (`DEVTYPE` is usually a `CRTPRTF`/`CHGPRTF`/`OVRPRTF` command parameter,
+  not DDS source), *but* `DEVTYPE` is also a real optional DDS keyword —
+  when it's coded (file- or record-level) that's authoritative; only when
+  it's absent does the check fall back to an AFPDS-typical-keyword
+  heuristic (same "can't know for sure, best-effort" spirit as the
+  `i-rlu.unitOfMeasure` setting already uses for LINE/BOX/BARCODE).
+- Properties panel: since none of these six keywords affect the rendered
+  page, they get their own small always-visible per-record panel (checkbox
+  to add/remove + a value input where one applies) rather than living in
+  the click-a-cell panel used for fields/constants — see
+  `renderRecordKeywordsPanel` in `media/webviewClient.js`.
+- New edit kinds `setRecordKeyword`/`removeRecordKeyword` were added to
+  `extension.ts`'s `applyEdit` — generic enough that later keyword-panel
+  batches (A, B, G, etc.) can reuse them instead of adding their own.
+- Tests: `test/prtfBatchF.test.ts`.
 
 ### Batch G — Field-level data/edit keywords + indicator text
 **Goal:** `ALIAS` (simple rename field), `BLKFOLD`/`CVTDTA`/`DLTEDT`/

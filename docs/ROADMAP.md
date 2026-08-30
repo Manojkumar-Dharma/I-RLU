@@ -99,11 +99,14 @@ full detail, acceptance criteria, and file-level ownership per batch):
       `docs/REQUIREMENTS.md` §8's documented hard limit (no real resource
       pixel content), but make them visible/editable instead of silently
       inert.
-- [ ] **Batch F — Print/finishing device keywords (no visual,
+- [x] **Batch F — Print/finishing device keywords (no visual,
       validation-only):** `DUPLEX`, `FORCE`, `OUTBIN`, `ZFOLD`, `STAPLE`,
-      `INVMMAP` — these don't affect the page-preview layout, just expose
-      them in the properties panel and validate against IBM's documented
-      restrictions (e.g. `ZFOLD`/`STAPLE`/`GDF` are PSF-only).
+      `INVMMAP` — these don't affect the page-preview layout; exposed in
+      their own always-visible per-record properties panel, with
+      validation hints against IBM's documented restrictions
+      (`ZFOLD`/`STAPLE` are PSF-only). Also lands the file-level
+      `SKIPA`/`SKIPB` `*AFPDS` check folded in from Batch I below. See
+      `docs/TASKS.md` Batch F for implementation notes.
 - [ ] **Batch G — Field-level data/edit keywords:** `ALIAS`, `BLKFOLD`,
       `CVTDTA`, `DLTEDT`, `FLTFIXDEC`, `FLTPCN`, `TRNSPY`, `TXTRTT`,
       `INDTXT` (ties into the indicator-toggle panel's text labels — port
@@ -115,8 +118,8 @@ full detail, acceptance criteria, and file-level ownership per batch):
 - [x] ~~Batch I — `UOM` (unit of measure) modeling~~ — **done**: see
       `i-rlu.unitOfMeasure` setting above. The remaining piece — validating
       that file-level `SKIPA`/`SKIPB` isn't allowed on `*AFPDS` files
-      (KEYWORD-INVENTORY §1) — is still open; folded into Batch F's
-      validation work rather than kept as its own batch.
+      (KEYWORD-INVENTORY §1) — is now **also done**, folded into Batch F's
+      validation work above rather than kept as its own batch.
 - [ ] **Batch J — Compile command polish:** let the user pick
       library/source-file/member instead of assuming `*CURLIB/QDDSSRC`.
 - [ ] **Batch K — Packaging:** `vsce package` and a first `.vsix` for manual

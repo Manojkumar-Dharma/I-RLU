@@ -133,6 +133,29 @@ class PrtfDesignerProvider implements vscode.CustomTextEditorProvider {
         if (seqIndex !== -1) model.sequence.splice(seqIndex, 1);
         break;
       }
+      case "setRecordKeyword": {
+        // Batch F (and reusable by future keyword-panel batches): adds or
+        // replaces a record-level keyword by name. These keywords aren't
+        // repeating for this batch's set (DUPLEX/FORCE/OUTBIN/ZFOLD/
+        // STAPLE/INVMMAP each appear at most once per record), so "set"
+        // replaces any existing entry with the same name rather than
+        // appending a duplicate.
+        const record = model.records.find((r) => r.name === edit.recordName);
+        if (!record) return;
+        const raw = edit.params ? edit.name + edit.params : edit.name;
+        const existingIndex = record.keywords.findIndex((k: any) => k.name === edit.name);
+        const newKeyword = { name: edit.name, params: edit.params || "", raw, sourceLineIndex: -1 };
+        if (existingIndex !== -1) record.keywords[existingIndex] = newKeyword;
+        else record.keywords.push(newKeyword);
+        break;
+      }
+      case "removeRecordKeyword": {
+        const record = model.records.find((r) => r.name === edit.recordName);
+        if (!record) return;
+        const idx = record.keywords.findIndex((k: any) => k.name === edit.name);
+        if (idx !== -1) record.keywords.splice(idx, 1);
+        break;
+      }
       case "addField":
       case "addConstant": {
         const record = model.records.find((r) => r.name === edit.recordName);

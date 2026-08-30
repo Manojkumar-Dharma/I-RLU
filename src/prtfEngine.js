@@ -324,6 +324,83 @@ function resolveLayout(model, recordName, indicatorState, uom) {
   };
 }
 
+// --- Batch F: print/finishing keywords (DUPLEX, FORCE, OUTBIN, ZFOLD,
+// STAPLE, INVMMAP) -----------------------------------------------------
+//
+// None of these affect page-preview layout (they're physical-printer
+// behavior, not positioning), so there's no rendering here — just
+// validation-only hints per IBM's documented restrictions, surfaced in the
+// properties panel. CRTPRTF remains the real enforcement point; nothing
+// here blocks an edit.
+
+/** Record-level keywords that take no parameters at all (option indicators only) — must be re-emitted as a bare keyword name, never "NAME()". */
+const VALUELESS_KEYWORDS = ["FORCE", "ZFOLD", "STAPLE"];
+
+/** ZFOLD/STAPLE (and GDF, if ever modeled) only take effect when printing through PSF — silently ignored otherwise, per IBM's DDS reference. */
+const PSF_ONLY_KEYWORDS = ["ZFOLD", "STAPLE"];
+
+/**
+ * Keywords whose presence is a strong signal a record targets *AFPDS.
+ * DEVTYPE itself is a CRTPRTF/CHGPRTF/OVRPRTF command parameter, not DDS
+ * source text, so I-RLU can never know for certain from the source alone
+ * (same caveat as the i-rlu.unitOfMeasure setting) — this is a heuristic
+ * used only to decide whether to surface the SKIPA/SKIPB file-level hint
+ * below, not a hard classification.
+ */
+const AFPDS_INDICATOR_KEYWORDS = [
+  "FONT", "CDEFNT", "FNTCHRSET", "FONTNAME", "PAGSEG", "OVERLAY",
+  "STRPAGGRP", "ENDPAGGRP", "DOCIDXTAG", "AFPRSC", "DTASTMCMD", "BARCODE",
+];
+
+function looksLikeAfpds(model) {
+  // DEVTYPE is itself a real file/record-level DDS keyword (see
+  // test/fixtures/sample-afpds.pf, sample-scs.pf) — when present it's an
+  // authoritative answer, not a guess. Only fall back to the
+  // AFPDS-typical-keyword heuristic when DEVTYPE isn't coded anywhere,
+  // since DEVTYPE is optional (CRTPRTF's own DEVTYPE parameter applies
+  // when it's omitted, and that's a compile-time value I-RLU can't see).
+  const fileDevtype = findKeyword(model.fileLevel.keywords, "DEVTYPE");
+  if (fileDevtype) return /\*AFPDS/.test(fileDevtype.params);
+  const recordDevtype = model.records.map((r) => findKeyword(r.keywords, "DEVTYPE")).find(Boolean);
+  if (recordDevtype) return /\*AFPDS/.test(recordDevtype.params);
+
+  return model.records.some(
+    (r) =>
+      AFPDS_INDICATOR_KEYWORDS.some((name) => findKeyword(r.keywords, name)) ||
+      r.fields.some((f) => AFPDS_INDICATOR_KEYWORDS.some((name) => findKeyword(f.keywords, name)))
+  );
+}
+
+/** Validation hints for a single record's keywords — currently just the ZFOLD/STAPLE PSF-only notice. Returns [] when there's nothing to flag. */
+function validateRecordKeywords(record) {
+  const warnings = [];
+  PSF_ONLY_KEYWORDS.forEach((name) => {
+    if (findKeyword(record.keywords, name)) {
+      warnings.push({
+        keyword: name,
+        message: name + " is only supported when printing through PSF (Print Services Facility) — it's ignored under Host Print Transform.",
+      });
+    }
+  });
+  return warnings;
+}
+
+/** Validation hints scoped to the whole file — currently just the *AFPDS file-level SKIPA/SKIPB restriction (folded into this batch per docs/TASKS.md). Returns [] when there's nothing to flag. */
+function validateFileLevelKeywords(model) {
+  const warnings = [];
+  ["SKIPA", "SKIPB"].forEach((name) => {
+    if (findKeyword(model.fileLevel.keywords, name) && looksLikeAfpds(model)) {
+      warnings.push({
+        keyword: name,
+        message:
+          name +
+          " isn't allowed at the file level for *AFPDS spooled files (this file appears to target AFPDS — other AFPDS-typical keywords are present). Move it to the record level, or confirm this file actually compiles as SCS.",
+      });
+    }
+  });
+  return warnings;
+}
+
 function listRecordNames(model) {
   return model.records.map((r) => r.name);
 }
@@ -337,6 +414,18 @@ function collectIndicators(record) {
   return Array.from(set).sort();
 }
 
-const mod = { resolveLayout, listRecordNames, collectIndicators, findKeyword, findAllKeywords, numericParam };
+const mod = {
+  resolveLayout,
+  listRecordNames,
+  collectIndicators,
+  findKeyword,
+  findAllKeywords,
+  numericParam,
+  // Batch F
+  VALUELESS_KEYWORDS,
+  PSF_ONLY_KEYWORDS,
+  validateRecordKeywords,
+  validateFileLevelKeywords,
+};
 if (typeof module !== "undefined" && module.exports) module.exports = mod;
 if (typeof window !== "undefined") window.PrtfEngine = mod;
