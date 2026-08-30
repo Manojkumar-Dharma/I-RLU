@@ -35,7 +35,7 @@ git config user.email "manojkumar.dharmalingam@gmail.com"
 | Layout/rendering logic | `src/prtfEngine.js` | Most batches that add rendering (C, D, E, I). |
 | Webview UI (properties panel, pickers) | `media/webviewClient.js`, `src/buildWebviewTemplate.js` | Most batches that add UI (A, B, C, F, G, H). |
 | AFP font metrics | `src/afpFontMetrics.js` | Batch L only. |
-| Extension host / compile command | `src/extension.ts` | Batch J only. |
+| Extension host / compile command | `src/extension.ts` | Batch J for the compile-command work; Batch F added generic `setRecordKeyword`/`removeRecordKeyword` edit kinds here that A/B/G should reuse rather than adding parallel bespoke edit-kind handlers — check `applyEdit` before inventing a new one. |
 | Tests | `test/` | Every batch adds its own test file(s) — don't edit another batch's test file. |
 
 **To minimize merge conflicts across parallel sessions**, prefer adding new
