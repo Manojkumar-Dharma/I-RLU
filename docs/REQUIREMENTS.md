@@ -48,12 +48,20 @@ webview, no sibling-file bookkeeping.
   constant entries, keyword continuation lines, comment lines (`*` in
   position 7), conditioning indicators (positions 7–16, incl. `N` for
   negation).
-- Printer-file-specific keyword set at minimum: `SKIPB(n)`, `SKIPA(n)`,
-  `SPACEB(n)`, `SPACEA(n)`, `PAGSIZE(lines cols)`, `OVERLAY`, `PRTQLTY`,
-  `FONT(n)`, `CPI(n)`, `LPI(n)`, `LINE`, `BOX`, `BARCODE`, `PAGNBR`, `DATE`, `TIME`,
-  `USRDFN`, `REF`/`REFFLD` (referenced field), `EDTCDE`/`EDTWRD`, `INDARA`,
-  `OVERFLOW`, `TEXT`, `DFT`, `PASSWORD`(rare on PRTF but valid), `COLOR`
-  (AFPDS-only, ignorable/flagged in SCS mode).
+- **Full keyword inventory gathered from RLU's own screens (file/record/field
+  level pick-lists, 77 keywords across the three levels) plus IBM's DDS
+  reference for the handful not individually photographed — see
+  `docs/KEYWORD-INVENTORY.md` for the complete table, parameter ranges, and
+  documented mutual-exclusion/restriction rules (e.g. `CPI` is only 10 or 15,
+  not free-form; `LPI` is only 4/6/8/9/12; `HIGHLIGHT`/`CHRID` are silently
+  ignored when `CDEFNT`/`FNTCHRSET` is also coded; `SKIPA`/`SKIPB` aren't
+  allowed at the file level for `*AFPDS`).** The parser doesn't hardcode a
+  keyword allow-list — any `NAME(params)` shape round-trips generically — but
+  the engine/UI work in `docs/TASKS.md` is scoped against that inventory.
+- Recurring **"program-to-system field" (`&NAME`) indirection** on most
+  AFPDS sizing/naming parameters (font, library, code page, point sizes) —
+  see `docs/KEYWORD-INVENTORY.md` §5. Already flagged as a known limitation
+  below; the inventory doc confirms it's pervasive rather than rare.
 - Round-trip guarantee: parse → model → regenerate must reproduce byte-identical
   source when nothing was edited (same test discipline I-SDA used against
   IBM's published DDS examples).

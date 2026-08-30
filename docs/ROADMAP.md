@@ -51,28 +51,71 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       CRTPRTF command parameter, so the tool can't detect it from source
       alone and this has to be a user setting, not something parsed.
 
-## Next up (not started)
+## Next up
 
-- [ ] Real `BARCODE` symbol rendering (actual bars, not a labeled
-      placeholder) — needs a barcode-generation library and is a larger
-      lift than the other v1 items; placeholder box was the pragmatic
-      choice per the requirements doc.
-- [ ] Page segment / overlay resource placeholders (labeled boxes) once a
-      resource-resolution strategy is decided.
-- [ ] Keyword-level editing in the properties panel (currently only the
-      positional attributes and one literal/name field are editable;
-      arbitrary keywords like `EDTCDE`, `COLOR`, `LINE`, `BOX` params
-      aren't exposed in the UI yet, though the writer/model already
-      support them).
-- [ ] `REF`/`REFFLD` resolution via Code for i (pull real type/length/
-      decimals from the referenced physical file) — flagged in the
-      requirements doc as something I-SDA also left as future work.
-- [ ] Compile command: let the user pick library/source-file/member
-      instead of assuming `*CURLIB/QDDSSRC`.
-- [ ] Packaging (`vsce package`) and a first `.vsix` for manual install/testing.
-- [ ] Real AFP font metrics, once available (see README's "AFPDS font
-      metrics" section) — this is the one open item from
+As of the RLU screen-capture review (`docs/KEYWORD-INVENTORY.md`), the
+remaining work is re-organized into the parallel-session task batches in
+`docs/TASKS.md` — each batch is scoped to be pickable up independently
+without stepping on another in-progress session. Summary (see TASKS.md for
+full detail, acceptance criteria, and file-level ownership per batch):
+
+- [ ] **Batch A — Properties-panel keyword editing, non-AFP-resource set:**
+      `EDTCDE`, `EDTWRD`, `DATE`/`DATFMT`/`DATSEP`, `TIME`/`TIMFMT`/`TIMSEP`,
+      `DFT`, `MSGCON`, `COLOR` (all 5 color models), `HIGHLIGHT`,
+      `UNDERLINE`, `PAGNBR`, `PRTQLTY`, `DRAWER`, `PAGRTT`.
+- [ ] **Batch B — Font/character-sizing keyword editing incl. P-field
+      indirection:** `FONT`, `CDEFNT`, `FNTCHRSET`, `FONTNAME`, `CHRSIZ`,
+      `CHRID`, `CCSID`, plus the generic literal-vs-P-field toggle component
+      these all share (see KEYWORD-INVENTORY §5) — build the toggle once,
+      reuse across this whole batch.
+- [ ] **Batch C — Real `BARCODE` parameter surface (still placeholder
+      rendering):** expose the full parameter set now confirmed in
+      KEYWORD-INVENTORY §3 (symbology id, height-in-lines-or-UOM, bar format,
+      HRI position, modifier, narrow bar width, wide:narrow ratio, 2D params)
+      in the properties panel, even before real symbol rendering exists.
+- [ ] **Batch D — Real `BARCODE` symbol rendering:** actual bars via a
+      barcode-generation library, once Batch C's parameters are wired up to
+      read from.
+- [ ] **Batch E — AFP page-group / resource keyword support:** `OVERLAY`
+      (record-level), `PAGSEG`, `STRPAGGRP`/`ENDPAGGRP`, `DOCIDXTAG`,
+      `AFPRSC`, `DTASTMCMD` — render as labeled placeholder boxes per
+      `docs/REQUIREMENTS.md` §8's documented hard limit (no real resource
+      pixel content), but make them visible/editable instead of silently
+      inert.
+- [ ] **Batch F — Print/finishing device keywords (no visual,
+      validation-only):** `DUPLEX`, `FORCE`, `OUTBIN`, `ZFOLD`, `STAPLE`,
+      `INVMMAP` — these don't affect the page-preview layout, just expose
+      them in the properties panel and validate against IBM's documented
+      restrictions (e.g. `ZFOLD`/`STAPLE`/`GDF` are PSF-only).
+- [ ] **Batch G — Field-level data/edit keywords:** `ALIAS`, `BLKFOLD`,
+      `CVTDTA`, `DLTEDT`, `FLTFIXDEC`, `FLTPCN`, `TRNSPY`, `TXTRTT`,
+      `INDTXT` (ties into the indicator-toggle panel's text labels — port
+      I-SDA's indicator-description UX).
+- [ ] **Batch H — `REF`/`REFFLD` resolution via Code for i:** pull real
+      type/length/decimals from the referenced physical file; also model
+      RLU's own "Reference a field" / "Use referenced values" toggle pair
+      confirmed in KEYWORD-INVENTORY §3, since that's the UI shape to match.
+- [x] ~~Batch I — `UOM` (unit of measure) modeling~~ — **done**: see
+      `i-rlu.unitOfMeasure` setting above. The remaining piece — validating
+      that file-level `SKIPA`/`SKIPB` isn't allowed on `*AFPDS` files
+      (KEYWORD-INVENTORY §1) — is still open; folded into Batch F's
+      validation work rather than kept as its own batch.
+- [ ] **Batch J — Compile command polish:** let the user pick
+      library/source-file/member instead of assuming `*CURLIB/QDDSSRC`.
+- [ ] **Batch K — Packaging:** `vsce package` and a first `.vsix` for manual
+      install/testing.
+- [ ] **Batch L — Real AFP font metrics**, once available (see README's
+      "AFPDS font metrics" section) — the one open item from
       `docs/REQUIREMENTS.md` §9.
+- [ ] **Batch M — Bug fix:** `prtfWriter.js` always emits `+` continuation
+      when wrapping a keyword area, even at a space boundary where `-` is
+      needed to preserve the space — corrupts tokens like
+      `PAGSEG(COMPLOGO 0.5 0.5)` on round-trip. Found via the new
+      `sample-afpds.pf` fixture; full repro and fix scope in `docs/TASKS.md`.
+
+Each batch's keyword list, current model/parser/engine status
+(modeled/rendered/UI), and IBM-documented gotchas are detailed in
+`docs/KEYWORD-INVENTORY.md`; don't re-derive them from scratch per batch.
 
 ## Explicit open decision points (carried from REQUIREMENTS.md)
 
