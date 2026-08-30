@@ -21,8 +21,17 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       reference after an earlier draft used a fictitious `DRAW` keyword —
       and `BARCODE` (field-level, IPDS/AFPDS-only) resolved to a labeled
       placeholder with symbology id, direction, and line-count height.
-- [x] Placeholder AFP font-metrics module with a clear seam for real font
-      data later.
+- [x] `FONT`/FGID resolution: a verified FGID table (Courier/Gothic fixed
+      families, Helvetica/Times New Roman proportional families,
+      point-size-to-CPI conversion for scalable monospace fonts), sourced
+      against IBM's own FGID/typeface documentation. Corrected an error
+      from an earlier reference along the way (FGID 416 is Courier Roman
+      Medium, not "Times Roman" as that reference had it — regression
+      test guards this). Field-level `FONT` overrides record-level
+      overrides file-level, matching DDS's own precedence.
+- [x] Character grid now derived from the record's actual CPI/LPI via the
+      standard 96dpi formula (`cellWidthPx = 96/CPI`, `cellHeightPx =
+      96/LPI`) instead of hardcoded pixel constants.
 - [x] Extension host: `CustomTextEditorProvider` registered for `.pf`/
       `.prtf`/`.rlu` (local, `member:`, and `streamfile:` schemes).
 - [x] Webview: page-grid rendering, record-format switcher, indicator
@@ -38,12 +47,14 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       spot on the page, fill in a form, and the new entry is inserted into
       the source right after the record's last existing entry.
 - [x] `CRTPRTF` compile command via Code for i's `runCommand` API.
-- [x] Test suite (21 tests): parser correctness, round-trip fidelity,
+- [x] Test suite (30 tests): parser correctness, round-trip fidelity,
       engine resolution (incl. indicator toggling, LINE/BOX geometry with
       hand-verified expected coordinates, BARCODE line-count and
       default-height cases, uom inch/cm conversion with hand-verified
-      math), id stability, and edit-then-reparse round-trips for move/add
-      field/add constant/delete/update.
+      math, FONT/FGID resolution and precedence, the FGID-416 regression
+      check, and CPI/LPI-to-pixel grid math), id stability, and
+      edit-then-reparse round-trips for move/add field/add constant/
+      delete/update.
 - [x] `i-rlu.unitOfMeasure` VS Code setting (inch/cm, default inch) so
       LINE/BOX/BARCODE measurements convert correctly for shops that
       compile with `CRTPRTF UOM(*CM)`. Important correction to an earlier
@@ -110,9 +121,30 @@ full detail, acceptance criteria, and file-level ownership per batch):
       library/source-file/member instead of assuming `*CURLIB/QDDSSRC`.
 - [ ] **Batch K — Packaging:** `vsce package` and a first `.vsix` for manual
       install/testing.
-- [ ] **Batch L — Real AFP font metrics**, once available (see README's
-      "AFPDS font metrics" section) — the one open item from
-      `docs/REQUIREMENTS.md` §9.
+- [x]/[ ] **Batch L — Real AFP font metrics — partially done.** `FONT`/FGID
+      *identification* is now resolved: a verified FGID table (Courier/
+      Gothic fixed families, Helvetica/Times New Roman proportional
+      families, point-size-to-CPI conversion for scalable monospace fonts),
+      sourced against IBM's own FGID/typeface documentation, with
+      field-over-record-over-file precedence matching DDS's own rules.
+      Caught and corrected an error from an earlier reference along the way
+      (FGID 416 is Courier Roman Medium, not "Times Roman" as that
+      reference had it — regression test guards this). **Still open, and
+      still the blocked part of Batch L:** real per-glyph advance widths
+      for the proportional (Helvetica/Times New Roman) families — current
+      implementation uses a rough placeholder table, not IBM's actual font
+      character-set/code-page width data; and `CDEFNT`/`FNTCHRSET`/
+      `FONTNAME` resolution, which reference host/IFS font objects that
+      `FONT`/FGID doesn't touch at all (these overlap with Batch B's scope
+      for the DDS-editing side, but the actual metric/resource data behind
+      them is Batch L's blocker). A promising direction raised for closing
+      the remaining gap: extracting real font data from a connected IBM i
+      (TrueType files under `/QIBM/UserData/OS400/Fonts/TTF/`, or FOCA font
+      character-set metrics via host APIs) — worth pursuing, but the
+      specific paths/API names haven't been independently verified yet, so
+      nothing's been built against them. See `src/afpFontMetrics.js` for
+      the full table and sourcing notes, and `docs/TASKS.md` Batch L for
+      the canonical status (update that file too if you pick this back up).
 
 Each batch's keyword list, current model/parser/engine status
 (modeled/rendered/UI), and IBM-documented gotchas are detailed in
@@ -120,5 +152,8 @@ Each batch's keyword list, current model/parser/engine status
 
 ## Explicit open decision points (carried from REQUIREMENTS.md)
 
-- Font resource access (§9) — still open; using placeholder metrics until
-  real font data is supplied.
+- Font resource access (§9) — partially resolved. FGID identification
+  (which font family/spacing a `FONT` keyword refers to) is now backed by
+  a verified table. Real per-glyph metrics for proportional fonts, and any
+  resolution of `CDEFNT`/`FNTCHRSET`/`FONTNAME`, are still open — see the
+  two items directly above.

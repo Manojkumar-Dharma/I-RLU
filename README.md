@@ -51,21 +51,39 @@ for printer files (verified against IBM's DDS reference, not guessed):
 45-80  Keyword area (continues onto following lines via '+'/'-' in column 80)
 ```
 
-## AFPDS font metrics — placeholder pending real font data
-
-Per project decision, AFPDS is in scope from day one rather than deferred
-behind SCS. However, genuinely accurate AFP text layout needs IBM's real
-font character-set/code-page resource data, which isn't available yet.
-`src/afpFontMetrics.js` currently uses a monospace default plus a rough
-proportional stand-in table, clearly marked as a placeholder. Swap in real
-font metrics there once that data is available — nothing else in the engine
-needs to change, since it only calls `getAdvanceWidth(fontId, char)`.
-
 ## Settings
 
 | Setting | Default | What it does |
 |---|---|---|
 | `i-rlu.unitOfMeasure` | `inch` | Unit of measure I-RLU assumes when converting `LINE`/`BOX`/`BARCODE` physical measurements to the preview's character grid. There is no `UOM` DDS keyword — this is a `CRTPRTF` command parameter the tool can't see from source, so set this to match what your shop actually compiles with. |
+
+## AFPDS font metrics
+
+`FONT`'s parameter is a Font Global Identifier (FGID) — a different DDS
+mechanism from `CDEFNT` ("coded font"), `FNTCHRSET` (host font
+character-set + code page), or `FONTNAME` (TrueType/OpenType by name).
+`src/afpFontMetrics.js` resolves `FONT`/FGID against a table verified
+against IBM's own FGID/typeface documentation (Printer Device Programming,
+the AFP Font Collection reference, and IBM support pages), covering the
+common Courier/Gothic (fixed-pitch) and Helvetica/Times New Roman
+(proportional) families, plus point-size-to-CPI conversion for scalable
+monospace fonts. One correction worth calling out: an early reference this
+project drew on mislabeled FGID 416 as "Times Roman" — it's actually
+Courier Roman Medium; real Times New Roman Medium is FGID 2308. There's a
+regression test (`FGID 416 correctly resolves to Courier Roman Medium...`)
+guarding against that mistake resurfacing.
+
+What's still an approximation: proportional-font (Helvetica/Times)
+character widths use a rough placeholder table, not real per-glyph font
+metrics — genuinely accurate proportional layout still needs real font
+resource data (per your earlier note, that's still pending). `CDEFNT`,
+`FNTCHRSET`, and `FONTNAME` aren't resolved at all yet — those reference
+host/IFS font objects this tool doesn't have access to. Extracting real
+metrics from a live IBM i (TrueType files under
+`/QIBM/UserData/OS400/Fonts/TTF/`, or FOCA font objects via host APIs) is a
+promising direction for later, but the specific paths/API names haven't
+been independently verified yet, so it's not implemented against unverified
+specifics — see `docs/ROADMAP.md`.
 
 ## Building and testing
 

@@ -175,11 +175,31 @@ also supplied to the tool. Worth flagging in the README's "Known
 limitations" section from the first release rather than presenting AFPDS
 support as fully WYSIWYG.
 
-## 9. Remaining open question
-**Font resource access** — for genuinely accurate AFP text layout (not just
-"proportional-ish"), the font character-set/code-page width tables IBM
-ships are the real source of truth. Do you have access to those resource
-description files (or a live IBM i you can pull `WRKFNTRSC`/font info from),
-or should v1 use approximated PC-font metrics as a stand-in until real font
-data is available? This is the one piece that meaningfully affects how
-"true WYSIWYG" the AFPDS preview can honestly claim to be at launch.
+## 9. Font resource access — update
+
+**Resolved (in part):** `FONT`/FGID identification is now backed by a
+table verified against IBM's own FGID/typeface documentation (Printer
+Device Programming, the AFP Font Collection reference, IBM support pages
+on font substitution). It correctly distinguishes fixed-pitch families
+(Courier, Gothic, OCR A/B) from proportional ones (Helvetica, Times New
+Roman), including the scalable-but-still-monospace Courier FGIDs
+(416/420/424/428), and converts *POINTSIZE for scalable monospace fonts to
+an equivalent CPI. One correction made along the way: an earlier version of
+this table (mislabeling FGID 416 as "Times Roman") was checked against IBM
+docs and fixed — real Times New Roman Medium is FGID 2308. See
+`src/afpFontMetrics.js` for the full table and sourcing notes.
+
+**Still open:** real per-glyph advance widths for the proportional
+(Helvetica/Times New Roman) families — the current implementation uses a
+rough placeholder table, not IBM's actual font character-set/code-page
+width data, so proportional text still lays out approximately, not
+precisely. Also still unresolved: `CDEFNT` (coded font), `FNTCHRSET` (host
+font character set + code page), and `FONTNAME` (TrueType/OpenType by
+name) — these reference host/IFS font objects that `FONT`/FGID doesn't
+touch at all, and none of the three are parsed for font resolution yet. A
+promising direction raised for closing this gap: extracting real font data
+from a connected IBM i (TrueType files under
+`/QIBM/UserData/OS400/Fonts/TTF/`, or FOCA font character-set metrics via
+host APIs) — worth pursuing, but the specific paths/API names for that
+haven't been independently verified yet, so nothing has been built against
+them.

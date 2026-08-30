@@ -11,14 +11,19 @@
  * line/position are omitted, indicator conditioning, geometry for the
  * `LINE` and `BOX` keywords (record-level, AFPDS-only, specified in
  * physical units and converted here to the same character grid fields use
- * via CPI/LPI — see resolveCpiLpi below), and a labeled placeholder for
+ * via CPI/LPI — see resolveCpiLpi below), a labeled placeholder for
  * `BARCODE` (field-level, IPDS/AFPDS-only — real symbol rendering is out
- * of scope, see parseBarcodeGeometry). AFPDS font-accurate character
- * widths are applied when a non-default FONT keyword is present and
- * afpFontMetrics has a table for it; otherwise layout assumes a monospace
- * cell grid (accurate for SCS, an approximation for AFPDS pending real font
- * resource data — see docs/REQUIREMENTS.md §9).
+ * of scope, see parseBarcodeGeometry), and `FONT`/FGID resolution (see
+ * afpFontMetrics.js for the verified FGID table and its limits). Note that
+ * a field's *grid position* (line/column) always follows the record's own
+ * CPI/LPI regardless of a per-field FONT override — only the rendered
+ * font family/weight/style/size follow the resolved FONT; true per-field
+ * pitch-driven repositioning is not modeled, since DDS's own "Location"
+ * columns are themselves already in terms of the record's nominal grid.
  */
+
+// eslint-disable-next-line no-undef
+const AfpFontMetrics = typeof module !== "undefined" && module.exports ? require("./afpFontMetrics.js") : window.AfpFontMetrics;
 
 function findKeyword(keywords, name) {
   return (keywords || []).find((k) => k.name === name);
@@ -78,6 +83,38 @@ function resolveCpiLpi(record, fileLevel) {
   const cpiKw = findKeyword(record.keywords, "CPI") || findKeyword(fileLevel.keywords, "CPI");
   const lpiKw = findKeyword(record.keywords, "LPI") || findKeyword(fileLevel.keywords, "LPI");
   return { cpi: numericParam(cpiKw, 10), lpi: numericParam(lpiKw, 6) };
+}
+
+/**
+ * FONT(fgid [(*POINTSIZE height [width])]) — e.g. FONT(2305 (*POINTSIZE
+ * 18)) or plain FONT(11). Verified against IBM's DDS reference example
+ * ("Example: Specifying a font"). Handles the nested-parens *POINTSIZE
+ * form, which the generic paramTokens() helper (used for LINE/BOX/BARCODE)
+ * doesn't attempt.
+ */
+function parseFontKeyword(kw) {
+  const inner = String(kw.params || "").replace(/^\(/, "").replace(/\)$/, "").trim();
+  const fgidMatch = inner.match(/^(\S+)/);
+  const fgid = fgidMatch ? fgidMatch[1] : undefined;
+  const approximate = isFieldRef(fgid);
+  let pointSize;
+  const psMatch = inner.match(/\(\s*\*POINTSIZE\s+([\d.]+)(?:\s+([\d.]+))?\s*\)/i);
+  if (psMatch) {
+    pointSize = { height: Number(psMatch[1]), width: psMatch[2] ? Number(psMatch[2]) : undefined };
+  }
+  return { fgid: approximate ? AfpFontMetrics.DEFAULT_FGID : fgid, pointSize, approximate };
+}
+
+/**
+ * Resolves the effective FONT for a field/constant entry: field-level
+ * FONT keyword takes precedence, then record-level, then file-level, then
+ * IBM i's own default substitution target (Courier 10 pitch, FGID 11 —
+ * see afpFontMetrics.js).
+ */
+function resolveFont(entry, record, fileLevel) {
+  const kw = findKeyword(entry.keywords, "FONT") || findKeyword(record.keywords, "FONT") || findKeyword(fileLevel.keywords, "FONT");
+  if (!kw) return { fgid: AfpFontMetrics.DEFAULT_FGID, pointSize: undefined, approximate: false };
+  return parseFontKeyword(kw);
 }
 
 /**
@@ -232,6 +269,8 @@ function resolveLayout(model, recordName, indicatorState, uom) {
         ? entry.literal.length
         : entry.length || 1;
     const barcodeKw = entry.kind === "field" ? findKeyword(entry.keywords, "BARCODE") : undefined;
+    const font = resolveFont(entry, record, model.fileLevel);
+    const fontInfo = AfpFontMetrics.getFontInfo(font.fgid);
 
     cells.push({
       id: entry.id,
@@ -248,6 +287,17 @@ function resolveLayout(model, recordName, indicatorState, uom) {
       usage: entry.kind === "field" ? entry.usage : undefined,
       literal: entry.kind === "constant" ? entry.literal : undefined,
       barcode: barcodeKw ? parseBarcodeGeometry(barcodeKw, lpi, uom) : undefined,
+      font: {
+        fgid: font.fgid,
+        name: fontInfo.name,
+        family: fontInfo.family,
+        spacing: fontInfo.spacing,
+        weight: fontInfo.weight,
+        style: fontInfo.style,
+        pointSize: font.pointSize,
+        approximate: font.approximate,
+        isPlaceholderMetrics: AfpFontMetrics.isPlaceholder(font.fgid),
+      },
     });
 
     cursorLine = line;
@@ -266,6 +316,11 @@ function resolveLayout(model, recordName, indicatorState, uom) {
     cells,
     draws,
     skippedByIndicator: skipped.map((e) => (e.kind === "field" ? e.name : e.literal || "(constant)")),
+    // Pixel grid derived from the record's CPI/LPI at 96 DPI (standard web
+    // display density): cellWidthPx = 96/CPI, cellHeightPx = 96/LPI. This
+    // is the same character-cell grid RLU itself was built around, just
+    // expressed in the units a webview needs.
+    grid: { cpi, lpi, cellWidthPx: 96 / cpi, cellHeightPx: 96 / lpi },
   };
 }
 

@@ -7,6 +7,8 @@ import { parseSource } from "../src/prtfParser";
 const { regenerateSource } = require("../src/prtfWriter.js");
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { resolveLayout, listRecordNames, collectIndicators } = require("../src/prtfEngine.js");
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const AfpFontMetrics = require("../src/afpFontMetrics.js");
 
 const fixturePath = path.join(__dirname, "fixtures", "sample1.pf");
 
@@ -297,4 +299,88 @@ test("engine: uom='cm' converts LINE/BOX/BARCODE measurements differently than i
   assert.equal(boxCm.row2, Math.round((1 / 2.54) * 6) + 1);
   // 6cm -> 6/2.54 in * 10 cpi = 23.6 -> round 24, +1 = 25.
   assert.equal(boxCm.col2, Math.round((6 / 2.54) * 10) + 1);
+});
+
+test("engine: fields default to FGID 11 (Courier 10 pitch, fixed spacing) when no FONT keyword is present", () => {
+  const model = parseSource(fs.readFileSync(fixturePath, "utf8"));
+  const layout = resolveLayout(model, "HEADER", {});
+  const custname = layout.cells.find((c: any) => c.name === "CUSTNAME");
+  assert.equal(custname.font.fgid, "11");
+  assert.equal(custname.font.spacing, "fixed");
+  assert.equal(custname.font.isPlaceholderMetrics, false);
+});
+
+test("engine: field-level FONT keyword overrides record-level, and correctly resolves a proportional FGID", () => {
+  const model = parseSource(fs.readFileSync(fixturePath, "utf8"));
+  const header = model.records.find((r) => r.name === "HEADER")!;
+  const custname = header.fields.find((f: any) => f.name === "CUSTNAME") as any;
+  custname.keywords.push({ name: "FONT", params: "(2304 (*POINTSIZE 18))", raw: "FONT(2304 (*POINTSIZE 18))", sourceLineIndex: -1 });
+  const layout = resolveLayout(model, "HEADER", {});
+  const cell = layout.cells.find((c: any) => c.name === "CUSTNAME");
+  assert.equal(cell.font.fgid, "2304");
+  assert.equal(cell.font.name, "Helvetica Roman Medium");
+  assert.equal(cell.font.spacing, "proportional");
+  assert.equal(cell.font.isPlaceholderMetrics, true);
+  assert.deepEqual(cell.font.pointSize, { height: 18, width: undefined });
+});
+
+test("engine: FGID 416 correctly resolves to Courier Roman Medium (fixed), not Times Roman", () => {
+  // Regression test for a specific correction made during development: an
+  // earlier reference this project drew on mislabeled FGID 416 as "Times
+  // Roman". IBM's own FGID/typeface documentation confirms 416 is Courier
+  // Roman Medium (fixed/monospace); real Times New Roman Medium is 2308.
+  const model = parseSource(fs.readFileSync(fixturePath, "utf8"));
+  const header = model.records.find((r) => r.name === "HEADER")!;
+  header.keywords.push({ name: "FONT", params: "(416)", raw: "FONT(416)", sourceLineIndex: -1 });
+  const layout = resolveLayout(model, "HEADER", {});
+  const cell = layout.cells.find((c: any) => c.name === "CUSTNAME");
+  assert.equal(cell.font.name, "Courier Roman Medium");
+  assert.equal(cell.font.spacing, "fixed");
+  assert.notEqual(cell.font.name, "Times Roman");
+});
+
+test("engine: grid pixel dimensions follow the 96dpi CPI/LPI formula", () => {
+  const model = parseSource(fs.readFileSync(fixturePath, "utf8"));
+  const layout = resolveLayout(model, "HEADER", {});
+  // Fixture's HEADER record has no explicit CPI/LPI, so defaults apply
+  // (10 CPI, 6 LPI) -> 96/10 = 9.6px per char, 96/6 = 16.0px per line.
+  assert.equal(layout.grid.cpi, 10);
+  assert.equal(layout.grid.lpi, 6);
+  assert.equal(layout.grid.cellWidthPx, 9.6);
+  assert.equal(layout.grid.cellHeightPx, 16.0);
+});
+
+test("afpFontMetrics: FGID table entries match IBM's documented typeface names (spot checks)", () => {
+  assert.equal(AfpFontMetrics.getFontInfo("11").name, "Courier 10 (10 pitch)");
+  assert.equal(AfpFontMetrics.getFontInfo("11").spacing, "fixed");
+  assert.equal(AfpFontMetrics.getFontInfo("2304").name, "Helvetica Roman Medium");
+  assert.equal(AfpFontMetrics.getFontInfo("2304").spacing, "proportional");
+  assert.equal(AfpFontMetrics.getFontInfo("2308").name, "Times New Roman Medium");
+  // The specific correction: 416 is Courier, not Times Roman.
+  assert.equal(AfpFontMetrics.getFontInfo("416").name, "Courier Roman Medium");
+  assert.equal(AfpFontMetrics.getFontInfo("416").spacing, "fixed");
+});
+
+test("afpFontMetrics: unknown FGID falls back to the default (Courier 10 pitch)", () => {
+  const info = AfpFontMetrics.getFontInfo("999999");
+  assert.equal(info.name, "Courier 10 (10 pitch)");
+});
+
+test("afpFontMetrics: getAdvanceWidth is always 1.0 for fixed-spacing fonts regardless of character", () => {
+  assert.equal(AfpFontMetrics.getAdvanceWidth("11", "i"), 1.0);
+  assert.equal(AfpFontMetrics.getAdvanceWidth("11", "W"), 1.0);
+  assert.equal(AfpFontMetrics.getAdvanceWidth("416", "m"), 1.0);
+});
+
+test("afpFontMetrics: getAdvanceWidth varies by character for proportional fonts and is flagged as placeholder", () => {
+  const wideChar = AfpFontMetrics.getAdvanceWidth("2304", "W");
+  const narrowChar = AfpFontMetrics.getAdvanceWidth("2304", "i");
+  assert.ok(wideChar > narrowChar, "W should be wider than i in a proportional font");
+  assert.equal(AfpFontMetrics.isPlaceholder("2304"), true);
+  assert.equal(AfpFontMetrics.isPlaceholder("11"), false);
+});
+
+test("afpFontMetrics: pointSizeToCpi follows IBM's documented reference point (12pt = 10 CPI)", () => {
+  assert.equal(AfpFontMetrics.pointSizeToCpi(12), 10);
+  assert.equal(AfpFontMetrics.pointSizeToCpi(6), 20);
 });

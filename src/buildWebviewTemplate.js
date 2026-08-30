@@ -70,7 +70,7 @@ const generated =
   "<body>\n" +
   "<div id=\"root\"></div>\n" +
   "<script nonce=\"${nonce}\">\n" +
-  "${engineJs}\n${fontMetricsJs}\n${clientJs}\n" +
+  "${fontMetricsJs}\n${engineJs}\n${clientJs}\n" +
   "</script>\n" +
   "</body>\n" +
   "</html>`;\n" +

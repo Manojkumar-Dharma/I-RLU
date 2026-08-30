@@ -38,8 +38,8 @@
     pendingNew: null, // { kind, line, position } — set right after a placement click, before Save
   };
 
-  const CELL_W = 8; // px per character column, monospace grid
-  const CELL_H = 18; // px per line row
+  let CELL_W = 8; // px per character column — recomputed per record from CPI via layout.grid (96/CPI); see render()
+  let CELL_H = 18; // px per line row — recomputed per record from LPI via layout.grid (96/LPI)
 
   function el(tag, attrs, children) {
     const e = document.createElement(tag);
@@ -69,6 +69,10 @@
     root.appendChild(renderToolbar());
 
     const layout = currentLayout();
+    if (layout.grid) {
+      CELL_W = layout.grid.cellWidthPx;
+      CELL_H = layout.grid.cellHeightPx;
+    }
     const main = el("div", { class: "main" });
     main.appendChild(renderRuler(layout));
     main.appendChild(renderPage(layout));
@@ -196,6 +200,23 @@
       const isVerticalBarcode = cell.barcode && cell.barcode.direction === "vertical";
       const w = (isVerticalBarcode ? cell.barcode.heightLines : cell.length) * CELL_W;
       const h = (isVerticalBarcode ? cell.length : cell.barcode ? cell.barcode.heightLines : 1) * CELL_H;
+      const fontCss = cell.font
+        ? `font-family:${cell.font.family};` +
+          (cell.font.weight ? `font-weight:${cell.font.weight};` : "") +
+          (cell.font.style ? `font-style:${cell.font.style};` : "")
+        : "";
+      const fontTitle =
+        cell.font && !cell.barcode
+          ? "Font: " +
+            cell.font.name +
+            " (FGID " +
+            cell.font.fgid +
+            ", " +
+            cell.font.spacing +
+            ")" +
+            (cell.font.isPlaceholderMetrics ? " — proportional widths are an approximation, not verified font metrics." : "") +
+            (cell.font.approximate ? " Font is set by a program-to-system field; shown using the default font." : "")
+          : "";
       const div = el(
         "div",
         {
@@ -204,7 +225,7 @@
             (cell.kind === "constant" ? " constant" : " field") +
             (cell.barcode ? " barcode" : "") +
             (cell.id === state.selectedId ? " selected" : ""),
-          style: `position:absolute;left:${(cell.position - 1) * CELL_W}px;top:${(cell.line - 1) * CELL_H}px;width:${w}px;height:${h}px;`,
+          style: `position:absolute;left:${(cell.position - 1) * CELL_W}px;top:${(cell.line - 1) * CELL_H}px;width:${w}px;height:${h}px;${fontCss}`,
           title: cell.barcode
             ? "Barcode placeholder — " +
               cell.barcode.barCodeId +
@@ -212,7 +233,7 @@
               cell.barcode.direction +
               "). Actual bar symbol not rendered." +
               (cell.barcode.approximateHeight ? " Height shown is a default estimate." : "")
-            : "",
+            : fontTitle,
           draggable: "true",
         },
         cell.barcode
