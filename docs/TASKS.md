@@ -35,7 +35,7 @@ git config user.email "manojkumar.dharmalingam@gmail.com"
 | Layout/rendering logic | `src/prtfEngine.js` | Most batches that add rendering (C, D, E, I). |
 | Webview UI (properties panel, pickers) | `media/webviewClient.js`, `src/buildWebviewTemplate.js` | Most batches that add UI (A, B, C, F, G, H). |
 | AFP font metrics | `src/afpFontMetrics.js` | Batch L only. |
-| Extension host / compile command | `src/extension.ts` | Batch J only. |
+| Extension host / compile command | `src/extension.ts` | Batch J for the compile-command work; Batch F added generic `setRecordKeyword`/`removeRecordKeyword` edit kinds here that A/B/G should reuse rather than adding parallel bespoke edit-kind handlers — check `applyEdit` before inventing a new one. |
 | Tests | `test/` | Every batch adds its own test file(s) — don't edit another batch's test file. |
 
 **To minimize merge conflicts across parallel sessions**, prefer adding new
@@ -68,27 +68,31 @@ vice versa.
 | `CRTPRTF` assumes `*CURLIB/QDDSSRC`, no library/source-file/member picker | Actionable | Batch **J** |
 | No packaging (`.vsix`) | Actionable | Batch **K** |
 | Font resource access unresolved (§9) — real AFP font metrics vs. placeholder | **Partially done** — FGID identification verified/resolved; per-glyph proportional metrics and CDEFNT/FNTCHRSET/FONTNAME resolution still blocked | Batch **L** |
+| The record-format `<select>` dropdown (toolbar) only switches between record formats already present in the source — no way to add, rename, delete, or reorder a record format from the designer itself | Actionable, previously untracked (this isn't in README/REQUIREMENTS' Known-limitations lists at all — raised separately, added here for the same tracking discipline) | New **Batch P** (no dependency — the record `<select>` and `applyEdit`'s edit-kind dispatch already exist to build on) |
+| The properties panel supports add/update/delete for fields and constants, but not copy/duplicate — cloning a field with its keywords intact (a common RLU/SEU-era workflow for building up repetitive detail-line layouts) requires manually re-entering every attribute and keyword on a new field | Actionable, previously untracked | New **Batch Q** (no dependency — sits directly next to the existing Delete button in `renderEditPanel`, and can reuse `addField`/`addConstant`'s edit-kind shape) |
 
 ## Task board
 
 
 | Batch | Description | Keywords in scope | Status | Depends on |
 |---|---|---|---|---|
-| A | Properties-panel editing: general field/record keywords | `EDTCDE`, `EDTWRD`, `DATE`, `DATFMT`, `DATSEP`, `TIME`, `TIMFMT`, `TIMSEP`, `DFT`, `MSGCON`, `COLOR`, `HIGHLIGHT`, `UNDERLINE`, `PAGNBR`, `PRTQLTY`, `DRAWER`, `PAGRTT` | Not started | none |
+| A | Properties-panel editing: general field/record keywords | `EDTCDE`, `EDTWRD`, `DATE`, `DATFMT`, `DATSEP`, `TIME`, `TIMFMT`, `TIMSEP`, `DFT`, `MSGCON`, `COLOR`, `HIGHLIGHT`, `UNDERLINE`, `PAGNBR`, `PRTQLTY`, `DRAWER`, `PAGRTT` | **In progress** | none |
 | B | Font/sizing keyword editing + shared P-field toggle component | `FONT`, `CDEFNT`, `FNTCHRSET`, `FONTNAME`, `CHRSIZ`, `CHRID`, `CCSID` | Not started | none (but A and C benefit from B's P-field component if B lands first) |
 | C | `BARCODE` full parameter surface (still placeholder render) | `BARCODE` | Not started | none |
 | D | `BARCODE` real symbol rendering | `BARCODE` | Not started | **C** |
 | E | AFP page-group / resource keyword placeholders | `OVERLAY` (record), `PAGSEG`, `STRPAGGRP`, `ENDPAGGRP`, `DOCIDXTAG`, `AFPRSC`, `DTASTMCMD` | Not started | none |
-| F | Print/finishing keywords, validation-only | `DUPLEX`, `FORCE`, `OUTBIN`, `ZFOLD`, `STAPLE`, `INVMMAP` | Not started | none |
+| F | Print/finishing keywords, validation-only | `DUPLEX`, `FORCE`, `OUTBIN`, `ZFOLD`, `STAPLE`, `INVMMAP` | **Done** | none |
 | G | Field-level data/edit keywords + indicator text | `ALIAS`, `BLKFOLD`, `CVTDTA`, `DLTEDT`, `FLTFIXDEC`, `FLTPCN`, `TRNSPY`, `TXTRTT`, `INDTXT` | Not started | none |
 | H | `REF`/`REFFLD` resolution via Code for i | `REF`, `REFFLD` | Part 1 (UI shape + pure resolution logic) done; part 2 (live Code for i round-trip) written but unverified — needs a real connected IBM i | none (needs a live/mocked Code for i connection for full completion — can land the UI shape without it) |
-| I | ~~`UOM` modeling~~ **done elsewhere** (see `i-rlu.unitOfMeasure` setting, `docs/ROADMAP.md`) + file-level SKIPA/SKIPB *AFPDS validation still open | `SKIPA`, `SKIPB` (validation only) | UOM done; validation not started | none |
+| I | ~~`UOM` modeling~~ **done elsewhere** (see `i-rlu.unitOfMeasure` setting, `docs/ROADMAP.md`) + file-level SKIPA/SKIPB *AFPDS validation | `SKIPA`, `SKIPB` (validation only) | **Done** (validation landed as part of Batch F — see `prtfEngine.js`'s `validateFileLevelKeywords`) | none |
 | J | Compile command: library/source-file/member picker | n/a (tooling) | Not started | none |
-| K | Packaging (`.vsix`) | n/a (tooling) | Not started | ideally after A–I land, but can be prepped early |
+| K | Packaging (`.vsix`) | n/a (tooling) | **Done** | ideally after A–I land, but can be prepped early |
 | L | Real AFP font metrics | n/a (data) | Partially done — FGID identification resolved; per-glyph proportional metrics + CDEFNT/FNTCHRSET/FONTNAME still blocked, see REQUIREMENTS.md §9 | none |
 | M | ~~**Bug fix:** writer emits wrong continuation character when wrapping mid-token~~ | n/a (parser/writer correctness) | **Done** | none |
 | N | `BARCODE` mutual-exclusion validation | `BARCODE` (validation vs. `FONT`, `EDTCDE`, `EDTWRD`, `DATE`, `TIME`, `PAGNBR`, etc.) | Not started | **C** |
 | O | Real AFP resource rendering (actual pixel content for page segments/overlays) | `PAGSEG`, `OVERLAY` (record-level) | Blocked — needs external resource files, see REQUIREMENTS.md §8 | **E** |
+| P | Add/rename/delete/reorder record formats from the designer | n/a (tooling/UI, not a keyword) | Not started | none |
+| Q | Copy/duplicate a field or constant | n/a (tooling/UI, not a keyword) | Not started | none |
 
 ## Batch detail
 
@@ -141,14 +145,37 @@ it once it exists.
 - Tests: round-trip literal and P-field variants of each keyword.
 
 ### Batch C — BARCODE parameter surface
+**Current state, precisely** (checked against `src/prtfEngine.js`'s
+`parseBarcodeGeometry`, added in the BARCODE placeholder commit before this
+task board existed): the engine already **parses** bar-code-ID, direction
+(`*HRZ`/`*VRT`), an HRI on/off flag (`*HRI`/`*NOHRI` — see gap below), and
+height (plain line count 1–9, or a `(height *UOM)` physical measurement) —
+enough to size and label the placeholder box. None of this is editable in
+the properties panel today (that's this batch); and several parameters
+aren't parsed by the engine at all yet, not just unexposed in the UI:
+`*AST`/`*NOAST` (asterisk on CODE3OF9), the modifier hex byte, narrow bar
+width, wide:narrow ratio, and additional 2D parameters.
+
+**Known gap to fix as part of this batch, not carry forward:** the engine
+currently collapses `*HRI` and `*HRITOP` to the same boolean ("HRI is on"),
+losing the below-vs-above distinction RLU's own "Specify Bar Code" screen
+exposes as separate choices (1=Below/2=Above/3=None — KEYWORD-INVENTORY
+§3). Since this batch is adding the properties-panel form for HRI position
+anyway, fix `parseBarcodeGeometry` to track the three-way value at the same
+time, rather than leaving the engine's simplified boolean in place under a
+richer-looking UI that can't actually reflect what it saves.
+
 **Goal:** expose every parameter IBM's RLU screen shows (barcode-ID, height
 in lines or UOM, bar format, HRI position, asterisk-on-CODE3OF9, modifier,
 narrow bar width, wide:narrow ratio, additional 2D params — full list in
-KEYWORD-INVENTORY §3) in the properties panel. Rendering stays the existing
-labeled placeholder box; this batch is UI/model only.
+KEYWORD-INVENTORY §3) in the properties panel, parsing the ones the engine
+doesn't yet (listed above) so they at least round-trip correctly even
+before Batch D gives them visual meaning. Rendering stays the existing
+labeled placeholder box; this batch is UI/model/parsing, not rendering.
 - Validate ranges as shown on the RLU screen (e.g. ratio 2.00–3.00, narrow
   bar width 0.007–0.208) client-side in the webview form.
-- Tests: round-trip full BARCODE parameter set.
+- Tests: round-trip full BARCODE parameter set; a specific test for the
+  HRI three-way value (below/above/none) surviving edit-then-reparse.
 
 ### Batch D — BARCODE real rendering
 **Goal:** replace the placeholder box with an actual rendered symbol, reading
@@ -174,7 +201,7 @@ mentioned in the roadmap, and make the keyword's params editable.
   field and don't need deep parameter modeling.
 - Tests: round-trip + confirm placeholder box appears in engine output.
 
-### Batch F — Print/finishing keywords (validation only)
+### Batch F — Print/finishing keywords (validation only) [DONE]
 **Goal:** these don't change the page layout at all — they affect physical
 printer behavior. Just: (1) let them be added/edited/removed through the
 properties panel like any other keyword, (2) add validation warnings per
@@ -182,6 +209,33 @@ IBM's documented restrictions — `ZFOLD`, `STAPLE`, and `GDF` (if later added)
 are PSF-only; surfacing "this requires PSF printing" as a hint is enough,
 don't try to detect the target printer's actual capabilities.
 - Tests: round-trip only; no rendering test needed.
+
+**Implementation notes:**
+- `DUPLEX` takes `*NO`/`*YES`/`*TUMBLE`; `OUTBIN` takes `1`–`65535` or
+  `*DEVD`; `INVMMAP` takes a medium-map name. `FORCE`, `ZFOLD`, and `STAPLE`
+  take no parameters at all and must be emitted bare (`ZFOLD`, not
+  `ZFOLD()`) — confirmed against IBM's DDS reference before implementing.
+- `src/prtfEngine.js` adds `validateRecordKeywords(record)` (the
+  `ZFOLD`/`STAPLE` PSF-only hint) and `validateFileLevelKeywords(model)`
+  (the file-level `*AFPDS` `SKIPA`/`SKIPB` restriction, folded in from
+  Batch I per the row above). Both are validation-only — nothing here
+  blocks an edit; `CRTPRTF` remains the real enforcement point.
+- The `*AFPDS` check can't always know the target device type for certain
+  (`DEVTYPE` is usually a `CRTPRTF`/`CHGPRTF`/`OVRPRTF` command parameter,
+  not DDS source), *but* `DEVTYPE` is also a real optional DDS keyword —
+  when it's coded (file- or record-level) that's authoritative; only when
+  it's absent does the check fall back to an AFPDS-typical-keyword
+  heuristic (same "can't know for sure, best-effort" spirit as the
+  `i-rlu.unitOfMeasure` setting already uses for LINE/BOX/BARCODE).
+- Properties panel: since none of these six keywords affect the rendered
+  page, they get their own small always-visible per-record panel (checkbox
+  to add/remove + a value input where one applies) rather than living in
+  the click-a-cell panel used for fields/constants — see
+  `renderRecordKeywordsPanel` in `media/webviewClient.js`.
+- New edit kinds `setRecordKeyword`/`removeRecordKeyword` were added to
+  `extension.ts`'s `applyEdit` — generic enough that later keyword-panel
+  batches (A, B, G, etc.) can reuse them instead of adding their own.
+- Tests: `test/prtfBatchF.test.ts`.
 
 ### Batch G — Field-level data/edit keywords + indicator text
 **Goal:** `ALIAS` (simple rename field), `BLKFOLD`/`CVTDTA`/`DLTEDT`/
@@ -257,7 +311,7 @@ already used for the compile command's other prompts (check I-SDA's
 `CRTMNU` command implementation for the equivalent picker pattern, since
 `docs/REQUIREMENTS.md` explicitly models this compile command on I-SDA's).
 
-### Batch K — Packaging
+### Batch K — Packaging [DONE]
 **Goal:** `vsce package` producing a real `.vsix`. Mostly checking
 `package.json` metadata (icon, categories, publisher, repository fields all
 already partially present per `package.json`), adding a `.vscodeignore` if
@@ -265,6 +319,36 @@ missing (I-SDA has one — copy its shape, adjust for I-RLU's actual file
 list), and confirming `npm run compile` output is what gets packaged.
 Low-risk to do early even if other batches aren't finished — packaging an
 incomplete-but-working extension is fine for internal testing.
+
+**Implementation notes:**
+- **Found and fixed a real activation-breaking bug while confirming
+  "`npm run compile` output is what gets packaged":** `package.json`'s
+  `"main"` pointed at `./out/extension.js`, but `tsconfig.json`'s
+  `rootDir: "."` means `src/extension.ts` actually compiles to
+  `./out/src/extension.js` — the old path didn't exist. A packaged/installed
+  build would have failed to activate at all. Fixed by correcting `"main"`
+  to `./out/src/extension.js`; verified against the real `.vsix` manifest
+  (`unzip -p i-rlu-*.vsix extension/package.json`) rather than just the
+  source `package.json`, in case packaging rewrites paths.
+- Added `.vscodeignore` (I-SDA wasn't reachable to copy its shape from — it
+  doesn't appear to be a public repo — so this follows standard `vsce`
+  convention instead: ship `out/**/*.js` plus `package.json`/`README.md`,
+  exclude `src/`, `media/`, `test/`, `docs/`, source maps, and
+  `node_modules/` since there are no runtime `dependencies`).
+- Added `@vscode/vsce` as a devDependency, plus `vscode:prepublish` (runs
+  `npm run compile` — `vsce` invokes this automatically before packaging)
+  and `package` (`vsce package`) npm scripts.
+- Verified end-to-end: `npm run package` produces `i-rlu-0.0.1.vsix`
+  (43.96 KB, 12 files) with the corrected `main` entry point; `npm test`
+  still passes (50/50) afterward.
+- **Not done, flagged rather than guessed at:** `vsce package` warns that
+  no `LICENSE`/`LICENSE.md`/`LICENSE.txt` is present. Not fixed here since
+  choosing a license is the repo owner's call, not a packaging-mechanics
+  decision — add one (and a matching `"license"` field in `package.json`)
+  whenever that's decided. No `icon` was added either, for the same
+  "needs a real decision, not a default" reason — `vsce` packages fine
+  without one, VS Code just shows a generic icon in the Marketplace/Extensions
+  view until it's set.
 
 ### Batch L — Real AFP font metrics [PARTIALLY DONE]
 **FGID identification: done.** `src/afpFontMetrics.js` now resolves the
@@ -413,6 +497,130 @@ render the actual image/graphic at the position/size Batch E already
 computes.
 - Tests: will need real (or realistic sample) resource files as fixtures —
   can't be meaningfully tested with synthetic data alone.
+
+### Batch P — Add/rename/delete/reorder record formats from the designer
+**Source:** raised directly (not from README/REQUIREMENTS' existing Known
+limitations lists) — the toolbar's record-format `<select>` dropdown
+(`media/webviewClient.js`, present since the very first webview build) only
+lets you *switch between* record formats that already exist in the parsed
+source. There's currently no way to create a new record format, rename one,
+delete one, or change the order they appear in the source, from the
+designer itself — you'd have to drop into the raw DDS text editor for any
+of that, which somewhat defeats the point of a WYSIWYG designer for a file
+type where most real printer files have several record formats (header/
+detail/footer being the minimum common case).
+
+**No dependency**: unlike most other batches, this doesn't build on
+anything unfinished. The pieces it needs already exist:
+- `state.model.records` (an ordered array, per `src/prtfModel.ts`'s
+  `RecordFormatEntry[]`) is exactly the array a reorder operation would
+  splice, and exactly what the toolbar `<select>` already renders from.
+- `applyEdit`'s edit-kind dispatch in `src/extension.ts` (`move`,
+  `updateField`, `updateConstant`, `delete`, `setRecordKeyword`,
+  `removeRecordKeyword`, `addField`, `addConstant`) is the established
+  pattern to extend — add `addRecord`, `renameRecord`, `deleteRecord`, and
+  `reorderRecord` alongside these, not a parallel mechanism.
+
+**Goal:**
+1. **Add record format**: a "+ Record" affordance next to the toolbar's
+   `<select>` (matching the existing "+ Field"/"+ Constant" button style)
+   that prompts for a record-format name (validate: 1–10 chars, DDS name
+   rules — same validation the field-name input already applies, reuse it)
+   and inserts a new, empty `RecordFormatEntry` into `model.records`.
+   Decide and document where it's inserted (end of the file is the simplest
+   default; inserting after the currently-selected record is more
+   intuitive for building up a header/detail/footer sequence one at a time
+   — pick one and note the reasoning in the PR/commit, don't leave it
+   ambiguous).
+2. **Rename**: an edit affordance on the currently-selected record (a
+   pencil icon next to the `<select>`, or an editable-on-click label — match
+   whatever pattern feels most consistent with the existing field/constant
+   properties panel's own inline-edit conventions). Renaming a record format
+   must also update any `REF`/`REFFLD` keywords elsewhere in the *same*
+   model that reference the old name by name, or at minimum flag them as
+   now-dangling references rather than silently leaving them pointing at a
+   name that no longer exists — check how `REF`/`REFFLD` are modeled today
+   (Batch H hasn't landed real resolution yet, but the keyword text itself
+   still needs to stay consistent).
+3. **Delete**: remove a record format from `model.records` entirely (not
+   just clear its fields) with a confirmation step, since this is
+   destructive and, unlike deleting a single field/constant, can't be
+   trivially undone by re-adding — match VS Code's own undo/redo (the text
+   document edit should go through the normal edit application path so
+   `Ctrl+Z` in the underlying text editor still works, the same way
+   existing field/constant edits already do).
+4. **Reorder**: since DDS record-format order in the source can matter
+   (some shops rely on RLU's original top-to-bottom convention for
+   readability, and `STRPAGGRP`/`ENDPAGGRP` bracketing — KEYWORD-INVENTORY
+   §2 — is inherently order-sensitive), add up/down reordering (buttons, or
+   drag-to-reorder in whatever list view holds record names, if one exists
+   by the time this batch is picked up — otherwise simple up/down buttons
+   next to the `<select>` are enough for v1).
+
+**Scope note:** this batch is about the record-format *container* itself —
+it doesn't touch how fields/constants within a record are added or edited,
+which is already covered by existing UI. Don't let this batch creep into
+re-doing the field/constant properties panel.
+- Tests: round-trip add/rename/delete/reorder through the model and writer,
+  same pattern as the existing `addField`/`addConstant` tests; confirm
+  `STRPAGGRP`/`ENDPAGGRP` pairing survives a reorder (or is flagged if
+  broken by one — decide which, and test for that decision explicitly);
+  confirm the toolbar `<select>` and `state.recordName` fallback logic
+  (already handles a record disappearing out from under the current
+  selection, per the empty-file guard) still behaves correctly after a
+  delete or reorder.
+
+### Batch Q — Copy/duplicate a field or constant
+**Source:** raised directly, same as Batch P — not from README/REQUIREMENTS'
+existing Known limitations lists. Add/update/delete already exist for
+fields and constants (`addField`, `addConstant`, `updateField`,
+`updateConstant`, `delete` in `src/extension.ts`'s `applyEdit`), but there's
+no copy/duplicate. This is a real gap for the common case of building up a
+detail line with several similarly-formatted fields (e.g. a row of
+right-justified numeric columns all sharing the same `EDTCDE`/`COLOR`/
+`FONT` keywords) — today that means re-entering every attribute and
+re-adding every keyword by hand for each one, when 90% of it is identical to
+a field that already exists.
+
+**No dependency**: the natural home for this is right next to the existing
+"Delete" button in `renderEditPanel` (`media/webviewClient.js`), and the
+edit it sends can reuse `addField`'s/`addConstant`'s existing shape almost
+exactly — this doesn't need any other batch to land first.
+
+**Goal:**
+1. Add a "Copy" button next to "Delete" in the field/constant properties
+   panel (`renderEditPanel`). Clicking it should **not** immediately mutate
+   the model — route it through the same "pending new entry" flow
+   `state.pendingNew` already uses for add (see `renderPropsPanel`/
+   `renderNewEntryPanel`), pre-filled with the source entry's values
+   (length, data type, decimals, usage, literal text) so the user picks a
+   new line/position (and, for fields, confirms/changes the name, since DDS
+   field names must be unique per record) rather than the copy landing
+   silently on top of the original.
+2. **Keywords must come along with the copy** — this is the actual point
+   of the feature, not just duplicating position/type. A copy that drops
+   the source field's `EDTCDE`/`COLOR`/`FONT`/etc. keywords isn't saving
+   any real work over "+ Field". Extend the `addField`/`addConstant` edit
+   payload (or add a `copyField`/`copyConstant` edit kind, if that proves
+   cleaner than overloading `addField` with an optional source-keywords
+   array — decide based on how invasive the plain-`addField` payload change
+   would be) to carry the source entry's `keywords` array through.
+3. **Name collision**: for fields specifically, since DDS requires unique
+   field names within a record, the pre-filled name in the pending-new form
+   should not be the exact source name — default to something like the
+   source name with a numeric suffix (truncated to fit the 10-char DDS name
+   limit) and let the user override it, rather than silently failing or
+   silently renaming without telling them.
+4. **Scope for v1**: same-record copy only (copy `CUSTNBR` from `DETAIL`
+   to a new field also in `DETAIL`). Cross-record copy (copy a field from
+   `HEADER` into `DETAIL`) is a reasonable stretch goal once same-record
+   copy works, but don't block v1 on it — flag it as a follow-up note in
+   whichever commit lands this, rather than scope-creeping this batch.
+- Tests: round-trip a copied field/constant through the model/writer and
+  confirm its keywords match the source; confirm the pre-filled name
+  suggestion avoids colliding with the source name; confirm copying doesn't
+  mutate the source entry itself (a bug where copy silently *moves* instead
+  of duplicates is the obvious failure mode to guard against explicitly).
 
 
 ## Adding a new batch

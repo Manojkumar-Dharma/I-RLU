@@ -1,0 +1,25 @@
+# Everything the packaged extension needs at runtime lives under out/ —
+# src/*.ts is compiled into out/src/*.js, and media/webviewClient.js plus
+# src/*.js get inlined into out/src/webviewTemplate.js by
+# src/buildWebviewTemplate.js at compile time (see that file's header
+# comment). So none of the source, test, or doc trees below need to ship.
+
+.vscode-test/**
+.github/**
+src/**
+media/**
+test/**
+docs/**
+out/test/**
+out/**/*.map
+**/*.ts
+**/*.map
+.gitignore
+.vscodeignore
+tsconfig.json
+package-lock.json
+node_modules/**
+
+# Keep npm's own package manifest entries but drop anything vsce would
+# otherwise bundle from devDependencies' own repo metadata/tests.
+**/*.test.js

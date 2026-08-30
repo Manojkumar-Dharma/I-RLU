@@ -88,6 +88,9 @@
     const panel = renderPropsPanel(layout);
     if (panel) root.appendChild(panel);
 
+    const record = state.model.records.find((r) => r.name === state.recordName);
+    root.appendChild(renderRecordKeywordsPanel(record));
+
     if (layout.skippedByIndicator && layout.skippedByIndicator.length) {
       root.appendChild(
         el("div", { class: "note" }, ["Hidden by indicator state: " + layout.skippedByIndicator.join(", ")])
@@ -540,6 +543,110 @@
     btnRow.appendChild(deleteBtn);
     btnRow.appendChild(cancelBtn);
     panel.appendChild(btnRow);
+    return panel;
+  }
+
+  // Batch F: print/finishing keywords (DUPLEX, FORCE, OUTBIN, ZFOLD,
+  // STAPLE, INVMMAP). These don't affect the page-preview layout at all —
+  // they're physical-printer behavior — so they get their own small
+  // always-visible panel (per record) rather than living in the
+  // click-a-cell properties panel used for fields/constants. Each row is a
+  // checkbox ("keyword present on this record?") plus, for keywords that
+  // take a parameter, an input for its value. Changes are applied
+  // immediately (no separate Save button), matching the indicator-toggle
+  // UX already used in the toolbar.
+  const BATCH_F_KEYWORDS = [
+    { name: "DUPLEX", kind: "select", options: ["*NO", "*YES", "*TUMBLE"], hint: "Double-sided printing." },
+    { name: "FORCE", kind: "flag", hint: "Forces a new sheet to be fed before this record prints (duplex printing)." },
+    { name: "OUTBIN", kind: "text", placeholder: "1-65535 or *DEVD", hint: "Selects an output bin (matches OVRPRTF OUTBIN)." },
+    { name: "ZFOLD", kind: "flag", hint: "Z-fold finishing. Requires PSF printing — no effect under Host Print Transform." },
+    { name: "STAPLE", kind: "flag", hint: "Staple finishing. Requires PSF printing — no effect under Host Print Transform." },
+    { name: "INVMMAP", kind: "text", placeholder: "medium map name", hint: "Invokes a new medium map." },
+  ];
+
+  function paramsToText(kind, value) {
+    if (kind === "flag") return "";
+    const v = (value || "").trim();
+    return v ? "(" + v + ")" : "";
+  }
+
+  /** Strips the surrounding parentheses from a Keyword's raw params (e.g. "(*YES)" -> "*YES"), for populating an edit input from the current model. */
+  function paramsInnerText(kw) {
+    if (!kw) return "";
+    return String(kw.params || "").replace(/^\(/, "").replace(/\)$/, "").trim();
+  }
+
+  function renderRecordKeywordsPanel(record) {
+    const panel = el("div", { class: "props" });
+    panel.appendChild(el("h4", {}, ["Print/finishing keywords — " + record.name]));
+    panel.appendChild(
+      el("div", { class: "hint" }, [
+        "These don't change the page preview — they control physical printer behavior (duplexing, output bin, finishing).",
+      ])
+    );
+
+    const warnings = (PrtfEngine.validateRecordKeywords(record) || []).concat(
+      PrtfEngine.validateFileLevelKeywords(state.model) || []
+    );
+    warnings.forEach((w) => {
+      panel.appendChild(el("div", { class: "hint warning" }, [w.message]));
+    });
+
+    BATCH_F_KEYWORDS.forEach((def) => {
+      const existing = PrtfEngine.findKeyword(record.keywords, def.name);
+      const rowWrap = el("div", { class: "prop-row" });
+
+      const cbId = "kw-" + record.name + "-" + def.name;
+      const cb = el("input", { type: "checkbox", id: cbId });
+      if (existing) cb.setAttribute("checked", "checked");
+      rowWrap.appendChild(el("label", { class: "ind-label", for: cbId, title: def.hint }, [cb, " " + def.name]));
+
+      let valueInput = null;
+      if (def.kind === "select") {
+        // No blank option: every keyword modeled with kind "select" (just
+        // DUPLEX today) requires a parameter, so the checkbox alone isn't
+        // enough — default to the first choice when nothing's set yet.
+        const sel = el("select", {});
+        def.options.forEach((opt) => {
+          const o = el("option", { value: opt }, [opt]);
+          if (opt === paramsInnerText(existing)) o.setAttribute("selected", "selected");
+          sel.appendChild(o);
+        });
+        valueInput = sel;
+        rowWrap.appendChild(sel);
+      } else if (def.kind === "text") {
+        const inp = el("input", { type: "text", placeholder: def.placeholder, value: paramsInnerText(existing) });
+        valueInput = inp;
+        rowWrap.appendChild(inp);
+      }
+
+      const sendUpdate = () => {
+        if (!cb.checked) {
+          vscode.postMessage({ type: "edit", edit: { kind: "removeRecordKeyword", recordName: record.name, name: def.name } });
+          return;
+        }
+        // OUTBIN/INVMMAP require a real value — an empty text box would
+        // otherwise write a bare "OUTBIN"/"INVMMAP" with no params, which
+        // isn't valid DDS for either keyword. Leave the box checked but
+        // don't send anything until there's a value to write.
+        if (def.kind === "text" && valueInput && !valueInput.value.trim()) return;
+        vscode.postMessage({
+          type: "edit",
+          edit: {
+            kind: "setRecordKeyword",
+            recordName: record.name,
+            name: def.name,
+            params: valueInput ? paramsToText(def.kind, valueInput.value) : "",
+          },
+        });
+      };
+
+      cb.addEventListener("change", sendUpdate);
+      if (valueInput) valueInput.addEventListener("change", sendUpdate);
+
+      panel.appendChild(rowWrap);
+    });
+
     return panel;
   }
 

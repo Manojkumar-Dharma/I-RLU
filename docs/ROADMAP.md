@@ -99,11 +99,14 @@ full detail, acceptance criteria, and file-level ownership per batch):
       `docs/REQUIREMENTS.md` §8's documented hard limit (no real resource
       pixel content), but make them visible/editable instead of silently
       inert.
-- [ ] **Batch F — Print/finishing device keywords (no visual,
+- [x] **Batch F — Print/finishing device keywords (no visual,
       validation-only):** `DUPLEX`, `FORCE`, `OUTBIN`, `ZFOLD`, `STAPLE`,
-      `INVMMAP` — these don't affect the page-preview layout, just expose
-      them in the properties panel and validate against IBM's documented
-      restrictions (e.g. `ZFOLD`/`STAPLE`/`GDF` are PSF-only).
+      `INVMMAP` — these don't affect the page-preview layout; exposed in
+      their own always-visible per-record properties panel, with
+      validation hints against IBM's documented restrictions
+      (`ZFOLD`/`STAPLE` are PSF-only). Also lands the file-level
+      `SKIPA`/`SKIPB` `*AFPDS` check folded in from Batch I below. See
+      `docs/TASKS.md` Batch F for implementation notes.
 - [ ] **Batch G — Field-level data/edit keywords:** `ALIAS`, `BLKFOLD`,
       `CVTDTA`, `DLTEDT`, `FLTFIXDEC`, `FLTPCN`, `TRNSPY`, `TXTRTT`,
       `INDTXT` (ties into the indicator-toggle panel's text labels — port
@@ -125,12 +128,19 @@ full detail, acceptance criteria, and file-level ownership per batch):
 - [x] ~~Batch I — `UOM` (unit of measure) modeling~~ — **done**: see
       `i-rlu.unitOfMeasure` setting above. The remaining piece — validating
       that file-level `SKIPA`/`SKIPB` isn't allowed on `*AFPDS` files
-      (KEYWORD-INVENTORY §1) — is still open; folded into Batch F's
-      validation work rather than kept as its own batch.
+      (KEYWORD-INVENTORY §1) — is now **also done**, folded into Batch F's
+      validation work above rather than kept as its own batch.
 - [ ] **Batch J — Compile command polish:** let the user pick
       library/source-file/member instead of assuming `*CURLIB/QDDSSRC`.
-- [ ] **Batch K — Packaging:** `vsce package` and a first `.vsix` for manual
-      install/testing.
+- [x] **Batch K — Packaging:** `vsce package` producing a real `.vsix`
+      (verified: `i-rlu-0.0.1.vsix`, 43.96 KB). Along the way, found and
+      fixed a real bug: `package.json`'s `"main"` pointed at a path that
+      didn't exist after `tsc` compiled (`./out/extension.js` vs. the
+      actual `./out/src/extension.js`), which would have made any
+      packaged/installed build fail to activate. See `docs/TASKS.md`
+      Batch K for the rest (`.vscodeignore`, `vsce` scripts, and the one
+      thing deliberately left open — no `LICENSE` file yet, since that's
+      the repo owner's call).
 - [x]/[ ] **Batch L — Real AFP font metrics — partially done.** `FONT`/FGID
       *identification* is now resolved: a verified FGID table (Courier/
       Gothic fixed families, Helvetica/Times New Roman proportional
@@ -155,6 +165,17 @@ full detail, acceptance criteria, and file-level ownership per batch):
       nothing's been built against them. See `src/afpFontMetrics.js` for
       the full table and sourcing notes, and `docs/TASKS.md` Batch L for
       the canonical status (update that file too if you pick this back up).
+- [ ] **Batch P — Add/rename/delete/reorder record formats from the
+      designer:** the toolbar's record-format dropdown only switches
+      between record formats already in the source; there's no way to
+      create, rename, delete, or reorder one without editing raw DDS text.
+      No dependency — builds directly on the existing `<select>` and
+      `applyEdit` edit-kind pattern. See `docs/TASKS.md` Batch P.
+- [ ] **Batch Q — Copy/duplicate a field or constant:** add/update/delete
+      already exist for fields and constants, but not copy — cloning one
+      with its keywords intact currently means re-entering everything by
+      hand. No dependency — sits next to the existing Delete button and
+      reuses the add-field edit-kind shape. See `docs/TASKS.md` Batch Q.
 
 Each batch's keyword list, current model/parser/engine status
 (modeled/rendered/UI), and IBM-documented gotchas are detailed in

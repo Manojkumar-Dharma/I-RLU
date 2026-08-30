@@ -21,6 +21,7 @@ body { font-family: var(--vscode-editor-font-family, monospace); color: var(--vs
 .indicators-wrap { display: inline-flex; align-items: center; gap: 4px; }
 .ind-label { display: inline-flex; align-items: center; gap: 2px; font-size: 11px; }
 .hint { font-size: 11px; color: var(--vscode-descriptionForeground); font-style: italic; }
+.hint.warning { color: var(--vscode-inputValidation-warningForeground, #b89500); font-style: normal; margin: 4px 0; }
 .main { display: flex; flex-direction: column; }
 .ruler { position: relative; height: 14px; font-size: 9px; color: var(--vscode-descriptionForeground); border-bottom: 1px solid var(--vscode-panel-border); margin-bottom: 2px; }
 .page { border: 1px solid var(--vscode-panel-border); background: var(--vscode-editorWidget-background, #fff); overflow: auto; }
