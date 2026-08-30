@@ -64,7 +64,7 @@ vice versa.
 | Real pixel content for page segments/overlays (actual scanned logos/forms, not a placeholder) | **Blocked**, needs external resource files supplied to the tool (§8's documented hard limit — these are IFS/host AFP objects, not DDS source text) | New **Batch O** (depends on **E** landing first as the fallback baseline; blocked the same way **L** is, on external data access) |
 | AFPDS real font/graphics rendering broadly (vs. char-grid-with-keyword-labels) | **Permanent for v1, revisit only if scope changes** | Not a task on its own — the actionable slices of this are Batch **L** (font metrics) and Batch **O** (resource pixel content) above; true full-graphics AFPDS WYSIWYG beyond those two remains explicitly out of scope per REQUIREMENTS.md §6/§8. |
 | Numeric edit-code/edit-word formatting is approximate-width only, no live-system verification | **Permanent, explicit non-goal** | Not a task — Batch A's detail section explicitly excludes building a full edit-code formatter, to avoid scope creep. |
-| `REF`/`REFFLD` doesn't resolve real type/length/decimals from the referenced file | Actionable | Batch **H** |
+| `REF`/`REFFLD` doesn't resolve real type/length/decimals from the referenced file | Part 1 done (UI shape + resolution logic); part 2 (live fetch) unverified, needs a real IBM i | Batch **H** |
 | `CRTPRTF` assumes `*CURLIB/QDDSSRC`, no library/source-file/member picker | Actionable | Batch **J** |
 | No packaging (`.vsix`) | Actionable | Batch **K** |
 | Font resource access unresolved (§9) — real AFP font metrics vs. placeholder | **Partially done** — FGID identification verified/resolved; per-glyph proportional metrics and CDEFNT/FNTCHRSET/FONTNAME resolution still blocked | Batch **L** |
@@ -81,7 +81,7 @@ vice versa.
 | E | AFP page-group / resource keyword placeholders | `OVERLAY` (record), `PAGSEG`, `STRPAGGRP`, `ENDPAGGRP`, `DOCIDXTAG`, `AFPRSC`, `DTASTMCMD` | Not started | none |
 | F | Print/finishing keywords, validation-only | `DUPLEX`, `FORCE`, `OUTBIN`, `ZFOLD`, `STAPLE`, `INVMMAP` | Not started | none |
 | G | Field-level data/edit keywords + indicator text | `ALIAS`, `BLKFOLD`, `CVTDTA`, `DLTEDT`, `FLTFIXDEC`, `FLTPCN`, `TRNSPY`, `TXTRTT`, `INDTXT` | Not started | none |
-| H | `REF`/`REFFLD` resolution via Code for i | `REF`, `REFFLD` | Not started | none (needs a live/mocked Code for i connection for full completion — can land the UI shape without it) |
+| H | `REF`/`REFFLD` resolution via Code for i | `REF`, `REFFLD` | Part 1 (UI shape + pure resolution logic) done; part 2 (live Code for i round-trip) written but unverified — needs a real connected IBM i | none (needs a live/mocked Code for i connection for full completion — can land the UI shape without it) |
 | I | ~~`UOM` modeling~~ **done elsewhere** (see `i-rlu.unitOfMeasure` setting, `docs/ROADMAP.md`) + file-level SKIPA/SKIPB *AFPDS validation still open | `SKIPA`, `SKIPB` (validation only) | UOM done; validation not started | none |
 | J | Compile command: library/source-file/member picker | n/a (tooling) | Not started | none |
 | K | Packaging (`.vsix`) | n/a (tooling) | Not started | ideally after A–I land, but can be prepped early |
@@ -197,24 +197,47 @@ this from scratch.
   text shows up correctly attached to the right indicator in the resolved
   model passed to the webview.
 
-### Batch H — REF/REFFLD resolution
+### Batch H — REF/REFFLD resolution [PART 1 DONE]
 **Goal:** two parts, can be split further if needed:
-1. **UI shape** (no Code for i needed): replicate RLU's own field-property
-   pattern confirmed in KEYWORD-INVENTORY §3 — a "Reference a field" Y/N
-   toggle that opens a file/library/record-format/field picker, plus a
-   separate "Use referenced values" Y/N toggle governing whether the
-   referenced field's length/type/decimals are pulled in verbatim vs. only
-   defaulted. This can be built and tested against manually-entered
-   type/length/decimals without a live IBM i.
-2. **Live resolution** (needs Code for i): actually query the referenced
-   physical file's field definition via Code for i's API, same integration
-   pattern as the existing `CRTPRTF` compile command in `src/extension.ts`.
-   This part is legitimately blocked without a connected test environment —
-   land part 1 first regardless.
-- Tests: part 1 fully testable with mocked reference data; part 2 needs
-  either a live IBM i in CI (unlikely available) or a mocked Code for i
-  client — follow whatever mocking pattern I-SDA's tests use for its
-  Code for i integration, if any.
+1. **UI shape** (no Code for i needed) — **done.** `resolveReferenceTarget`
+   in `src/prtfEngine.js` works out which field/library/file a position-29
+   'R' field resolves against (REFFLD's own field/file overrides
+   record-then-file-level `REF`; `*SRC` and no-reference-anywhere both
+   correctly return unresolvable), mirroring I-SDA's own
+   `DspfEngine.resolveReferenceTarget`. `src/prtfWriter.js`'s
+   `upsertReffldKeyword` builds/updates/removes the `REFFLD` keyword. The
+   properties panel (`media/webviewClient.js`) now shows the "Reference a
+   field" Y/N toggle plus manually-entered field/library/file inputs and a
+   "Use referenced values" Y/N toggle, per KEYWORD-INVENTORY §3's confirmed
+   RLU UI shape — no live file/library/record-format/field *picker* yet
+   (that would need Code for i's own browsing API), just direct text entry,
+   which is enough for the toggle pair's own semantics and for round-trip
+   correctness.
+2. **Live resolution** (needs Code for i) — **written, unverified.**
+   `fetchReferencedFieldAttributes`/`handleResolveReferencedField` in
+   `src/extension.ts` query the referenced physical file's field definition
+   via Code for i's API (DSPFFD to a `QTEMP` outfile + an SQL read), same
+   integration pattern as I-SDA's own `fetchReferencedFieldAttributes` and
+   as the existing `CRTPRTF` compile command already in this file. The "Use
+   referenced values" toggle (`msg.useReferencedValues`) governs whether a
+   successful resolve overwrites the field's current length/type/decimals
+   outright or only fills them in where blank. This part is legitimately
+   blocked without a connected test environment — compiles and follows
+   I-SDA's proven pattern, but has not been exercised against a real IBM i.
+- Tests (`test/prtfReferenceField.test.ts`): part 1 is fully covered —
+  every precedence rule in `resolveReferenceTarget`'s doc comment, the
+  `upsertReffldKeyword` add/replace/remove cases, and a parse → regenerate
+  round trip for a field carrying `REFFLD`. Part 2 has no test — same
+  reasoning as the roadmap entry: it needs either a live IBM i in CI
+  (unlikely available) or a mocked Code for i client, and I-SDA's own test
+  suite doesn't mock its Code for i integration either, so there's no
+  established pattern here to follow.
+- **Not done, left for a future batch/session:** a real file/library/
+  record-format/field *picker* (currently direct text entry) — this needs
+  Code for i's own object-browsing API, a separate integration from the
+  DSPFFD resolution built here, and IS-DA's own Task L14
+  (`fetchDatabaseFileFields`/`listDatabaseFields`) is the closest existing
+  pattern to follow for it.
 
 ### Batch I — UOM modeling + AFPDS SKIPA/SKIPB file-level validation
 **Update:** the UOM half of this batch has already landed on `main`

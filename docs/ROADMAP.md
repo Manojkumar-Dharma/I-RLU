@@ -108,10 +108,20 @@ full detail, acceptance criteria, and file-level ownership per batch):
       `CVTDTA`, `DLTEDT`, `FLTFIXDEC`, `FLTPCN`, `TRNSPY`, `TXTRTT`,
       `INDTXT` (ties into the indicator-toggle panel's text labels — port
       I-SDA's indicator-description UX).
-- [ ] **Batch H — `REF`/`REFFLD` resolution via Code for i:** pull real
-      type/length/decimals from the referenced physical file; also model
-      RLU's own "Reference a field" / "Use referenced values" toggle pair
-      confirmed in KEYWORD-INVENTORY §3, since that's the UI shape to match.
+- [x]/[ ] **Batch H — `REF`/`REFFLD` resolution via Code for i — part 1
+      done, part 2 blocked without a live IBM i.** Part 1 (UI shape, fully
+      testable): `PrtfEngine.resolveReferenceTarget` works out which
+      field/library/file a reference field (position 29 'R') resolves
+      against, following REFFLD-overrides-REF/`*SRC`-is-unresolvable
+      precedence from IBM's DDS reference; the properties panel now has the
+      "Reference a field" / "Use referenced values" toggle pair from
+      KEYWORD-INVENTORY §3, wired to a REFFLD keyword upsert
+      (`PrtfWriter.upsertReffldKeyword`). Part 2 (the actual DSPFFD + SQL
+      round-trip over Code for i, in `extension.ts`'s
+      `fetchReferencedFieldAttributes`/`handleResolveReferencedField`) is
+      written following I-SDA's own integration pattern but — like I-SDA's
+      equivalent — can only be exercised against a real connected IBM i, not
+      in this environment.
 - [x] ~~Batch I — `UOM` (unit of measure) modeling~~ — **done**: see
       `i-rlu.unitOfMeasure` setting above. The remaining piece — validating
       that file-level `SKIPA`/`SKIPB` isn't allowed on `*AFPDS` files

@@ -24,6 +24,13 @@
  * "addField"/"addConstant" reference an existing entry by its stable `id`
  * (assigned by the parser) rather than by name/position, since position is
  * exactly the thing that can change out from under a name+position match.
+ *
+ * A separate (non-"edit") message, "resolveReferencedField" (Batch H, see
+ * docs/TASKS.md), asks the host to fetch a REF/REFFLD field's real
+ * length/type/decimals from a connected IBM i via Code for i and apply them
+ * directly — this one is NOT applied locally first the way "edit" messages
+ * are, since it needs a network round-trip before there's anything to
+ * apply.
  */
 (function () {
   const vscode = acquireVsCodeApi();
@@ -412,6 +419,7 @@
     panel.appendChild(el("h4", {}, [cell.kind === "field" ? "Field: " + cell.name : "Constant"]));
 
     let nameInput, litInput, lenInput, typeSelect, decInput, usageSelect;
+    let refCheckbox, refFieldInput, refLibInput, refFileInput, useRefValuesCheckbox, refFieldsRow;
     const lineRow = labeledInput("Line", { type: "number", min: "1", value: String(cell.line) });
     const posRow = labeledInput("Position", { type: "number", min: "1", value: String(cell.position) });
 
@@ -435,6 +443,49 @@
       const usageRow = labeledSelect("Usage", ["O", "I", "B", "H"], cell.usage || "O");
       usageSelect = usageRow.input;
       panel.appendChild(usageRow.row);
+
+      // Batch H (docs/TASKS.md) — "Reference a field" Y/N + "Use referenced
+      // values" Y/N pair (docs/KEYWORD-INVENTORY.md §3): position 29 'R'
+      // plus REFFLD's own field/library/file, wired up here without a live
+      // database picker (that part needs Code for i — see the "Resolve
+      // Referenced Field" button below), same manually-entered-first
+      // approach Batch H's task detail calls for.
+      const refToggleRow = el("label", { class: "prop-row" }, ["Reference a field"]);
+      refCheckbox = el("input", { type: "checkbox" });
+      if (cell.reference) refCheckbox.setAttribute("checked", "checked");
+      refToggleRow.appendChild(refCheckbox);
+      panel.appendChild(refToggleRow);
+
+      const target = cell.refTarget || {};
+      refFieldsRow = el("div", { style: cell.reference ? "" : "display:none;" });
+      const refFieldRow = labeledInput("Ref. field name", { type: "text", maxlength: "10", value: target.fieldName || cell.name || "" });
+      refFieldInput = refFieldRow.input;
+      refFieldsRow.appendChild(refFieldRow.row);
+      const refLibRow = labeledInput("Ref. library", { type: "text", maxlength: "10", value: target.library || "" });
+      refLibInput = refLibRow.input;
+      refFieldsRow.appendChild(refLibRow.row);
+      const refFileRow = labeledInput("Ref. file", { type: "text", maxlength: "10", value: target.file || "" });
+      refFileInput = refFileRow.input;
+      refFieldsRow.appendChild(refFileRow.row);
+      const useRefValuesRow = el("label", { class: "prop-row" }, ["Use referenced values"]);
+      useRefValuesCheckbox = el("input", { type: "checkbox" });
+      useRefValuesCheckbox.setAttribute("checked", "checked"); // default Y, matching real RLU
+      useRefValuesRow.appendChild(useRefValuesCheckbox);
+      refFieldsRow.appendChild(useRefValuesRow);
+      const resolveBtn = el("button", { class: "btn", style: "width:100%;margin-bottom:8px;" }, ["Resolve Referenced Field (Code for i)"]);
+      resolveBtn.addEventListener("click", () => {
+        vscode.postMessage({
+          type: "resolveReferencedField",
+          id: cell.id,
+          useReferencedValues: useRefValuesCheckbox.checked,
+        });
+      });
+      refFieldsRow.appendChild(resolveBtn);
+      panel.appendChild(refFieldsRow);
+
+      refCheckbox.addEventListener("change", (e) => {
+        refFieldsRow.style.display = e.target.checked ? "" : "none";
+      });
     } else {
       const litRow = labeledInput("Text", { type: "text", value: cell.literal || "" });
       litInput = litRow.input;
@@ -462,6 +513,10 @@
             usage: usageSelect.value,
             line,
             position,
+            reference: refCheckbox.checked,
+            refFieldName: refFieldInput.value ? refFieldInput.value.toUpperCase().slice(0, 10) : undefined,
+            refLibrary: refLibInput.value ? refLibInput.value.toUpperCase().slice(0, 10) : undefined,
+            refFile: refFileInput.value ? refFileInput.value.toUpperCase().slice(0, 10) : undefined,
           },
         });
       } else {
