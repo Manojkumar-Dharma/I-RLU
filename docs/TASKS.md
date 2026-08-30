@@ -141,14 +141,37 @@ it once it exists.
 - Tests: round-trip literal and P-field variants of each keyword.
 
 ### Batch C — BARCODE parameter surface
+**Current state, precisely** (checked against `src/prtfEngine.js`'s
+`parseBarcodeGeometry`, added in the BARCODE placeholder commit before this
+task board existed): the engine already **parses** bar-code-ID, direction
+(`*HRZ`/`*VRT`), an HRI on/off flag (`*HRI`/`*NOHRI` — see gap below), and
+height (plain line count 1–9, or a `(height *UOM)` physical measurement) —
+enough to size and label the placeholder box. None of this is editable in
+the properties panel today (that's this batch); and several parameters
+aren't parsed by the engine at all yet, not just unexposed in the UI:
+`*AST`/`*NOAST` (asterisk on CODE3OF9), the modifier hex byte, narrow bar
+width, wide:narrow ratio, and additional 2D parameters.
+
+**Known gap to fix as part of this batch, not carry forward:** the engine
+currently collapses `*HRI` and `*HRITOP` to the same boolean ("HRI is on"),
+losing the below-vs-above distinction RLU's own "Specify Bar Code" screen
+exposes as separate choices (1=Below/2=Above/3=None — KEYWORD-INVENTORY
+§3). Since this batch is adding the properties-panel form for HRI position
+anyway, fix `parseBarcodeGeometry` to track the three-way value at the same
+time, rather than leaving the engine's simplified boolean in place under a
+richer-looking UI that can't actually reflect what it saves.
+
 **Goal:** expose every parameter IBM's RLU screen shows (barcode-ID, height
 in lines or UOM, bar format, HRI position, asterisk-on-CODE3OF9, modifier,
 narrow bar width, wide:narrow ratio, additional 2D params — full list in
-KEYWORD-INVENTORY §3) in the properties panel. Rendering stays the existing
-labeled placeholder box; this batch is UI/model only.
+KEYWORD-INVENTORY §3) in the properties panel, parsing the ones the engine
+doesn't yet (listed above) so they at least round-trip correctly even
+before Batch D gives them visual meaning. Rendering stays the existing
+labeled placeholder box; this batch is UI/model/parsing, not rendering.
 - Validate ranges as shown on the RLU screen (e.g. ratio 2.00–3.00, narrow
   bar width 0.007–0.208) client-side in the webview form.
-- Tests: round-trip full BARCODE parameter set.
+- Tests: round-trip full BARCODE parameter set; a specific test for the
+  HRI three-way value (below/above/none) surviving edit-then-reparse.
 
 ### Batch D — BARCODE real rendering
 **Goal:** replace the placeholder box with an actual rendered symbol, reading
