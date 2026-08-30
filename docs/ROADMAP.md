@@ -155,6 +155,12 @@ full detail, acceptance criteria, and file-level ownership per batch):
       nothing's been built against them. See `src/afpFontMetrics.js` for
       the full table and sourcing notes, and `docs/TASKS.md` Batch L for
       the canonical status (update that file too if you pick this back up).
+- [ ] **Batch P — Add/rename/delete/reorder record formats from the
+      designer:** the toolbar's record-format dropdown only switches
+      between record formats already in the source; there's no way to
+      create, rename, delete, or reorder one without editing raw DDS text.
+      No dependency — builds directly on the existing `<select>` and
+      `applyEdit` edit-kind pattern. See `docs/TASKS.md` Batch P.
 
 Each batch's keyword list, current model/parser/engine status
 (modeled/rendered/UI), and IBM-documented gotchas are detailed in

@@ -68,6 +68,7 @@ vice versa.
 | `CRTPRTF` assumes `*CURLIB/QDDSSRC`, no library/source-file/member picker | Actionable | Batch **J** |
 | No packaging (`.vsix`) | Actionable | Batch **K** |
 | Font resource access unresolved (§9) — real AFP font metrics vs. placeholder | **Partially done** — FGID identification verified/resolved; per-glyph proportional metrics and CDEFNT/FNTCHRSET/FONTNAME resolution still blocked | Batch **L** |
+| The record-format `<select>` dropdown (toolbar) only switches between record formats already present in the source — no way to add, rename, delete, or reorder a record format from the designer itself | Actionable, previously untracked (this isn't in README/REQUIREMENTS' Known-limitations lists at all — raised separately, added here for the same tracking discipline) | New **Batch P** (no dependency — the record `<select>` and `applyEdit`'s edit-kind dispatch already exist to build on) |
 
 ## Task board
 
@@ -89,6 +90,7 @@ vice versa.
 | M | ~~**Bug fix:** writer emits wrong continuation character when wrapping mid-token~~ | n/a (parser/writer correctness) | **Done** | none |
 | N | `BARCODE` mutual-exclusion validation | `BARCODE` (validation vs. `FONT`, `EDTCDE`, `EDTWRD`, `DATE`, `TIME`, `PAGNBR`, etc.) | Not started | **C** |
 | O | Real AFP resource rendering (actual pixel content for page segments/overlays) | `PAGSEG`, `OVERLAY` (record-level) | Blocked — needs external resource files, see REQUIREMENTS.md §8 | **E** |
+| P | Add/rename/delete/reorder record formats from the designer | n/a (tooling/UI, not a keyword) | Not started | none |
 
 ## Batch detail
 
@@ -470,6 +472,78 @@ render the actual image/graphic at the position/size Batch E already
 computes.
 - Tests: will need real (or realistic sample) resource files as fixtures —
   can't be meaningfully tested with synthetic data alone.
+
+### Batch P — Add/rename/delete/reorder record formats from the designer
+**Source:** raised directly (not from README/REQUIREMENTS' existing Known
+limitations lists) — the toolbar's record-format `<select>` dropdown
+(`media/webviewClient.js`, present since the very first webview build) only
+lets you *switch between* record formats that already exist in the parsed
+source. There's currently no way to create a new record format, rename one,
+delete one, or change the order they appear in the source, from the
+designer itself — you'd have to drop into the raw DDS text editor for any
+of that, which somewhat defeats the point of a WYSIWYG designer for a file
+type where most real printer files have several record formats (header/
+detail/footer being the minimum common case).
+
+**No dependency**: unlike most other batches, this doesn't build on
+anything unfinished. The pieces it needs already exist:
+- `state.model.records` (an ordered array, per `src/prtfModel.ts`'s
+  `RecordFormatEntry[]`) is exactly the array a reorder operation would
+  splice, and exactly what the toolbar `<select>` already renders from.
+- `applyEdit`'s edit-kind dispatch in `src/extension.ts` (`move`,
+  `updateField`, `updateConstant`, `delete`, `setRecordKeyword`,
+  `removeRecordKeyword`, `addField`, `addConstant`) is the established
+  pattern to extend — add `addRecord`, `renameRecord`, `deleteRecord`, and
+  `reorderRecord` alongside these, not a parallel mechanism.
+
+**Goal:**
+1. **Add record format**: a "+ Record" affordance next to the toolbar's
+   `<select>` (matching the existing "+ Field"/"+ Constant" button style)
+   that prompts for a record-format name (validate: 1–10 chars, DDS name
+   rules — same validation the field-name input already applies, reuse it)
+   and inserts a new, empty `RecordFormatEntry` into `model.records`.
+   Decide and document where it's inserted (end of the file is the simplest
+   default; inserting after the currently-selected record is more
+   intuitive for building up a header/detail/footer sequence one at a time
+   — pick one and note the reasoning in the PR/commit, don't leave it
+   ambiguous).
+2. **Rename**: an edit affordance on the currently-selected record (a
+   pencil icon next to the `<select>`, or an editable-on-click label — match
+   whatever pattern feels most consistent with the existing field/constant
+   properties panel's own inline-edit conventions). Renaming a record format
+   must also update any `REF`/`REFFLD` keywords elsewhere in the *same*
+   model that reference the old name by name, or at minimum flag them as
+   now-dangling references rather than silently leaving them pointing at a
+   name that no longer exists — check how `REF`/`REFFLD` are modeled today
+   (Batch H hasn't landed real resolution yet, but the keyword text itself
+   still needs to stay consistent).
+3. **Delete**: remove a record format from `model.records` entirely (not
+   just clear its fields) with a confirmation step, since this is
+   destructive and, unlike deleting a single field/constant, can't be
+   trivially undone by re-adding — match VS Code's own undo/redo (the text
+   document edit should go through the normal edit application path so
+   `Ctrl+Z` in the underlying text editor still works, the same way
+   existing field/constant edits already do).
+4. **Reorder**: since DDS record-format order in the source can matter
+   (some shops rely on RLU's original top-to-bottom convention for
+   readability, and `STRPAGGRP`/`ENDPAGGRP` bracketing — KEYWORD-INVENTORY
+   §2 — is inherently order-sensitive), add up/down reordering (buttons, or
+   drag-to-reorder in whatever list view holds record names, if one exists
+   by the time this batch is picked up — otherwise simple up/down buttons
+   next to the `<select>` are enough for v1).
+
+**Scope note:** this batch is about the record-format *container* itself —
+it doesn't touch how fields/constants within a record are added or edited,
+which is already covered by existing UI. Don't let this batch creep into
+re-doing the field/constant properties panel.
+- Tests: round-trip add/rename/delete/reorder through the model and writer,
+  same pattern as the existing `addField`/`addConstant` tests; confirm
+  `STRPAGGRP`/`ENDPAGGRP` pairing survives a reorder (or is flagged if
+  broken by one — decide which, and test for that decision explicitly);
+  confirm the toolbar `<select>` and `state.recordName` fallback logic
+  (already handles a record disappearing out from under the current
+  selection, per the empty-file guard) still behaves correctly after a
+  delete or reorder.
 
 
 ## Adding a new batch
