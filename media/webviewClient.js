@@ -90,6 +90,7 @@
 
     const record = state.model.records.find((r) => r.name === state.recordName);
     root.appendChild(renderRecordKeywordsPanel(record));
+    root.appendChild(renderGeneralRecordKeywordsPanel(record));
     const indTextPanel = renderIndicatorTextPanel(record);
     if (indTextPanel) root.appendChild(indTextPanel);
     root.appendChild(
@@ -794,6 +795,270 @@
     return section;
   }
 
+  // Batch A: field-only keywords — attach to a NAMED field, per IBM's DDS
+  // reference "DDS File With Date, Time, and Timestamp Fields" example,
+  // which shows DATFMT/DATSEP/TIMFMT/TIMSEP used on named L (date) / T
+  // (time) type fields. EDTCDE is handled separately below (two-part:
+  // code + optional fill character, not a single value).
+  const BATCH_A_FIELD_ONLY_KEYWORDS = [
+    { name: "EDTWRD", kind: "quotedText", placeholder: "e.g.   .  ", hint: "Edit word mask." },
+    { name: "DATFMT", kind: "select", options: ["*MDY", "*DMY", "*YMD", "*JUL", "*ISO", "*USA", "*EUR", "*JIS", "*JOB"], hint: "Date format for a date (L) type field." },
+    { name: "DATSEP", kind: "quotedSelect", options: ["*JOB", "/", "-", ".", ",", " "], hint: "Date separator. Not valid with *ISO/*USA/*EUR/*JIS (fixed separator)." },
+    { name: "TIMFMT", kind: "select", options: ["*ISO", "*USA", "*EUR", "*JIS", "*HMS", "*JOB"], hint: "Time format for a time (T) type field." },
+    { name: "TIMSEP", kind: "quotedSelect", options: ["*JOB", ":", ".", ",", " "], hint: "Time separator. Not valid with *ISO/*USA/*EUR/*JIS (fixed separator)." },
+    { name: "DFT", kind: "quotedText", placeholder: "default value", hint: "Default value for this field." },
+  ];
+  const EDTCDE_OPTIONS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "A", "B", "C", "D", "J", "K", "L", "M", "N", "O", "P", "Q", "W", "X", "Y", "Z"];
+
+  // Batch A: constant-only keywords. Per IBM's DDS reference syntax
+  // overview: "Constant (unnamed) fields require only a location and a
+  // keyword, as described in the DATE, DFT, PAGNBR, TIME, and MSGCON
+  // keyword descriptions." DFT is deliberately NOT repeated here (kept
+  // field-only above) — a constant already carries its value via the
+  // literal-text input in renderEditPanel, so offering DFT here too would
+  // just be a redundant path to the same result. MSGCON is handled
+  // separately below (four-part: length/id/file/library).
+  const BATCH_A_CONSTANT_ONLY_KEYWORDS = [
+    { name: "DATE", kind: "flag", hint: "Prints the current date as a 6- or 8-byte value." },
+    { name: "TIME", kind: "flag", hint: "Prints the current system time as a 6-byte value." },
+    { name: "PAGNBR", kind: "flag", hint: "Prints the current page number (unnamed 4-digit zoned field)." },
+  ];
+
+  // Batch A: keywords valid on both a named field and a constant. HIGHLIGHT
+  // here is the field-level form of the keyword Batch B's font panel
+  // already validates against CDEFNT/FNTCHRSET (cell.fieldWarnings, used
+  // in renderFieldKeywordsSection above, comes from the same
+  // validateFieldKeywords() call) — no separate validation needed here.
+  const BATCH_A_SHARED_KEYWORDS = [
+    { name: "HIGHLIGHT", kind: "flag", hint: "Highlighted printing. Ignored if CDEFNT or FNTCHRSET is also coded here." },
+    { name: "UNDERLINE", kind: "flag", hint: "Underlined printing. May not print correctly on *AFPDS output distributed to System z." },
+  ];
+
+  const NAMED_COLORS = [
+    ["*BLK", "Black"], ["*BLU", "Blue"], ["*BRN", "Brown"], ["*GRN", "Green"],
+    ["*PNK", "Pink"], ["*RED", "Red"], ["*TRQ", "Turquoise"], ["*YLW", "Yellow"],
+  ];
+
+  /** Appends one prop-row per keyword definition into an existing container — shared by the general-record-keywords panel above and the field/constant section below. Handles the "flag"/"select"/"quotedSelect"/"quotedText" kinds; EDTCDE/MSGCON/COLOR are bespoke (appended separately) since their shape doesn't fit a single value input. */
+  function appendBatchAKeywordRows(container, keywordDefs, entryKeywords, idPrefix, onSet, onRemove) {
+    keywordDefs.forEach((def) => {
+      const existing = PrtfEngine.findKeyword(entryKeywords, def.name);
+      const rowWrap = el("div", { class: "prop-row" });
+
+      const cbId = idPrefix + "-" + def.name;
+      const cb = el("input", { type: "checkbox", id: cbId });
+      if (existing) cb.setAttribute("checked", "checked");
+      rowWrap.appendChild(el("label", { class: "ind-label", for: cbId, title: def.hint || "" }, [cb, " " + def.name]));
+
+      let valueInput = null;
+      if (def.kind === "select" || def.kind === "quotedSelect") {
+        const sel = el("select", {});
+        def.options.forEach((opt) => {
+          const o = el("option", { value: opt }, [opt]);
+          if (opt === paramsInnerText(existing, def.kind)) o.setAttribute("selected", "selected");
+          sel.appendChild(o);
+        });
+        valueInput = sel;
+        rowWrap.appendChild(sel);
+      } else if (def.kind === "quotedText") {
+        const inp = el("input", { type: "text", placeholder: def.placeholder || "", value: paramsInnerText(existing, def.kind) });
+        valueInput = inp;
+        rowWrap.appendChild(inp);
+      }
+
+      const sendUpdate = () => {
+        if (!cb.checked) {
+          onRemove(def.name);
+          return;
+        }
+        if (def.kind === "quotedText" && valueInput && !valueInput.value.trim()) return;
+        onSet(def.name, valueInput ? paramsToText(def.kind, valueInput.value) : "");
+      };
+
+      cb.addEventListener("change", sendUpdate);
+      if (valueInput) valueInput.addEventListener("change", sendUpdate);
+
+      container.appendChild(rowWrap);
+    });
+  }
+
+  /** Bespoke EDTCDE row (Batch A) — two-part: edit code (1-9, A-D, J-Q, W-Z) plus an optional fill character (* or a currency symbol), per docs/KEYWORD-INVENTORY.md §3. */
+  function appendEdtcdeRow(container, entryKeywords, idPrefix, onSet, onRemove) {
+    const existing = PrtfEngine.findKeyword(entryKeywords, "EDTCDE");
+    const existingInner = paramsInnerText(existing);
+    const parts = existingInner ? existingInner.split(/\s+/) : [];
+
+    const rowWrap = el("div", { class: "prop-row" });
+    const cbId = idPrefix + "-EDTCDE";
+    const cb = el("input", { type: "checkbox", id: cbId });
+    if (existing) cb.setAttribute("checked", "checked");
+    rowWrap.appendChild(el("label", { class: "ind-label", for: cbId, title: "Edit code (numeric display formatting) plus optional fill character." }, [cb, " EDTCDE"]));
+
+    const sel = el("select", {});
+    EDTCDE_OPTIONS.forEach((opt) => {
+      const o = el("option", { value: opt }, [opt]);
+      if (opt === parts[0]) o.setAttribute("selected", "selected");
+      sel.appendChild(o);
+    });
+    rowWrap.appendChild(sel);
+    const fillInput = el("input", { type: "text", maxlength: "1", placeholder: "fill (* or currency)", value: parts[1] || "" });
+    rowWrap.appendChild(fillInput);
+    container.appendChild(rowWrap);
+
+    const sendUpdate = () => {
+      if (!cb.checked) {
+        onRemove("EDTCDE");
+        return;
+      }
+      const fill = (fillInput.value || "").trim();
+      onSet("EDTCDE", fill ? "(" + sel.value + " " + fill + ")" : "(" + sel.value + ")");
+    };
+    cb.addEventListener("change", sendUpdate);
+    sel.addEventListener("change", sendUpdate);
+    fillInput.addEventListener("change", sendUpdate);
+  }
+
+  /** Bespoke MSGCON row (Batch A) — MSGCON(length message-id message-file [library]), verified against IBM's DDS reference. Pulling the actual message text from the message file would need Code for i (out of scope per docs/TASKS.md Batch A); this just round-trips the keyword's own parameters. */
+  function appendMsgconRow(container, entryKeywords, idPrefix, onSet, onRemove) {
+    const existing = PrtfEngine.findKeyword(entryKeywords, "MSGCON");
+    const inner = paramsInnerText(existing);
+    const tokens = inner ? inner.split(/\s+/) : [];
+
+    const rowWrap = el("div", { class: "prop-row" });
+    const cbId = idPrefix + "-MSGCON";
+    const cb = el("input", { type: "checkbox", id: cbId });
+    if (existing) cb.setAttribute("checked", "checked");
+    rowWrap.appendChild(el("label", { class: "ind-label", for: cbId, title: "Constant text pulled from a message description." }, [cb, " MSGCON"]));
+    container.appendChild(rowWrap);
+
+    const valuesRow = el("div", { class: "prop-row" });
+    const lenInp = el("input", { type: "number", min: "1", max: "132", placeholder: "length", value: tokens[0] || "" });
+    const idInp = el("input", { type: "text", placeholder: "message id or *LIST", value: tokens[1] || "" });
+    const fileInp = el("input", { type: "text", placeholder: "message file", value: tokens[2] || "" });
+    const libInp = el("input", { type: "text", placeholder: "library (*LIBL)", value: tokens[3] || "" });
+    [lenInp, idInp, fileInp, libInp].forEach((i) => valuesRow.appendChild(i));
+    container.appendChild(valuesRow);
+
+    const sendUpdate = () => {
+      if (!cb.checked) {
+        onRemove("MSGCON");
+        return;
+      }
+      if (!lenInp.value || !idInp.value.trim() || !fileInp.value.trim()) return;
+      const parts = [lenInp.value, idInp.value.trim().toUpperCase(), fileInp.value.trim().toUpperCase()];
+      if (libInp.value.trim()) parts.push(libInp.value.trim().toUpperCase());
+      onSet("MSGCON", "(" + parts.join(" ") + ")");
+    };
+    cb.addEventListener("change", sendUpdate);
+    [lenInp, idInp, fileInp, libInp].forEach((i) => i.addEventListener("change", sendUpdate));
+  }
+
+  /**
+   * Bespoke COLOR row (Batch A) — richer than a single select/text kind
+   * supports, since COLOR's shape genuinely differs per model. Named
+   * colors and *RGB are confirmed against this project's own established
+   * fixture (test/fixtures/sample-afpds.pf uses COLOR(*BLU) and
+   * COLOR(*RGB 0 0 0)). *CMYK/*CIELAB's exact special-value names and
+   * numeric ranges are NOT independently confirmed against IBM's DDS
+   * reference — inferred from the *RGB pattern shown on the RLU "Work with
+   * Colors" screen's second page (docs/KEYWORD-INVENTORY.md §3) — so those
+   * two get a plain space-separated text input instead of false-precision
+   * numeric range inputs. Flagged in docs/TASKS.md for a follow-up
+   * verification pass.
+   */
+  function appendColorRow(container, entryKeywords, idPrefix, onSet, onRemove) {
+    const existing = PrtfEngine.findKeyword(entryKeywords, "COLOR");
+    const inner = paramsInnerText(existing);
+    const tokens = inner ? inner.split(/\s+/) : [];
+    const model = tokens[0] === "*RGB" || tokens[0] === "*CMYK" || tokens[0] === "*CIELAB" ? tokens[0] : "Named";
+
+    const rowWrap = el("div", { class: "prop-row" });
+    const cbId = idPrefix + "-COLOR";
+    const cb = el("input", { type: "checkbox", id: cbId });
+    if (existing) cb.setAttribute("checked", "checked");
+    rowWrap.appendChild(el("label", { class: "ind-label", for: cbId }, [cb, " COLOR"]));
+
+    const modelSel = el("select", {});
+    ["Named", "*RGB", "*CMYK", "*CIELAB"].forEach((m) => {
+      const o = el("option", { value: m }, [m]);
+      if (m === model) o.setAttribute("selected", "selected");
+      modelSel.appendChild(o);
+    });
+    rowWrap.appendChild(modelSel);
+    container.appendChild(rowWrap);
+
+    const valuesRow = el("div", { class: "prop-row" });
+    container.appendChild(valuesRow);
+
+    let compose = () => "";
+    const sendUpdate = () => {
+      if (!cb.checked) {
+        onRemove("COLOR");
+        return;
+      }
+      const composed = compose().trim();
+      if (!composed) return;
+      onSet("COLOR", "(" + composed + ")");
+    };
+
+    function renderValueInputs() {
+      valuesRow.innerHTML = "";
+      if (modelSel.value === "Named") {
+        const sel = el("select", {});
+        NAMED_COLORS.forEach(([v, label]) => {
+          const o = el("option", { value: v }, [label]);
+          if (v === tokens[0]) o.setAttribute("selected", "selected");
+          sel.appendChild(o);
+        });
+        valuesRow.appendChild(sel);
+        compose = () => sel.value;
+        sel.addEventListener("change", sendUpdate);
+      } else if (modelSel.value === "*RGB") {
+        const r = el("input", { type: "number", min: "0", max: "255", value: tokens[1] || "0" });
+        const g = el("input", { type: "number", min: "0", max: "255", value: tokens[2] || "0" });
+        const b = el("input", { type: "number", min: "0", max: "255", value: tokens[3] || "0" });
+        [r, g, b].forEach((i) => {
+          valuesRow.appendChild(i);
+          i.addEventListener("change", sendUpdate);
+        });
+        compose = () => "*RGB " + r.value + " " + g.value + " " + b.value;
+      } else {
+        const raw = el("input", { type: "text", placeholder: "space-separated values (unverified format — see code comment)", value: tokens.slice(1).join(" ") });
+        valuesRow.appendChild(raw);
+        raw.addEventListener("change", sendUpdate);
+        compose = () => modelSel.value + " " + raw.value;
+      }
+    }
+    renderValueInputs();
+    modelSel.addEventListener("change", () => {
+      renderValueInputs();
+      sendUpdate();
+    });
+    cb.addEventListener("change", sendUpdate);
+  }
+
+  /** Batch A: general field/constant keyword section, appended into the click-a-cell properties panel below the existing Batch G "Data/edit keywords" section (fields) or directly (constants). Applies immediately on change, same UX as the other keyword panels. */
+  function renderBatchAKeywordsSection(cell) {
+    const section = el("div", {});
+    section.appendChild(el("h4", {}, ["General keywords"]));
+
+    const onSet = (name, params) => vscode.postMessage({ type: "edit", edit: { kind: "setFieldKeyword", id: cell.id, name, params } });
+    const onRemove = (name) => vscode.postMessage({ type: "edit", edit: { kind: "removeFieldKeyword", id: cell.id, name } });
+    const idPrefix = "gfkw-" + cell.id;
+
+    if (cell.kind === "field") {
+      appendEdtcdeRow(section, cell.keywords, idPrefix, onSet, onRemove);
+      appendBatchAKeywordRows(section, BATCH_A_FIELD_ONLY_KEYWORDS, cell.keywords, idPrefix, onSet, onRemove);
+    } else {
+      appendBatchAKeywordRows(section, BATCH_A_CONSTANT_ONLY_KEYWORDS, cell.keywords, idPrefix, onSet, onRemove);
+      appendMsgconRow(section, cell.keywords, idPrefix, onSet, onRemove);
+    }
+    appendBatchAKeywordRows(section, BATCH_A_SHARED_KEYWORDS, cell.keywords, idPrefix, onSet, onRemove);
+    appendColorRow(section, cell.keywords, idPrefix, onSet, onRemove);
+
+    return section;
+  }
+
   function renderEditPanel(cell) {
     const panel = el("div", { class: "props" });
     panel.appendChild(el("h4", {}, [cell.kind === "field" ? "Field: " + cell.name : "Constant"]));
@@ -886,6 +1151,7 @@
           cell.kind === "field" ? cell.name : "constant"
         )
       );
+      panel.appendChild(renderBatchAKeywordsSection(cell));
     }
 
     const btnRow = el("div", { class: "prop-buttons" });
@@ -957,13 +1223,25 @@
   function paramsToText(kind, value) {
     if (kind === "flag") return "";
     const v = (value || "").trim();
-    return v ? "(" + v + ")" : "";
+    if (!v) return "";
+    // Batch A: quotedText always DDS-quotes its value (e.g. EDTWRD, DFT).
+    // quotedSelect quotes everything except a "*"-prefixed special value
+    // (e.g. DATSEP('-') vs. DATSEP(*JOB)) — see KEYWORD-INVENTORY §3 and
+    // IBM's DDS reference, which documents *JOB as a bare special value
+    // distinct from a literal separator character.
+    if (kind === "quotedText") return "('" + v.replace(/'/g, "''") + "')";
+    if (kind === "quotedSelect") return v.startsWith("*") ? "(" + v + ")" : "('" + v.replace(/'/g, "''") + "')";
+    return "(" + v + ")";
   }
 
-  /** Strips the surrounding parentheses from a Keyword's raw params (e.g. "(*YES)" -> "*YES"), for populating an edit input from the current model. */
-  function paramsInnerText(kw) {
+  /** Strips the surrounding parentheses (and, for the Batch A quoted kinds, the DDS quote pair) from a Keyword's raw params (e.g. "(*YES)" -> "*YES"), for populating an edit input from the current model. `kind` defaults to plain/unquoted for call sites that predate the quoted kinds. */
+  function paramsInnerText(kw, kind) {
     if (!kw) return "";
-    return String(kw.params || "").replace(/^\(/, "").replace(/\)$/, "").trim();
+    let inner = String(kw.params || "").replace(/^\(/, "").replace(/\)$/, "").trim();
+    if ((kind === "quotedText" || kind === "quotedSelect") && inner.length >= 2 && inner[0] === "'" && inner[inner.length - 1] === "'") {
+      inner = inner.slice(1, -1).replace(/''/g, "'");
+    }
+    return inner;
   }
 
   function renderRecordKeywordsPanel(record) {
@@ -1020,6 +1298,75 @@
         // isn't valid DDS for either keyword. Leave the box checked but
         // don't send anything until there's a value to write.
         if (def.kind === "text" && valueInput && !valueInput.value.trim()) return;
+        vscode.postMessage({
+          type: "edit",
+          edit: {
+            kind: "setRecordKeyword",
+            recordName: record.name,
+            name: def.name,
+            params: valueInput ? paramsToText(def.kind, valueInput.value) : "",
+          },
+        });
+      };
+
+      cb.addEventListener("change", sendUpdate);
+      if (valueInput) valueInput.addEventListener("change", sendUpdate);
+
+      panel.appendChild(rowWrap);
+    });
+
+    return panel;
+  }
+
+  // Batch A: general record-level keywords not covered by any other batch's
+  // panel. PRTQLTY/DRAWER/PAGRTT values verified against IBM's DDS
+  // reference (not just RLU's own screen picklist numbering — e.g. RLU
+  // shows "1=Standard" for what's actually PRTQLTY(*STD) underneath).
+  // HIGHLIGHT here is the record-level form of the same keyword Batch B's
+  // font panel already validates against CDEFNT/FNTCHRSET via
+  // validateFontKeywords() — see renderFontSizingPanel, no separate check
+  // needed in this panel.
+  const BATCH_A_RECORD_KEYWORDS = [
+    { name: "PRTQLTY", kind: "select", options: ["*STD", "*DRAFT", "*NLQ", "*FASTDRAFT"], hint: "Print quality: Standard / Draft / Near letter / Fast draft." },
+    { name: "DRAWER", kind: "select", options: ["1", "2", "3", "4"], hint: "Forms drawer to select from — which physical drawer each number maps to is printer-specific." },
+    { name: "PAGRTT", kind: "select", options: ["0", "90", "180", "270"], hint: "Degrees of page rotation." },
+    { name: "HIGHLIGHT", kind: "flag", hint: "Highlighted printing. Ignored if CDEFNT or FNTCHRSET is also coded on this record." },
+  ];
+
+  function renderGeneralRecordKeywordsPanel(record) {
+    const panel = el("div", { class: "props" });
+    panel.appendChild(el("h4", {}, ["General record keywords — " + record.name]));
+
+    // HIGHLIGHT's own conflict warning (vs. CDEFNT/FNTCHRSET) is already
+    // shown by the "Font & sizing" panel below (Batch B's
+    // validateFontKeywords call) — not duplicated here.
+
+    BATCH_A_RECORD_KEYWORDS.forEach((def) => {
+      const existing = PrtfEngine.findKeyword(record.keywords, def.name);
+      const rowWrap = el("div", { class: "prop-row" });
+
+      const cbId = "gkw-" + record.name + "-" + def.name;
+      const cb = el("input", { type: "checkbox", id: cbId });
+      if (existing) cb.setAttribute("checked", "checked");
+      rowWrap.appendChild(el("label", { class: "ind-label", for: cbId, title: def.hint }, [cb, " " + def.name]));
+
+      let valueInput = null;
+      if (def.kind === "select") {
+        const sel = el("select", {});
+        def.options.forEach((opt) => {
+          const o = el("option", { value: opt }, [opt]);
+          if (opt === paramsInnerText(existing)) o.setAttribute("selected", "selected");
+          sel.appendChild(o);
+        });
+        valueInput = sel;
+        rowWrap.appendChild(sel);
+      }
+
+      const sendUpdate = () => {
+        if (!cb.checked) {
+          vscode.postMessage({ type: "edit", edit: { kind: "removeRecordKeyword", recordName: record.name, name: def.name } });
+          return;
+        }
         vscode.postMessage({
           type: "edit",
           edit: {

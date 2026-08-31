@@ -76,10 +76,22 @@ remaining work is re-organized into the parallel-session task batches in
 without stepping on another in-progress session. Summary (see TASKS.md for
 full detail, acceptance criteria, and file-level ownership per batch):
 
-- [ ] **Batch A — Properties-panel keyword editing, non-AFP-resource set:**
-      `EDTCDE`, `EDTWRD`, `DATE`/`DATFMT`/`DATSEP`, `TIME`/`TIMFMT`/`TIMSEP`,
-      `DFT`, `MSGCON`, `COLOR` (all 5 color models), `HIGHLIGHT`,
-      `UNDERLINE`, `PAGNBR`, `PRTQLTY`, `DRAWER`, `PAGRTT`.
+- [x] **Batch A — general properties-panel keywords — done.**
+      `EDTCDE`/`EDTWRD`/`DATFMT`/`DATSEP`/`TIMFMT`/`TIMSEP`/`DFT`
+      (field-only, verified against IBM's DDS date/time field example);
+      `DATE`/`TIME`/`PAGNBR`/`MSGCON` (constant-only, verified against IBM's
+      DDS syntax overview); `COLOR` (Named/`*RGB` verified against this
+      project's own `sample-afpds.pf` fixture, `*CMYK`/`*CIELAB` flagged as
+      unverified format); `HIGHLIGHT`/`UNDERLINE` (shared — `HIGHLIGHT`'s
+      validation already existed via Batch B's `validateFontKeywords`, not
+      duplicated); `PRTQLTY`/`DRAWER`/`PAGRTT` (record-level, values
+      verified against IBM's reference rather than RLU's own screen
+      picklist numbering). New `quotedSelect` kind added for `DATSEP`/
+      `TIMSEP`'s quoted-or-bare-`*JOB` shape. See `docs/TASKS.md` Batch A
+      for the full writeup. Found (but didn't fix, out of scope) a
+      pre-existing writer bug — `emitWithKeywords` collapses multiple
+      consecutive internal spaces inside quoted keyword literals — logged
+      as Batch R.
 - [x] **Batch B — Font/character-sizing keyword editing incl. P-field
       indirection — done.** Built the generic literal-vs-P-field toggle
       component (`pFieldRow`) once and reused it across `FONT`, `CDEFNT`,
@@ -203,6 +215,12 @@ full detail, acceptance criteria, and file-level ownership per batch):
       with its keywords intact currently means re-entering everything by
       hand. No dependency — sits next to the existing Delete button and
       reuses the add-field edit-kind shape. See `docs/TASKS.md` Batch Q.
+- [ ] **Batch R — Bug fix:** `emitWithKeywords` collapses multiple
+      consecutive internal spaces inside any quoted keyword literal (e.g.
+      `EDTWRD('  .  ')` round-trips as `EDTWRD(' . ')`) — its tokenizer has
+      no concept of quote boundaries. Same function as Batch M's earlier
+      fix, different symptom. Found via Batch A's tests. See
+      `docs/TASKS.md` Batch R for the full root-cause writeup.
 
 Each batch's keyword list, current model/parser/engine status
 (modeled/rendered/UI), and IBM-documented gotchas are detailed in

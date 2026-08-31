@@ -76,7 +76,7 @@ vice versa.
 
 | Batch | Description | Keywords in scope | Status | Depends on |
 |---|---|---|---|---|
-| A | Properties-panel editing: general field/record keywords | `EDTCDE`, `EDTWRD`, `DATE`, `DATFMT`, `DATSEP`, `TIME`, `TIMFMT`, `TIMSEP`, `DFT`, `MSGCON`, `COLOR`, `HIGHLIGHT`, `UNDERLINE`, `PAGNBR`, `PRTQLTY`, `DRAWER`, `PAGRTT` | **In progress** | none |
+| A | ~~Properties-panel editing: general field/record keywords~~ | `EDTCDE`, `EDTWRD`, `DATE`, `DATFMT`, `DATSEP`, `TIME`, `TIMFMT`, `TIMSEP`, `DFT`, `MSGCON`, `COLOR`, `HIGHLIGHT`, `UNDERLINE`, `PAGNBR`, `PRTQLTY`, `DRAWER`, `PAGRTT` | **Done** | none |
 | B | Font/sizing keyword editing + shared P-field toggle component | `FONT`, `CDEFNT`, `FNTCHRSET`, `FONTNAME`, `CHRSIZ`, `CHRID`, `CCSID` | **Done** | none (but A and C benefit from B's P-field component if B lands first) |
 | C | `BARCODE` full parameter surface (still placeholder render) | `BARCODE` | Not started | none |
 | D | `BARCODE` real symbol rendering | `BARCODE` | Not started | **C** |
@@ -93,36 +93,77 @@ vice versa.
 | O | Real AFP resource rendering (actual pixel content for page segments/overlays) | `PAGSEG`, `OVERLAY` (record-level) | Blocked — needs external resource files, see REQUIREMENTS.md §8 | **E** |
 | P | Add/rename/delete/reorder record formats from the designer | n/a (tooling/UI, not a keyword) | Not started | none |
 | Q | Copy/duplicate a field or constant | n/a (tooling/UI, not a keyword) | Not started | none |
+| R | **Bug fix:** `emitWithKeywords` collapses multiple consecutive internal spaces inside any quoted keyword literal | n/a (parser/writer correctness) | Not started — logged below, not yet fixed | none |
 
 ## Batch detail
 
-### Batch A — General properties-panel keywords
-**Goal:** each keyword gets a form section in the properties panel (mirroring
-the RLU "Specify ..." screens in `docs/KEYWORD-INVENTORY.md` §2/§3) that
-reads/writes through the existing generic keyword model — no new engine
-rendering required except where noted.
-- `EDTCDE`/`EDTWRD`: text/dropdown inputs; **no preview rendering change**
-  needed beyond what the field already shows (edit codes affect numeric
-  display formatting in real DDS, but exact-format preview is explicitly
-  out of scope per `docs/REQUIREMENTS.md` §6's "approximate width only"
-  caveat — don't scope-creep into a full edit-code formatter here).
-- `DATE`/`DATFMT`/`DATSEP`, `TIME`/`TIMFMT`/`TIMSEP`: dropdowns matching the
-  RLU screen's exact choice lists (KEYWORD-INVENTORY §3).
-- `DFT`: literal text input.
-- `MSGCON`: message length/id/file/library form; no need to actually resolve
-  message text from a message file (that would need Code for i) — just
-  round-trip the keyword params.
-- `COLOR`: build a proper model picker (named / RGB / CMYK / CIELAB /
-  HIGHLIGHT), not a flat dropdown — KEYWORD-INVENTORY §3 has the exact
-  choice sets from both "Work with Colors" screens.
-- `HIGHLIGHT`, `UNDERLINE`: boolean-ish (option-indicators-only) — simple
-  toggle + indicator picker. **Add a live validation hint** when `HIGHLIGHT`
-  is set alongside `CDEFNT`/`FNTCHRSET` on the same record/field (IBM docs:
-  silently ignored otherwise — surfacing this beats silent failure).
-- `PAGNBR`, `PRTQLTY`, `DRAWER`, `PAGRTT`: simple enumerated/numeric inputs
-  per the exact ranges in KEYWORD-INVENTORY §2.
-- Tests: `test/propertiesPanelBatchA.test.ts` (or `.js`, match existing test
-  runner convention) — round-trip each keyword through add/edit/remove.
+### Batch A — General properties-panel keywords [DONE]
+**Implemented following the codebase's established per-batch convention**
+(each batch owns its own `BATCH_X_KEYWORDS` array + section-render
+function — see Batch F's `renderRecordKeywordsPanel`/Batch G's
+`renderFieldKeywordsSection` — rather than a shared generic abstraction;
+an earlier draft of this batch built a generic `renderKeywordDefsPanel`
+before Batches B/G/H landed independently and established this
+per-batch pattern as the de facto convention, so it was rewritten to match
+before merging). Decisions worth recording for anyone extending this
+batch's keyword set later:
+
+- **Split field-only vs. constant-only vs. shared**, verified against IBM's
+  DDS reference rather than treating all 17 keywords as interchangeable
+  across field/constant: `EDTCDE`/`EDTWRD`/`DATFMT`/`DATSEP`/`TIMFMT`/
+  `TIMSEP`/`DFT` attach to a **named field** (confirmed by IBM's own "DDS
+  File With Date, Time, and Timestamp Fields" example, which uses them on
+  named `L`/`T`-type fields); `DATE`/`TIME`/`PAGNBR`/`MSGCON` attach to a
+  **constant (unnamed) field** (confirmed by IBM's DDS syntax overview:
+  "Constant (unnamed) fields require only a location and a keyword, as
+  described in the DATE, DFT, PAGNBR, TIME, and MSGCON keyword
+  descriptions"); `COLOR`/`HIGHLIGHT`/`UNDERLINE` apply to both. `DFT` was
+  deliberately kept field-only (not also offered on constants) since a
+  constant already carries its value via the literal-text input.
+- **`PRTQLTY`/`DRAWER`/`PAGRTT` values verified against IBM's reference**,
+  not just RLU's own screen labels: `PRTQLTY` is
+  `*STD`/`*DRAFT`/`*NLQ`/`*FASTDRAFT` (RLU's "1=Standard" etc. is its own
+  picklist numbering, not the literal DDS value); `DRAWER` is a plain
+  `1`–`4`; `PAGRTT` is `0`/`90`/`180`/`270` as KEYWORD-INVENTORY already had
+  it.
+- **`DATSEP`/`TIMSEP` needed a new "quotedSelect" kind**, added to the
+  shared `paramsToText`/`paramsInnerText` helpers (backward-compatible —
+  existing "select"/"text"/"flag" call sites unaffected): these take either
+  a single quoted separator character (`DATSEP('-')`) or the bare special
+  value `*JOB` — never both quoted. A live client-side hint documents (but
+  doesn't hard-block) IBM's rule that `DATSEP`/`TIMSEP` can't be combined
+  with a fixed-separator `DATFMT`/`TIMFMT` (`*ISO`/`*USA`/`*EUR`/`*JIS`).
+- **`COLOR`'s `*RGB` and named-color forms are verified** (matching this
+  project's own `sample-afpds.pf` fixture, which already used
+  `COLOR(*BLU)` and `COLOR(*RGB 0 0 0)`); **`*CMYK`/`*CIELAB`'s exact
+  parameter format is NOT independently confirmed** against IBM's
+  reference — implemented as a plain space-separated text input rather than
+  false-precision numeric range inputs, with the uncertainty flagged in a
+  code comment. Worth a follow-up verification pass by whoever next touches
+  `COLOR`.
+- **`HIGHLIGHT`'s mutual-exclusion validation already existed** by the time
+  this batch landed — Batch B's `validateFontKeywords` (generic over any
+  keyword array, so it already covers both record- and field-level
+  `HIGHLIGHT`) was implemented independently in parallel and converged on
+  the same rule this batch would otherwise have added. No duplicate
+  validation was added; the general-record-keywords panel and the new
+  field/constant section both rely on Batch B's Font & sizing panel already
+  surfacing that warning, rather than re-showing it.
+- **No preview-rendering changes** — exactly as scoped, `EDTCDE`/`EDTWRD`
+  don't attempt real numeric-formatting preview (explicit non-goal, see
+  `docs/REQUIREMENTS.md` §6).
+- **Bug found while testing, logged separately rather than fixed here**:
+  `emitWithKeywords` (the shared line-wrapping function, also the site of
+  Batch M's earlier fix) collapses multiple consecutive internal spaces in
+  any quoted keyword literal — e.g. `EDTWRD('  .  ')` round-trips as
+  `EDTWRD(' . ')`. Logged as **Batch R** with full root-cause detail; not
+  fixed as part of this batch since it's a pre-existing, cross-cutting
+  writer defect unrelated to Batch A's own scope.
+- Tests: `test/prtfBatchA.test.ts` — round-trip for every keyword's exact
+  parameter shape (the two-part `EDTCDE`, quoted vs. bare `DATSEP`/
+  `TIMSEP`, all three implemented `COLOR` models, record- and
+  constant-level keywords using `sample1.pf`'s existing entries), plus the
+  dedicated Batch R bug-documentation test.
 
 ### Batch B — Font/sizing + shared P-field component [DONE]
 **Delivered:** a shared, reusable "literal or program-to-system field"
@@ -691,6 +732,54 @@ exactly — this doesn't need any other batch to land first.
   mutate the source entry itself (a bug where copy silently *moves* instead
   of duplicates is the obvious failure mode to guard against explicitly).
 
+### Batch R — Fix emitWithKeywords collapsing internal whitespace in quoted literals
+**Found by:** `test/prtfBatchA.test.ts`, while adding a round-trip test for
+`EDTWRD('  .  ')` (a realistic edit-word mask — multiple internal spaces are
+common in real masks, e.g. for currency column alignment). The test failed:
+the value came back as `EDTWRD(' . ')` — one of the two runs of double
+spaces silently collapsed to a single space.
+
+**The bug:** `emitWithKeywords` in `src/prtfWriter.js` tokenizes the entire
+keyword-area text for a line with `keywordText.trim().split(/\s+/)`, then
+rejoins kept tokens with a single space (`current + " " + tok`) when
+deciding how to wrap them across physical lines. This tokenizer has no
+concept of quote boundaries — it treats a run of spaces *inside* a quoted
+DDS literal exactly the same as the spaces *between* separate keywords, so
+any deliberate multi-space content inside a quoted parameter (`EDTWRD`,
+`DFT`, `MSGCON`'s message id, or any other quoted keyword value) gets
+collapsed to single spaces on regenerate, silently corrupting the literal.
+
+**Same class of bug as Batch M, different symptom:** Batch M (already
+fixed) was about `emitWithKeywords` choosing the wrong continuation
+character at a wrap point; this is the same function's tokenizer corrupting
+content that was never even near a wrap point, because it isn't
+quote-aware at all. Fixing Batch M's continuation-character choice didn't
+touch this — they're independent problems in the same function.
+
+**Why this went undetected until now:** none of the existing fixtures
+(`sample1.pf`, `sample-scs.pf`, `sample-afpds.pf`) or prior batches' tests
+happened to use a quoted keyword literal containing more than one
+consecutive internal space. Batch A's `EDTWRD` test was the first to.
+
+**Scope for whoever picks this up:**
+1. In `src/prtfWriter.js`, `emitWithKeywords` needs a quote-aware
+   tokenizer: split on whitespace *outside* single-quoted spans, but treat
+   an entire `'...'` span (including any spaces inside it, and respecting
+   DDS's doubled-`''`-means-a-literal-quote escaping) as one indivisible
+   token for wrapping purposes.
+2. A quoted literal that's itself very long (longer than the ~34-column
+   keyword width) still can't be split — same pre-existing, separate
+   limitation already noted in Batch M's writeup (long single tokens get
+   truncated by `padRight`, not wrapped). Don't try to solve that here;
+   just don't make it worse.
+3. Re-run `test/prtfBatchA.test.ts` — the "KNOWN BUG" test documenting this
+   is written to assert the *current* (broken) behavior; once fixed, that
+   assertion should be updated to expect the correct
+   `params === "('  .  ')"` and the test's name/comment updated to drop the
+   "KNOWN BUG" framing.
+4. Add a regression test in `test/prtfWriter.test.ts` (unit-level, against
+   `emitWithKeywords` directly, matching that file's existing style)
+   alongside the fixture-level one, so this doesn't regress silently again.
 
 ## Adding a new batch
 
