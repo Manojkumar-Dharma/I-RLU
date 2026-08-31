@@ -357,6 +357,12 @@ function resolveLayout(model, recordName, indicatorState, uom) {
       // already say.
       reference: entry.kind === "field" ? !!entry.reference : undefined,
       refTarget: entry.kind === "field" && entry.reference ? resolveReferenceTarget(model, record, entry) : undefined,
+      // Batch G (docs/TASKS.md) — field-level data/edit keywords. Raw
+      // keywords so the properties panel can prefill ALIAS/BLKFOLD/CVTDTA/
+      // DLTEDT/FLTFIXDEC/FLTPCN/TRNSPY/TXTRTT without a second round trip,
+      // plus any applicability warnings (e.g. FLTPCN on a non-F field).
+      keywords: entry.kind === "field" ? entry.keywords : undefined,
+      fieldWarnings: entry.kind === "field" ? validateFieldKeywords(entry) : undefined,
       barcode: barcodeKw ? parseBarcodeGeometry(barcodeKw, lpi, uom) : undefined,
       font: {
         fgid: font.fgid,
@@ -472,6 +478,100 @@ function validateFileLevelKeywords(model) {
   return warnings;
 }
 
+// --- Batch G: field-level data/edit keywords (ALIAS, BLKFOLD, CVTDTA,
+// DLTEDT, FLTFIXDEC, FLTPCN, TRNSPY, TXTRTT) + INDTXT indicator text ------
+//
+// None of these affect page-preview layout — ALIAS/CVTDTA/TRNSPY/TXTRTT
+// describe how print-time data is interpreted or rotated (not something
+// this character-grid preview models), BLKFOLD/DLTEDT/FLTFIXDEC/FLTPCN are
+// print-time formatting choices, and INDTXT is documentation-only (no
+// compile effect at all). Same validation-only approach as Batch F:
+// CRTPRTF remains the real enforcement point, this just surfaces IBM's
+// documented applicability rules as properties-panel hints.
+
+/** Field-level keywords that take no parameters at all (option indicators only) — must be re-emitted as a bare keyword name, never "NAME()". */
+const FIELD_LEVEL_VALUELESS_KEYWORDS = ["BLKFOLD", "DLTEDT", "TRNSPY", "FLTFIXDEC", "CVTDTA"];
+
+/**
+ * Validation hints for a single field's Batch G keywords — IBM's DDS
+ * reference restricts several of these to a specific data type or to
+ * reference fields, but the data-description processor is the only thing
+ * that actually enforces it at compile time; this just surfaces the same
+ * rule live in the designer. Returns [] when there's nothing to flag.
+ */
+function validateFieldKeywords(field) {
+  const warnings = [];
+  if (findKeyword(field.keywords, "DLTEDT") && !field.reference) {
+    warnings.push({
+      keyword: "DLTEDT",
+      message: "DLTEDT only has an effect on a field that references another field (position 29 'R') — it deletes EDTCDE/EDTWRD editing that would otherwise be copied in from the referenced field.",
+    });
+  }
+  const fltfixdec = findKeyword(field.keywords, "FLTFIXDEC");
+  const fltpcn = findKeyword(field.keywords, "FLTPCN");
+  [fltfixdec, fltpcn].forEach((kw) => {
+    if (kw && field.dataType && field.dataType !== "F") {
+      warnings.push({ keyword: kw.name, message: kw.name + " only applies to floating-point fields (data type F)." });
+    }
+  });
+  if (fltpcn) {
+    const val = (paramTokens(fltpcn)[0] || "").toUpperCase();
+    if (val && val !== "*SINGLE" && val !== "*DOUBLE") {
+      warnings.push({ keyword: "FLTPCN", message: "FLTPCN's parameter must be *SINGLE or *DOUBLE, not " + val + "." });
+    }
+  }
+  const trnspy = findKeyword(field.keywords, "TRNSPY");
+  if (trnspy && field.dataType && field.dataType !== "A") {
+    warnings.push({ keyword: "TRNSPY", message: "TRNSPY only applies to character fields (data type A)." });
+  }
+  const txtrtt = findKeyword(field.keywords, "TXTRTT");
+  if (txtrtt) {
+    const deg = paramTokens(txtrtt)[0];
+    if (deg && ["0", "90", "180", "270"].indexOf(deg) === -1) {
+      warnings.push({ keyword: "TXTRTT", message: "TXTRTT's rotation must be 0, 90, 180, or 270 degrees, not " + deg + "." });
+    }
+  }
+  return warnings;
+}
+
+/**
+ * Parses one INDTXT keyword's "(indicator 'text')" params into
+ * {indicator, text}, or null if malformed. Indicator numbers are
+ * normalized to uppercase (INDTXT documents response/option indicators,
+ * which are numeric, but this stays consistent with how conditioning
+ * indicators are stored elsewhere in this file).
+ */
+function parseIndtxt(kw) {
+  const m = String(kw.params || "").match(/\(\s*([A-Za-z0-9]+)\s+'((?:[^']|'')*)'/);
+  if (!m) return null;
+  return { indicator: m[1].toUpperCase(), text: m[2].replace(/''/g, "'") };
+}
+
+/**
+ * Collects indicator -> description text from every INDTXT keyword in
+ * scope for a record, so the indicator-toggle panel can show each
+ * indicator's documented meaning next to its checkbox (docs/TASKS.md
+ * Batch G, matching the UX I-SDA has for the same DSPF concept). INDTXT is
+ * valid at file, record, AND field level (KEYWORD-INVENTORY.md §1/§2/§3),
+ * so all three are scanned. When the same indicator is documented at more
+ * than one level, the most specific scope wins (field, then record, then
+ * file) — same "most specific wins" convention this file already follows
+ * for REF/REFFLD (see resolveReferenceTarget).
+ */
+function collectIndicatorDescriptions(model, record) {
+  const result = {};
+  const apply = (keywords) => {
+    findAllKeywords(keywords, "INDTXT").forEach((kw) => {
+      const parsed = parseIndtxt(kw);
+      if (parsed) result[parsed.indicator] = parsed.text;
+    });
+  };
+  apply(model.fileLevel.keywords);
+  apply(record.keywords);
+  record.fields.forEach((f) => apply(f.keywords));
+  return result;
+}
+
 function listRecordNames(model) {
   return model.records.map((r) => r.name);
 }
@@ -499,6 +599,11 @@ const mod = {
   PSF_ONLY_KEYWORDS,
   validateRecordKeywords,
   validateFileLevelKeywords,
+  // Batch G
+  FIELD_LEVEL_VALUELESS_KEYWORDS,
+  validateFieldKeywords,
+  parseIndtxt,
+  collectIndicatorDescriptions,
 };
 if (typeof module !== "undefined" && module.exports) module.exports = mod;
 if (typeof window !== "undefined") window.PrtfEngine = mod;

@@ -107,10 +107,16 @@ full detail, acceptance criteria, and file-level ownership per batch):
       (`ZFOLD`/`STAPLE` are PSF-only). Also lands the file-level
       `SKIPA`/`SKIPB` `*AFPDS` check folded in from Batch I below. See
       `docs/TASKS.md` Batch F for implementation notes.
-- [ ] **Batch G — Field-level data/edit keywords:** `ALIAS`, `BLKFOLD`,
-      `CVTDTA`, `DLTEDT`, `FLTFIXDEC`, `FLTPCN`, `TRNSPY`, `TXTRTT`,
-      `INDTXT` (ties into the indicator-toggle panel's text labels — port
-      I-SDA's indicator-description UX).
+- [x] **Batch G — Field-level data/edit keywords:** `ALIAS`, `BLKFOLD`,
+      `CVTDTA`, `DLTEDT`, `FLTFIXDEC`, `FLTPCN`, `TRNSPY`, `TXTRTT` land as
+      an always-visible "Data/edit keywords" section in the field
+      properties panel, with the same applicability-warning approach as
+      Batch F (`PrtfEngine.validateFieldKeywords`). `INDTXT` feeds indicator
+      descriptions into the existing indicator-toggle panel (tooltip + text
+      next to each checkbox) with a small record-level editor alongside it
+      — I-SDA turned out not to have a directly portable INDTXT UX to copy
+      (see `docs/TASKS.md` Batch G's own note), so this was built fresh
+      against IBM's DDS reference instead.
 - [x]/[ ] **Batch H — `REF`/`REFFLD` resolution via Code for i — part 1
       done, part 2 blocked without a live IBM i.** Part 1 (UI shape, fully
       testable): `PrtfEngine.resolveReferenceTarget` works out which

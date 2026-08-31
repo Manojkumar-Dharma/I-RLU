@@ -57,7 +57,7 @@
     "compile": "tsc -p ./ && node src/buildWebviewTemplate.js",
     "watch": "tsc -p ./ -w",
     "pretest": "tsc -p ./ && node src/buildWebviewTemplate.js && node -e \"require('fs').mkdirSync('out/test/fixtures',{recursive:true});require('fs').cpSync('test/fixtures','out/test/fixtures',{recursive:true})\"",
-    "test": "node --test out/test/prtfParser.test.js out/test/prtfFixtures.test.js out/test/prtfWriter.test.js out/test/prtfBatchF.test.js out/test/prtfReferenceField.test.js",
+    "test": "node --test out/test/prtfParser.test.js out/test/prtfFixtures.test.js out/test/prtfWriter.test.js out/test/prtfBatchF.test.js out/test/prtfReferenceField.test.js out/test/prtfFieldEditKeywords.test.js",
     "vscode:prepublish": "npm run compile",
     "package": "vsce package"
   },

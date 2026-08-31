@@ -20,6 +20,7 @@ body { font-family: var(--vscode-editor-font-family, monospace); color: var(--vs
 .indicators { display: inline-flex; gap: 8px; flex-wrap: wrap; }
 .indicators-wrap { display: inline-flex; align-items: center; gap: 4px; }
 .ind-label { display: inline-flex; align-items: center; gap: 2px; font-size: 11px; }
+.ind-text { color: var(--vscode-descriptionForeground); font-style: italic; }
 .hint { font-size: 11px; color: var(--vscode-descriptionForeground); font-style: italic; }
 .hint.warning { color: var(--vscode-inputValidation-warningForeground, #b89500); font-style: normal; margin: 4px 0; }
 .main { display: flex; flex-direction: column; }

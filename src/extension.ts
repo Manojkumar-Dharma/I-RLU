@@ -179,6 +179,67 @@ class PrtfDesignerProvider implements vscode.CustomTextEditorProvider {
         if (idx !== -1) record.keywords.splice(idx, 1);
         break;
       }
+      case "setFieldKeyword": {
+        // Batch G (and reusable by future field-keyword-panel batches,
+        // same as setRecordKeyword/removeRecordKeyword below are for
+        // record-level ones) — adds or replaces a field-level keyword by
+        // name. Batch G's own set (ALIAS, BLKFOLD, CVTDTA, DLTEDT,
+        // FLTFIXDEC, FLTPCN, TRNSPY, TXTRTT) are all non-repeating (at most
+        // one per field), so "set" replaces any existing entry with the
+        // same name rather than appending a duplicate. Not used for
+        // REFFLD (see upsertReffldKeyword, Batch H) or INDTXT (repeating,
+        // keyed by indicator number rather than by keyword name alone —
+        // see PrtfEngine.collectIndicatorDescriptions) since neither fits
+        // this "set once per name" shape.
+        const found = findById(edit.id);
+        if (!found || found.entry.kind !== "field") return;
+        const raw = edit.params ? edit.name + edit.params : edit.name;
+        const existingIndex = found.entry.keywords.findIndex((k: any) => k.name === edit.name);
+        const newKeyword = { name: edit.name, params: edit.params || "", raw, sourceLineIndex: -1 };
+        if (existingIndex !== -1) found.entry.keywords[existingIndex] = newKeyword;
+        else found.entry.keywords.push(newKeyword);
+        break;
+      }
+      case "removeFieldKeyword": {
+        const found = findById(edit.id);
+        if (!found || found.entry.kind !== "field") return;
+        const idx = found.entry.keywords.findIndex((k: any) => k.name === edit.name);
+        if (idx !== -1) found.entry.keywords.splice(idx, 1);
+        break;
+      }
+      case "setIndicatorText": {
+        // Batch G — INDTXT (docs/KEYWORD-INVENTORY.md §1) is a repeating
+        // keyword: a record can carry one INDTXT per indicator it wants to
+        // document, so this can't reuse setRecordKeyword's "one keyword
+        // per name, replace whichever's there" logic — it has to find the
+        // specific INDTXT entry for THIS indicator (via
+        // PrtfEngine.parseIndtxt) and only touch that one, leaving any
+        // INDTXT for other indicators untouched. Scoped to the record
+        // level here, matching the indicator-toggle panel's own per-record
+        // scope (see PrtfEngine.collectIndicatorDescriptions for why
+        // file/field-level INDTXT are still read, just not editable from
+        // this panel).
+        const record = model.records.find((r) => r.name === edit.recordName);
+        if (!record) return;
+        const text = String(edit.text || "").replace(/'/g, "''");
+        const params = "(" + edit.indicator + " '" + text + "')";
+        const newKeyword = { name: "INDTXT", params, raw: "INDTXT" + params, sourceLineIndex: -1 };
+        const existingIndex = record.keywords.findIndex(
+          (k: any) => k.name === "INDTXT" && PrtfEngine.parseIndtxt(k) && PrtfEngine.parseIndtxt(k).indicator === edit.indicator
+        );
+        if (existingIndex !== -1) record.keywords[existingIndex] = newKeyword;
+        else record.keywords.push(newKeyword);
+        break;
+      }
+      case "removeIndicatorText": {
+        const record = model.records.find((r) => r.name === edit.recordName);
+        if (!record) return;
+        const idx = record.keywords.findIndex(
+          (k: any) => k.name === "INDTXT" && PrtfEngine.parseIndtxt(k) && PrtfEngine.parseIndtxt(k).indicator === edit.indicator
+        );
+        if (idx !== -1) record.keywords.splice(idx, 1);
+        break;
+      }
       case "addField":
       case "addConstant": {
         const record = model.records.find((r) => r.name === edit.recordName);

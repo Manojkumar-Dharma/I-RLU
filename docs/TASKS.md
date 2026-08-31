@@ -82,7 +82,7 @@ vice versa.
 | D | `BARCODE` real symbol rendering | `BARCODE` | Not started | **C** |
 | E | AFP page-group / resource keyword placeholders | `OVERLAY` (record), `PAGSEG`, `STRPAGGRP`, `ENDPAGGRP`, `DOCIDXTAG`, `AFPRSC`, `DTASTMCMD` | Not started | none |
 | F | Print/finishing keywords, validation-only | `DUPLEX`, `FORCE`, `OUTBIN`, `ZFOLD`, `STAPLE`, `INVMMAP` | **Done** | none |
-| G | Field-level data/edit keywords + indicator text | `ALIAS`, `BLKFOLD`, `CVTDTA`, `DLTEDT`, `FLTFIXDEC`, `FLTPCN`, `TRNSPY`, `TXTRTT`, `INDTXT` | Not started | none |
+| G | Field-level data/edit keywords + indicator text | `ALIAS`, `BLKFOLD`, `CVTDTA`, `DLTEDT`, `FLTFIXDEC`, `FLTPCN`, `TRNSPY`, `TXTRTT`, `INDTXT` | **Done** | none |
 | H | `REF`/`REFFLD` resolution via Code for i | `REF`, `REFFLD` | Part 1 (UI shape + pure resolution logic) done; part 2 (live Code for i round-trip) written but unverified — needs a real connected IBM i | none (needs a live/mocked Code for i connection for full completion — can land the UI shape without it) |
 | I | ~~`UOM` modeling~~ **done elsewhere** (see `i-rlu.unitOfMeasure` setting, `docs/ROADMAP.md`) + file-level SKIPA/SKIPB *AFPDS validation | `SKIPA`, `SKIPB` (validation only) | **Done** (validation landed as part of Batch F — see `prtfEngine.js`'s `validateFileLevelKeywords`) | none |
 | J | Compile command: library/source-file/member picker | n/a (tooling) | Not started | none |
@@ -237,7 +237,7 @@ don't try to detect the target printer's actual capabilities.
   batches (A, B, G, etc.) can reuse them instead of adding their own.
 - Tests: `test/prtfBatchF.test.ts`.
 
-### Batch G — Field-level data/edit keywords + indicator text
+### Batch G — Field-level data/edit keywords + indicator text [DONE]
 **Goal:** `ALIAS` (simple rename field), `BLKFOLD`/`CVTDTA`/`DLTEDT`/
 `FLTFIXDEC`/`FLTPCN`/`TRNSPY`/`TXTRTT` (simple enumerated/numeric forms per
 KEYWORD-INVENTORY §3/§4), and `INDTXT` — the last one is the interesting
@@ -247,9 +247,46 @@ their human-readable meaning next to the checkbox, matching the UX I-SDA
 already has for the same concept on DSPF. Check I-SDA's implementation
 (`I-SDA/src/dspfEngine.js` / webview client) for the pattern before building
 this from scratch.
-- Tests: round-trip for the simple keywords; a specific test that `INDTXT`
-  text shows up correctly attached to the right indicator in the resolved
-  model passed to the webview.
+- **Note:** I-SDA turned out not to have a direct INDTXT-equivalent to copy
+  (`I-SDA/src/dspfEngine.js` has no indicator-text concept — its closest
+  relative is `resolveFunctionKeyLegend`'s CA/CF key labels, which is a
+  different keyword entirely). Built the panel from scratch instead, per
+  IBM's own DDS reference for `INDTXT`'s file/record/field-level shape.
+- `src/prtfEngine.js`: `validateFieldKeywords(field)` — applicability
+  warnings (DLTEDT needs "Reference a field" on; FLTFIXDEC/FLTPCN need data
+  type F; TRNSPY needs data type A; TXTRTT's degrees must be 0/90/180/270;
+  FLTPCN's own parameter must be `*SINGLE`/`*DOUBLE`). `parseIndtxt`/
+  `collectIndicatorDescriptions(model, record)` — parses `INDTXT(nn 'text')`
+  and merges file-, record-, and field-level occurrences, most-specific-
+  scope-wins (same convention as REF/REFFLD's precedence).
+- `media/webviewClient.js`: field properties panel gets a "Data/edit
+  keywords" section (checkboxes for the valueless ones, selects for
+  FLTPCN/TXTRTT, a text box for ALIAS), applied immediately via the new
+  `setFieldKeyword`/`removeFieldKeyword` edit kinds — same "changes apply
+  immediately, no separate Save" UX as Batch F's record-keyword panel,
+  since these are independent of the base positional-attribute Save
+  button. The indicator toolbar panel now shows each indicator's INDTXT
+  description as a tooltip + inline text next to its checkbox; a new
+  per-record "Indicator text (INDTXT)" panel lets the text be added/edited/
+  cleared (record-level scope only — file/field-level INDTXT are still
+  read and shown, just not editable from this panel; see the panel's own
+  comment for why).
+- `src/extension.ts`: generic `setFieldKeyword`/`removeFieldKeyword` edit
+  kinds (mirroring Batch F's `setRecordKeyword`/`removeRecordKeyword`, per
+  the reuse pointer left in the codebase-organization table) plus
+  `setIndicatorText`/`removeIndicatorText`, which — unlike the generic
+  by-name setters — has to find the specific INDTXT entry for one
+  indicator among possibly several, via `PrtfEngine.parseIndtxt`.
+- Tests (`test/prtfFieldEditKeywords.test.ts`, 14 tests): every
+  `validateFieldKeywords` applicability rule, `parseIndtxt`'s quote-
+  escaping, `collectIndicatorDescriptions`' three-level precedence, and a
+  write → reparse round trip (plus idempotence) for a field carrying
+  several of these keywords plus a record-level `INDTXT` at once.
+- **Not done, left for a future batch/session:** file- and field-level
+  INDTXT are read but not editable from the UI (only record-level); adding
+  that would mean either a second, smaller "file-level INDTXT" panel or
+  folding INDTXT editing into the field properties panel too, for
+  documenting an indicator a specific field's own conditions reference.
 
 ### Batch H — REF/REFFLD resolution [PART 1 DONE]
 **Goal:** two parts, can be split further if needed:
