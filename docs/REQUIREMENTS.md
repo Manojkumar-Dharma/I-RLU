@@ -177,23 +177,29 @@ support as fully WYSIWYG.
 
 ## 9. Font resource access — update
 
-**Resolved (in part):** `FONT`/FGID identification is now backed by a
-table verified against IBM's own FGID/typeface documentation (Printer
-Device Programming, the AFP Font Collection reference, IBM support pages
-on font substitution). It correctly distinguishes fixed-pitch families
-(Courier, Gothic, OCR A/B) from proportional ones (Helvetica, Times New
-Roman), including the scalable-but-still-monospace Courier FGIDs
-(416/420/424/428), and converts *POINTSIZE for scalable monospace fonts to
-an equivalent CPI. One correction made along the way: an earlier version of
-this table (mislabeling FGID 416 as "Times Roman") was checked against IBM
-docs and fixed — real Times New Roman Medium is FGID 2308. See
-`src/afpFontMetrics.js` for the full table and sourcing notes.
+**Resolved:** `FONT`/FGID identification is backed by a table verified
+against IBM's own FGID/typeface documentation (Printer Device Programming,
+the AFP Font Collection reference, IBM support pages on font substitution).
+It correctly distinguishes fixed-pitch families (Courier, Gothic, OCR A/B)
+from proportional ones (Helvetica, Times New Roman), including the
+scalable-but-still-monospace Courier FGIDs (416/420/424/428), and converts
+*POINTSIZE for scalable monospace fonts to an equivalent CPI. One
+correction made along the way: an earlier version of this table
+(mislabeling FGID 416 as "Times Roman") was checked against IBM docs and
+fixed — real Times New Roman Medium is FGID 2308. Proportional-font
+per-glyph advance widths now use the real published Adobe Font Metrics
+(AFM) values for the metric-compatible PostScript substitute fonts
+(Helvetica, Times-Roman/Bold/Italic/BoldItalic) — genuine, stable,
+industry-standard data (used in every PDF library and PostScript RIP since
+1985), not an invented approximation. See `src/afpFontMetrics.js` for the
+full tables and sourcing notes.
 
-**Still open:** real per-glyph advance widths for the proportional
-(Helvetica/Times New Roman) families — the current implementation uses a
-rough placeholder table, not IBM's actual font character-set/code-page
-width data, so proportional text still lays out approximately, not
-precisely. Also still unresolved: `CDEFNT` (coded font), `FNTCHRSET` (host
+**Still open:** the AFM-based widths above are the *substitute* font's
+published metrics, applied as the best available proxy for IBM's own
+FGID-named fonts — not a verified byte-for-byte extraction of IBM's own
+FGID resource data, which this tool has no access to; don't treat this as
+guaranteed pixel-identical to a specific target printer's actual
+rendering. Also still unresolved: `CDEFNT` (coded font), `FNTCHRSET` (host
 font character set + code page), and `FONTNAME` (TrueType/OpenType by
 name) — these reference host/IFS font objects that `FONT`/FGID doesn't
 touch at all, and none of the three are parsed for font resolution yet. A

@@ -45,6 +45,68 @@ function paramTokens(kw) {
   return inner.trim() === "" ? [] : inner.trim().split(/\s+/);
 }
 
+// ---------------------------------------------------------------------
+// Resolve Referenced Field (REF/REFFLD, position 29 'R') — Batch H (see
+// docs/TASKS.md). Given a field flagged as a database reference, works out
+// WHICH field, in WHICH library/file, its length/type/decimals should be
+// resolved from — the pure "where do I look" half of "Resolve Referenced
+// Field via Code for i"; the actual network round-trip (DSPFFD + an SQL
+// lookup) only makes sense on the extension host, so it lives in
+// extension.ts, built on top of this. Mirrors I-SDA's own
+// DspfEngine.resolveReferenceTarget (src/dspfEngine.js), adapted for PRTF's
+// REF being valid at file, record, OR field level (KEYWORD-INVENTORY.md
+// §1/§3), not just file level. See "When to specify REF and REFFLD
+// keywords for DDS files" in IBM's DDS reference for the precedence rules
+// this follows:
+//   - REFFLD's own field-name parameter (defaulting to this field's own
+//     name when REFFLD isn't present at all — a bare R means "same-named
+//     field").
+//   - REFFLD's own [library/]file parameter, if given, OVERRIDES any
+//     record- or file-level REF.
+//   - REFFLD(field-name *SRC) means "search the file being defined" —
+//     there's no live database file to query for that, so this returns
+//     null (unresolvable via this feature) rather than guessing.
+//   - With no REFFLD file/library at all, falls back to the record-level
+//     REF keyword, then the file-level REF keyword; with none of those,
+//     there's nothing to resolve against.
+// ---------------------------------------------------------------------
+
+/** @returns {{fieldName:string, library:?string, file:string}|null} */
+function resolveReferenceTarget(model, record, field) {
+  if (!field || field.kind !== "field" || !field.reference) return null;
+
+  const reffld = findKeyword(field.keywords, "REFFLD");
+  let fieldName = field.name;
+  let fileSpec = null;
+
+  if (reffld) {
+    const parts = paramTokens(reffld);
+    if (parts.length === 0) return null;
+    fieldName = parts[0];
+    if (parts.length > 1) {
+      if (parts[1].toUpperCase() === "*SRC") return null; // "search this DDS file itself" — no live file to query
+      fileSpec = parts[1];
+    }
+  }
+
+  if (!fileSpec) {
+    const recordRef = record && findKeyword(record.keywords, "REF");
+    const fileRef = model && model.fileLevel && findKeyword(model.fileLevel.keywords, "REF");
+    const refKw = recordRef || fileRef;
+    if (!refKw) return null; // nothing to resolve against
+    const refParts = paramTokens(refKw);
+    if (refParts.length === 0) return null;
+    fileSpec = refParts[0];
+  }
+
+  const slash = fileSpec.indexOf("/");
+  const library = slash >= 0 ? fileSpec.slice(0, slash) : null;
+  const file = slash >= 0 ? fileSpec.slice(slash + 1) : fileSpec;
+  if (!file) return null;
+
+  return { fieldName, library, file };
+}
+
 /** true if a LINE/BOX parameter token is a program-to-system field reference (&NAME) rather than a literal value — these can't be resolved without a live compile/run, so geometry using them is flagged approximate. */
 function isFieldRef(tok) {
   return typeof tok === "string" && tok.startsWith("&");
@@ -286,6 +348,21 @@ function resolveLayout(model, recordName, indicatorState, uom) {
       decimalPositions: entry.kind === "field" ? entry.decimalPositions : undefined,
       usage: entry.kind === "field" ? entry.usage : undefined,
       literal: entry.kind === "constant" ? entry.literal : undefined,
+      // Batch H (docs/TASKS.md) — "Reference a field" (position 29 'R').
+      // `reference` mirrors entry.reference so the properties panel's
+      // toggle can prefill; `refTarget` (only when reference is on) is the
+      // pure "where to look" resolution from resolveReferenceTarget, so the
+      // panel's field/library/file inputs can prefill too, without a second
+      // round trip to the extension host just to read back what REFFLD/REF
+      // already say.
+      reference: entry.kind === "field" ? !!entry.reference : undefined,
+      refTarget: entry.kind === "field" && entry.reference ? resolveReferenceTarget(model, record, entry) : undefined,
+      // Batch G (docs/TASKS.md) — field-level data/edit keywords. Raw
+      // keywords so the properties panel can prefill ALIAS/BLKFOLD/CVTDTA/
+      // DLTEDT/FLTFIXDEC/FLTPCN/TRNSPY/TXTRTT without a second round trip,
+      // plus any applicability warnings (e.g. FLTPCN on a non-F field).
+      keywords: entry.kind === "field" ? entry.keywords : undefined,
+      fieldWarnings: entry.kind === "field" ? validateFieldKeywords(entry) : undefined,
       barcode: barcodeKw ? parseBarcodeGeometry(barcodeKw, lpi, uom) : undefined,
       font: {
         fgid: font.fgid,
@@ -401,6 +478,100 @@ function validateFileLevelKeywords(model) {
   return warnings;
 }
 
+// --- Batch G: field-level data/edit keywords (ALIAS, BLKFOLD, CVTDTA,
+// DLTEDT, FLTFIXDEC, FLTPCN, TRNSPY, TXTRTT) + INDTXT indicator text ------
+//
+// None of these affect page-preview layout — ALIAS/CVTDTA/TRNSPY/TXTRTT
+// describe how print-time data is interpreted or rotated (not something
+// this character-grid preview models), BLKFOLD/DLTEDT/FLTFIXDEC/FLTPCN are
+// print-time formatting choices, and INDTXT is documentation-only (no
+// compile effect at all). Same validation-only approach as Batch F:
+// CRTPRTF remains the real enforcement point, this just surfaces IBM's
+// documented applicability rules as properties-panel hints.
+
+/** Field-level keywords that take no parameters at all (option indicators only) — must be re-emitted as a bare keyword name, never "NAME()". */
+const FIELD_LEVEL_VALUELESS_KEYWORDS = ["BLKFOLD", "DLTEDT", "TRNSPY", "FLTFIXDEC", "CVTDTA"];
+
+/**
+ * Validation hints for a single field's Batch G keywords — IBM's DDS
+ * reference restricts several of these to a specific data type or to
+ * reference fields, but the data-description processor is the only thing
+ * that actually enforces it at compile time; this just surfaces the same
+ * rule live in the designer. Returns [] when there's nothing to flag.
+ */
+function validateFieldKeywords(field) {
+  const warnings = [];
+  if (findKeyword(field.keywords, "DLTEDT") && !field.reference) {
+    warnings.push({
+      keyword: "DLTEDT",
+      message: "DLTEDT only has an effect on a field that references another field (position 29 'R') — it deletes EDTCDE/EDTWRD editing that would otherwise be copied in from the referenced field.",
+    });
+  }
+  const fltfixdec = findKeyword(field.keywords, "FLTFIXDEC");
+  const fltpcn = findKeyword(field.keywords, "FLTPCN");
+  [fltfixdec, fltpcn].forEach((kw) => {
+    if (kw && field.dataType && field.dataType !== "F") {
+      warnings.push({ keyword: kw.name, message: kw.name + " only applies to floating-point fields (data type F)." });
+    }
+  });
+  if (fltpcn) {
+    const val = (paramTokens(fltpcn)[0] || "").toUpperCase();
+    if (val && val !== "*SINGLE" && val !== "*DOUBLE") {
+      warnings.push({ keyword: "FLTPCN", message: "FLTPCN's parameter must be *SINGLE or *DOUBLE, not " + val + "." });
+    }
+  }
+  const trnspy = findKeyword(field.keywords, "TRNSPY");
+  if (trnspy && field.dataType && field.dataType !== "A") {
+    warnings.push({ keyword: "TRNSPY", message: "TRNSPY only applies to character fields (data type A)." });
+  }
+  const txtrtt = findKeyword(field.keywords, "TXTRTT");
+  if (txtrtt) {
+    const deg = paramTokens(txtrtt)[0];
+    if (deg && ["0", "90", "180", "270"].indexOf(deg) === -1) {
+      warnings.push({ keyword: "TXTRTT", message: "TXTRTT's rotation must be 0, 90, 180, or 270 degrees, not " + deg + "." });
+    }
+  }
+  return warnings;
+}
+
+/**
+ * Parses one INDTXT keyword's "(indicator 'text')" params into
+ * {indicator, text}, or null if malformed. Indicator numbers are
+ * normalized to uppercase (INDTXT documents response/option indicators,
+ * which are numeric, but this stays consistent with how conditioning
+ * indicators are stored elsewhere in this file).
+ */
+function parseIndtxt(kw) {
+  const m = String(kw.params || "").match(/\(\s*([A-Za-z0-9]+)\s+'((?:[^']|'')*)'/);
+  if (!m) return null;
+  return { indicator: m[1].toUpperCase(), text: m[2].replace(/''/g, "'") };
+}
+
+/**
+ * Collects indicator -> description text from every INDTXT keyword in
+ * scope for a record, so the indicator-toggle panel can show each
+ * indicator's documented meaning next to its checkbox (docs/TASKS.md
+ * Batch G, matching the UX I-SDA has for the same DSPF concept). INDTXT is
+ * valid at file, record, AND field level (KEYWORD-INVENTORY.md §1/§2/§3),
+ * so all three are scanned. When the same indicator is documented at more
+ * than one level, the most specific scope wins (field, then record, then
+ * file) — same "most specific wins" convention this file already follows
+ * for REF/REFFLD (see resolveReferenceTarget).
+ */
+function collectIndicatorDescriptions(model, record) {
+  const result = {};
+  const apply = (keywords) => {
+    findAllKeywords(keywords, "INDTXT").forEach((kw) => {
+      const parsed = parseIndtxt(kw);
+      if (parsed) result[parsed.indicator] = parsed.text;
+    });
+  };
+  apply(model.fileLevel.keywords);
+  apply(record.keywords);
+  record.fields.forEach((f) => apply(f.keywords));
+  return result;
+}
+
 function listRecordNames(model) {
   return model.records.map((r) => r.name);
 }
@@ -421,11 +592,18 @@ const mod = {
   findKeyword,
   findAllKeywords,
   numericParam,
+  // Batch H
+  resolveReferenceTarget,
   // Batch F
   VALUELESS_KEYWORDS,
   PSF_ONLY_KEYWORDS,
   validateRecordKeywords,
   validateFileLevelKeywords,
+  // Batch G
+  FIELD_LEVEL_VALUELESS_KEYWORDS,
+  validateFieldKeywords,
+  parseIndtxt,
+  collectIndicatorDescriptions,
 };
 if (typeof module !== "undefined" && module.exports) module.exports = mod;
 if (typeof window !== "undefined") window.PrtfEngine = mod;

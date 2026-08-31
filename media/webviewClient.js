@@ -24,6 +24,13 @@
  * "addField"/"addConstant" reference an existing entry by its stable `id`
  * (assigned by the parser) rather than by name/position, since position is
  * exactly the thing that can change out from under a name+position match.
+ *
+ * A separate (non-"edit") message, "resolveReferencedField" (Batch H, see
+ * docs/TASKS.md), asks the host to fetch a REF/REFFLD field's real
+ * length/type/decimals from a connected IBM i via Code for i and apply them
+ * directly — this one is NOT applied locally first the way "edit" messages
+ * are, since it needs a network round-trip before there's anything to
+ * apply.
  */
 (function () {
   const vscode = acquireVsCodeApi();
@@ -83,6 +90,8 @@
 
     const record = state.model.records.find((r) => r.name === state.recordName);
     root.appendChild(renderRecordKeywordsPanel(record));
+    const indTextPanel = renderIndicatorTextPanel(record);
+    if (indTextPanel) root.appendChild(indTextPanel);
 
     if (layout.skippedByIndicator && layout.skippedByIndicator.length) {
       root.appendChild(
@@ -146,6 +155,16 @@
 
     const indicators = PrtfEngine.collectIndicators(record);
     if (indicators.length) {
+      // Batch G (docs/TASKS.md) — INDTXT (documentation-only, no compile
+      // effect) feeds indicator descriptions into this same panel, so
+      // indicators show their human-readable meaning next to the
+      // checkbox, matching the UX I-SDA has for the same concept on DSPF.
+      // Editing is scoped to the record level (see extension.ts's
+      // "setIndicatorText"/"removeIndicatorText" edit kinds) even though
+      // INDTXT can also appear at file/field level — those are still READ
+      // here (collectIndicatorDescriptions checks all three), just not
+      // editable from this per-record panel.
+      const descriptions = PrtfEngine.collectIndicatorDescriptions(state.model, record);
       const indPanel = el("span", { class: "indicators" });
       indicators.forEach((ind) => {
         const id = "ind-" + ind;
@@ -155,7 +174,13 @@
           state.indicators[ind] = e.target.checked;
           render();
         });
-        indPanel.appendChild(el("label", { class: "ind-label", for: id }, [cb, " " + ind]));
+        const label = el("label", { class: "ind-label", for: id }, [cb, " " + ind]);
+        const text = descriptions[ind];
+        if (text) {
+          label.setAttribute("title", text);
+          label.appendChild(el("span", { class: "ind-text" }, [" (" + text + ")"]));
+        }
+        indPanel.appendChild(label);
       });
       toolbar.appendChild(el("span", { class: "indicators-wrap" }, ["Indicators: ", indPanel]));
     }
@@ -410,11 +435,93 @@
     return panel;
   }
 
+  // Batch G (docs/TASKS.md) — field-level data/edit keywords. All are
+  // non-repeating (at most one per field), so each is a checkbox ("present
+  // on this field?") plus, for the two with a parameter, a select — same
+  // shape as Batch F's BATCH_F_KEYWORDS for record-level keywords, applied
+  // immediately via setFieldKeyword/removeFieldKeyword rather than waiting
+  // for this panel's own Save button (which only covers the base
+  // positional attributes + REF/REFFLD).
+  const BATCH_G_FIELD_KEYWORDS = [
+    { name: "ALIAS", kind: "text", placeholder: "alt. field name", hint: "Alternative name for the field — a second name HLL programs can reference it by." },
+    { name: "BLKFOLD", kind: "flag", hint: "Wrap to a blank instead of a hard break when data exceeds the field width. Only has effect with FOLD(*YES) on CRTPRTF/CHGPRTF/OVRPRTF." },
+    { name: "CVTDTA", kind: "flag", hint: "Convert Data — the field carries hex code points rather than character data (used with DFNCHR on SCS/IPDS printers)." },
+    { name: "DLTEDT", kind: "flag", hint: "Delete Edit — ignores any EDTCDE/EDTWRD copied in from a referenced field. Only has effect when \"Reference a field\" is on." },
+    { name: "FLTFIXDEC", kind: "flag", hint: "Shows a floating-point value in fixed-decimal form instead of scientific notation. Floating-point fields (data type F) only." },
+    { name: "FLTPCN", kind: "select", options: ["*SINGLE", "*DOUBLE"], hint: "Floating-point precision. Floating-point fields (data type F) only." },
+    { name: "TRNSPY", kind: "flag", hint: "Transparency — passes field data through as raw hex rather than interpreting it as printer commands. Character fields only." },
+    { name: "TXTRTT", kind: "select", options: ["0", "90", "180", "270"], hint: "Rotates this field's text, in degrees, independent of the record's PAGRTT." },
+  ];
+
+  /** Renders the always-visible "Data/edit keywords" section inside a field's properties panel — see BATCH_G_FIELD_KEYWORDS above. */
+  function renderFieldKeywordsSection(cell) {
+    const section = el("div", {});
+    section.appendChild(el("h4", {}, ["Data/edit keywords"]));
+
+    (cell.fieldWarnings || []).forEach((w) => {
+      section.appendChild(el("div", { class: "hint warning" }, [w.message]));
+    });
+
+    BATCH_G_FIELD_KEYWORDS.forEach((def) => {
+      const existing = PrtfEngine.findKeyword(cell.keywords, def.name);
+      const rowWrap = el("div", { class: "prop-row" });
+
+      const cbId = "fkw-" + cell.id + "-" + def.name;
+      const cb = el("input", { type: "checkbox", id: cbId });
+      if (existing) cb.setAttribute("checked", "checked");
+      rowWrap.appendChild(el("label", { class: "ind-label", for: cbId, title: def.hint }, [cb, " " + def.name]));
+
+      let valueInput = null;
+      if (def.kind === "select") {
+        const sel = el("select", {});
+        def.options.forEach((opt) => {
+          const o = el("option", { value: opt }, [opt]);
+          if (opt === paramsInnerText(existing)) o.setAttribute("selected", "selected");
+          sel.appendChild(o);
+        });
+        valueInput = sel;
+        rowWrap.appendChild(sel);
+      } else if (def.kind === "text") {
+        const inp = el("input", { type: "text", maxlength: "10", placeholder: def.placeholder, value: paramsInnerText(existing) });
+        valueInput = inp;
+        rowWrap.appendChild(inp);
+      }
+
+      const sendUpdate = () => {
+        if (!cb.checked) {
+          vscode.postMessage({ type: "edit", edit: { kind: "removeFieldKeyword", id: cell.id, name: def.name } });
+          return;
+        }
+        // ALIAS requires a real value — an empty text box would otherwise
+        // write a bare "ALIAS()", which isn't valid DDS. Leave the box
+        // checked but don't send anything until there's a value.
+        if (def.kind === "text" && valueInput && !valueInput.value.trim()) return;
+        vscode.postMessage({
+          type: "edit",
+          edit: {
+            kind: "setFieldKeyword",
+            id: cell.id,
+            name: def.name,
+            params: valueInput ? paramsToText(def.kind, valueInput.value.toUpperCase()) : "",
+          },
+        });
+      };
+
+      cb.addEventListener("change", sendUpdate);
+      if (valueInput) valueInput.addEventListener("change", sendUpdate);
+
+      section.appendChild(rowWrap);
+    });
+
+    return section;
+  }
+
   function renderEditPanel(cell) {
     const panel = el("div", { class: "props" });
     panel.appendChild(el("h4", {}, [cell.kind === "field" ? "Field: " + cell.name : "Constant"]));
 
     let nameInput, litInput, lenInput, typeSelect, decInput, usageSelect;
+    let refCheckbox, refFieldInput, refLibInput, refFileInput, useRefValuesCheckbox, refFieldsRow;
     const lineRow = labeledInput("Line", { type: "number", min: "1", value: String(cell.line) });
     const posRow = labeledInput("Position", { type: "number", min: "1", value: String(cell.position) });
 
@@ -438,6 +545,51 @@
       const usageRow = labeledSelect("Usage", ["O", "I", "B", "H"], cell.usage || "O");
       usageSelect = usageRow.input;
       panel.appendChild(usageRow.row);
+
+      // Batch H (docs/TASKS.md) — "Reference a field" Y/N + "Use referenced
+      // values" Y/N pair (docs/KEYWORD-INVENTORY.md §3): position 29 'R'
+      // plus REFFLD's own field/library/file, wired up here without a live
+      // database picker (that part needs Code for i — see the "Resolve
+      // Referenced Field" button below), same manually-entered-first
+      // approach Batch H's task detail calls for.
+      const refToggleRow = el("label", { class: "prop-row" }, ["Reference a field"]);
+      refCheckbox = el("input", { type: "checkbox" });
+      if (cell.reference) refCheckbox.setAttribute("checked", "checked");
+      refToggleRow.appendChild(refCheckbox);
+      panel.appendChild(refToggleRow);
+
+      const target = cell.refTarget || {};
+      refFieldsRow = el("div", { style: cell.reference ? "" : "display:none;" });
+      const refFieldRow = labeledInput("Ref. field name", { type: "text", maxlength: "10", value: target.fieldName || cell.name || "" });
+      refFieldInput = refFieldRow.input;
+      refFieldsRow.appendChild(refFieldRow.row);
+      const refLibRow = labeledInput("Ref. library", { type: "text", maxlength: "10", value: target.library || "" });
+      refLibInput = refLibRow.input;
+      refFieldsRow.appendChild(refLibRow.row);
+      const refFileRow = labeledInput("Ref. file", { type: "text", maxlength: "10", value: target.file || "" });
+      refFileInput = refFileRow.input;
+      refFieldsRow.appendChild(refFileRow.row);
+      const useRefValuesRow = el("label", { class: "prop-row" }, ["Use referenced values"]);
+      useRefValuesCheckbox = el("input", { type: "checkbox" });
+      useRefValuesCheckbox.setAttribute("checked", "checked"); // default Y, matching real RLU
+      useRefValuesRow.appendChild(useRefValuesCheckbox);
+      refFieldsRow.appendChild(useRefValuesRow);
+      const resolveBtn = el("button", { class: "btn", style: "width:100%;margin-bottom:8px;" }, ["Resolve Referenced Field (Code for i)"]);
+      resolveBtn.addEventListener("click", () => {
+        vscode.postMessage({
+          type: "resolveReferencedField",
+          id: cell.id,
+          useReferencedValues: useRefValuesCheckbox.checked,
+        });
+      });
+      refFieldsRow.appendChild(resolveBtn);
+      panel.appendChild(refFieldsRow);
+
+      refCheckbox.addEventListener("change", (e) => {
+        refFieldsRow.style.display = e.target.checked ? "" : "none";
+      });
+
+      panel.appendChild(renderFieldKeywordsSection(cell));
     } else {
       const litRow = labeledInput("Text", { type: "text", value: cell.literal || "" });
       litInput = litRow.input;
@@ -465,6 +617,10 @@
             usage: usageSelect.value,
             line,
             position,
+            reference: refCheckbox.checked,
+            refFieldName: refFieldInput.value ? refFieldInput.value.toUpperCase().slice(0, 10) : undefined,
+            refLibrary: refLibInput.value ? refLibInput.value.toUpperCase().slice(0, 10) : undefined,
+            refFile: refFileInput.value ? refFileInput.value.toUpperCase().slice(0, 10) : undefined,
           },
         });
       } else {
@@ -595,7 +751,46 @@
     return panel;
   }
 
-  window.addEventListener("message", (event) => {
+  /**
+   * Batch G (docs/TASKS.md) — lets the person document what each indicator
+   * used in this record means, via record-level INDTXT. Only lists
+   * indicators the record actually conditions on (PrtfEngine.
+   * collectIndicators), since documenting an indicator nothing references
+   * would be a keyword with nothing to explain. Returns null when there
+   * are no indicators to document, so render() can skip the panel
+   * entirely rather than showing an empty one.
+   */
+  function renderIndicatorTextPanel(record) {
+    const indicators = PrtfEngine.collectIndicators(record);
+    if (!indicators.length) return null;
+
+    const panel = el("div", { class: "props" });
+    panel.appendChild(el("h4", {}, ["Indicator text (INDTXT) — " + record.name]));
+    panel.appendChild(
+      el("div", { class: "hint" }, [
+        "Documentation only — INDTXT has no effect at compile time. Describes what each indicator means, shown next to its checkbox above.",
+      ])
+    );
+
+    const descriptions = PrtfEngine.collectIndicatorDescriptions(state.model, record);
+    indicators.forEach((ind) => {
+      const row = el("div", { class: "prop-row" });
+      row.appendChild(el("span", { class: "ind-label" }, [ind]));
+      const inp = el("input", { type: "text", value: descriptions[ind] || "", placeholder: "what this indicator means" });
+      inp.addEventListener("change", () => {
+        const text = inp.value.trim();
+        if (text) {
+          vscode.postMessage({ type: "edit", edit: { kind: "setIndicatorText", recordName: record.name, indicator: ind, text } });
+        } else {
+          vscode.postMessage({ type: "edit", edit: { kind: "removeIndicatorText", recordName: record.name, indicator: ind } });
+        }
+      });
+      row.appendChild(inp);
+      panel.appendChild(row);
+    });
+
+    return panel;
+  }
     const msg = event.data;
     if (msg.type === "setModel") {
       state.model = msg.model;

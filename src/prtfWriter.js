@@ -169,4 +169,29 @@ function regenerateSource(model) {
   return outLines.join(eol) + eol;
 }
 
-module.exports = { regenerateSource, buildPositional, emitWithKeywords, keywordsToText };
+/**
+ * Batch H (docs/TASKS.md) — builds/updates/removes the REFFLD keyword on a
+ * field's keyword list, given the "Reference a field" picker's own
+ * field/library/file inputs (see docs/KEYWORD-INVENTORY.md §3's "Reference
+ * a field" Y/N + "Use referenced values" Y/N pair). Returns a NEW keywords
+ * array rather than mutating the one passed in, matching the
+ * regenerate-fresh-from-current-values discipline this module already
+ * follows elsewhere.
+ *
+ * `target` of `null`/`undefined` (or one with neither a field name nor a
+ * file) removes any existing REFFLD, leaving only the file/record-level
+ * REF (if any) to fall back on — see PrtfEngine.resolveReferenceTarget for
+ * how that fallback is worked out.
+ */
+function upsertReffldKeyword(keywords, target) {
+  const withoutReffld = (keywords || []).filter((k) => k.name !== "REFFLD");
+  if (!target || (!target.fieldName && !target.file)) return withoutReffld;
+  const qualifiedFile = (target.library ? target.library.toUpperCase() + "/" : "") + (target.file ? target.file.toUpperCase() : "");
+  const params = target.fieldName
+    ? target.fieldName.toUpperCase() + (qualifiedFile ? " " + qualifiedFile : "")
+    : qualifiedFile;
+  const raw = "REFFLD(" + params + ")";
+  return withoutReffld.concat([{ name: "REFFLD", params: "(" + params + ")", raw, sourceLineIndex: -1 }]);
+}
+
+module.exports = { regenerateSource, buildPositional, emitWithKeywords, keywordsToText, upsertReffldKeyword };

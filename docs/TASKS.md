@@ -35,7 +35,7 @@ git config user.email "manojkumar.dharmalingam@gmail.com"
 | Layout/rendering logic | `src/prtfEngine.js` | Most batches that add rendering (C, D, E, I). |
 | Webview UI (properties panel, pickers) | `media/webviewClient.js`, `src/buildWebviewTemplate.js` | Most batches that add UI (A, B, C, F, G, H). |
 | AFP font metrics | `src/afpFontMetrics.js` | Batch L only. |
-| Extension host / compile command | `src/extension.ts` | Batch J only. |
+| Extension host / compile command | `src/extension.ts` | Batch J for the compile-command work; Batch F added generic `setRecordKeyword`/`removeRecordKeyword` edit kinds here that A/B/G should reuse rather than adding parallel bespoke edit-kind handlers — check `applyEdit` before inventing a new one. |
 | Tests | `test/` | Every batch adds its own test file(s) — don't edit another batch's test file. |
 
 **To minimize merge conflicts across parallel sessions**, prefer adding new
@@ -64,31 +64,35 @@ vice versa.
 | Real pixel content for page segments/overlays (actual scanned logos/forms, not a placeholder) | **Blocked**, needs external resource files supplied to the tool (§8's documented hard limit — these are IFS/host AFP objects, not DDS source text) | New **Batch O** (depends on **E** landing first as the fallback baseline; blocked the same way **L** is, on external data access) |
 | AFPDS real font/graphics rendering broadly (vs. char-grid-with-keyword-labels) | **Permanent for v1, revisit only if scope changes** | Not a task on its own — the actionable slices of this are Batch **L** (font metrics) and Batch **O** (resource pixel content) above; true full-graphics AFPDS WYSIWYG beyond those two remains explicitly out of scope per REQUIREMENTS.md §6/§8. |
 | Numeric edit-code/edit-word formatting is approximate-width only, no live-system verification | **Permanent, explicit non-goal** | Not a task — Batch A's detail section explicitly excludes building a full edit-code formatter, to avoid scope creep. |
-| `REF`/`REFFLD` doesn't resolve real type/length/decimals from the referenced file | Actionable | Batch **H** |
+| `REF`/`REFFLD` doesn't resolve real type/length/decimals from the referenced file | Part 1 done (UI shape + resolution logic); part 2 (live fetch) unverified, needs a real IBM i | Batch **H** |
 | `CRTPRTF` assumes `*CURLIB/QDDSSRC`, no library/source-file/member picker | Actionable | Batch **J** |
 | No packaging (`.vsix`) | Actionable | Batch **K** |
-| Font resource access unresolved (§9) — real AFP font metrics vs. placeholder | **Partially done** — FGID identification verified/resolved; per-glyph proportional metrics and CDEFNT/FNTCHRSET/FONTNAME resolution still blocked | Batch **L** |
+| Font resource access unresolved (§9) — real AFP font metrics vs. placeholder | **Mostly done** — FGID identification verified/resolved, proportional widths now use real Adobe AFM data for substitute fonts; CDEFNT/FNTCHRSET/FONTNAME resolution still blocked | Batch **L** |
+| The record-format `<select>` dropdown (toolbar) only switches between record formats already present in the source — no way to add, rename, delete, or reorder a record format from the designer itself | Actionable, previously untracked (this isn't in README/REQUIREMENTS' Known-limitations lists at all — raised separately, added here for the same tracking discipline) | New **Batch P** (no dependency — the record `<select>` and `applyEdit`'s edit-kind dispatch already exist to build on) |
+| The properties panel supports add/update/delete for fields and constants, but not copy/duplicate — cloning a field with its keywords intact (a common RLU/SEU-era workflow for building up repetitive detail-line layouts) requires manually re-entering every attribute and keyword on a new field | Actionable, previously untracked | New **Batch Q** (no dependency — sits directly next to the existing Delete button in `renderEditPanel`, and can reuse `addField`/`addConstant`'s edit-kind shape) |
 
 ## Task board
 
 
 | Batch | Description | Keywords in scope | Status | Depends on |
 |---|---|---|---|---|
-| A | Properties-panel editing: general field/record keywords | `EDTCDE`, `EDTWRD`, `DATE`, `DATFMT`, `DATSEP`, `TIME`, `TIMFMT`, `TIMSEP`, `DFT`, `MSGCON`, `COLOR`, `HIGHLIGHT`, `UNDERLINE`, `PAGNBR`, `PRTQLTY`, `DRAWER`, `PAGRTT` | Not started | none |
+| A | Properties-panel editing: general field/record keywords | `EDTCDE`, `EDTWRD`, `DATE`, `DATFMT`, `DATSEP`, `TIME`, `TIMFMT`, `TIMSEP`, `DFT`, `MSGCON`, `COLOR`, `HIGHLIGHT`, `UNDERLINE`, `PAGNBR`, `PRTQLTY`, `DRAWER`, `PAGRTT` | **In progress** | none |
 | B | Font/sizing keyword editing + shared P-field toggle component | `FONT`, `CDEFNT`, `FNTCHRSET`, `FONTNAME`, `CHRSIZ`, `CHRID`, `CCSID` | Not started | none (but A and C benefit from B's P-field component if B lands first) |
 | C | `BARCODE` full parameter surface (still placeholder render) | `BARCODE` | Not started | none |
 | D | `BARCODE` real symbol rendering | `BARCODE` | Not started | **C** |
 | E | AFP page-group / resource keyword placeholders | `OVERLAY` (record), `PAGSEG`, `STRPAGGRP`, `ENDPAGGRP`, `DOCIDXTAG`, `AFPRSC`, `DTASTMCMD` | Not started | none |
 | F | Print/finishing keywords, validation-only | `DUPLEX`, `FORCE`, `OUTBIN`, `ZFOLD`, `STAPLE`, `INVMMAP` | **Done** | none |
-| G | Field-level data/edit keywords + indicator text | `ALIAS`, `BLKFOLD`, `CVTDTA`, `DLTEDT`, `FLTFIXDEC`, `FLTPCN`, `TRNSPY`, `TXTRTT`, `INDTXT` | Not started | none |
-| H | `REF`/`REFFLD` resolution via Code for i | `REF`, `REFFLD` | Not started | none (needs a live/mocked Code for i connection for full completion — can land the UI shape without it) |
+| G | Field-level data/edit keywords + indicator text | `ALIAS`, `BLKFOLD`, `CVTDTA`, `DLTEDT`, `FLTFIXDEC`, `FLTPCN`, `TRNSPY`, `TXTRTT`, `INDTXT` | **Done** | none |
+| H | `REF`/`REFFLD` resolution via Code for i | `REF`, `REFFLD` | Part 1 (UI shape + pure resolution logic) done; part 2 (live Code for i round-trip) written but unverified — needs a real connected IBM i | none (needs a live/mocked Code for i connection for full completion — can land the UI shape without it) |
 | I | ~~`UOM` modeling~~ **done elsewhere** (see `i-rlu.unitOfMeasure` setting, `docs/ROADMAP.md`) + file-level SKIPA/SKIPB *AFPDS validation | `SKIPA`, `SKIPB` (validation only) | **Done** (validation landed as part of Batch F — see `prtfEngine.js`'s `validateFileLevelKeywords`) | none |
 | J | Compile command: library/source-file/member picker | n/a (tooling) | Not started | none |
 | K | Packaging (`.vsix`) | n/a (tooling) | **Done** | ideally after A–I land, but can be prepped early |
-| L | Real AFP font metrics | n/a (data) | Partially done — FGID identification resolved; per-glyph proportional metrics + CDEFNT/FNTCHRSET/FONTNAME still blocked, see REQUIREMENTS.md §9 | none |
+| L | Real AFP font metrics | n/a (data) | Mostly done — FGID identification resolved; proportional widths now use real published Adobe AFM data (metric-compatible substitute fonts, not verified IBM FGID resource extraction); CDEFNT/FNTCHRSET/FONTNAME still unresolved, see REQUIREMENTS.md §9 | none |
 | M | ~~**Bug fix:** writer emits wrong continuation character when wrapping mid-token~~ | n/a (parser/writer correctness) | **Done** | none |
 | N | `BARCODE` mutual-exclusion validation | `BARCODE` (validation vs. `FONT`, `EDTCDE`, `EDTWRD`, `DATE`, `TIME`, `PAGNBR`, etc.) | Not started | **C** |
 | O | Real AFP resource rendering (actual pixel content for page segments/overlays) | `PAGSEG`, `OVERLAY` (record-level) | Blocked — needs external resource files, see REQUIREMENTS.md §8 | **E** |
+| P | Add/rename/delete/reorder record formats from the designer | n/a (tooling/UI, not a keyword) | Not started | none |
+| Q | Copy/duplicate a field or constant | n/a (tooling/UI, not a keyword) | Not started | none |
 
 ## Batch detail
 
@@ -141,14 +145,37 @@ it once it exists.
 - Tests: round-trip literal and P-field variants of each keyword.
 
 ### Batch C — BARCODE parameter surface
+**Current state, precisely** (checked against `src/prtfEngine.js`'s
+`parseBarcodeGeometry`, added in the BARCODE placeholder commit before this
+task board existed): the engine already **parses** bar-code-ID, direction
+(`*HRZ`/`*VRT`), an HRI on/off flag (`*HRI`/`*NOHRI` — see gap below), and
+height (plain line count 1–9, or a `(height *UOM)` physical measurement) —
+enough to size and label the placeholder box. None of this is editable in
+the properties panel today (that's this batch); and several parameters
+aren't parsed by the engine at all yet, not just unexposed in the UI:
+`*AST`/`*NOAST` (asterisk on CODE3OF9), the modifier hex byte, narrow bar
+width, wide:narrow ratio, and additional 2D parameters.
+
+**Known gap to fix as part of this batch, not carry forward:** the engine
+currently collapses `*HRI` and `*HRITOP` to the same boolean ("HRI is on"),
+losing the below-vs-above distinction RLU's own "Specify Bar Code" screen
+exposes as separate choices (1=Below/2=Above/3=None — KEYWORD-INVENTORY
+§3). Since this batch is adding the properties-panel form for HRI position
+anyway, fix `parseBarcodeGeometry` to track the three-way value at the same
+time, rather than leaving the engine's simplified boolean in place under a
+richer-looking UI that can't actually reflect what it saves.
+
 **Goal:** expose every parameter IBM's RLU screen shows (barcode-ID, height
 in lines or UOM, bar format, HRI position, asterisk-on-CODE3OF9, modifier,
 narrow bar width, wide:narrow ratio, additional 2D params — full list in
-KEYWORD-INVENTORY §3) in the properties panel. Rendering stays the existing
-labeled placeholder box; this batch is UI/model only.
+KEYWORD-INVENTORY §3) in the properties panel, parsing the ones the engine
+doesn't yet (listed above) so they at least round-trip correctly even
+before Batch D gives them visual meaning. Rendering stays the existing
+labeled placeholder box; this batch is UI/model/parsing, not rendering.
 - Validate ranges as shown on the RLU screen (e.g. ratio 2.00–3.00, narrow
   bar width 0.007–0.208) client-side in the webview form.
-- Tests: round-trip full BARCODE parameter set.
+- Tests: round-trip full BARCODE parameter set; a specific test for the
+  HRI three-way value (below/above/none) surviving edit-then-reparse.
 
 ### Batch D — BARCODE real rendering
 **Goal:** replace the placeholder box with an actual rendered symbol, reading
@@ -210,7 +237,7 @@ don't try to detect the target printer's actual capabilities.
   batches (A, B, G, etc.) can reuse them instead of adding their own.
 - Tests: `test/prtfBatchF.test.ts`.
 
-### Batch G — Field-level data/edit keywords + indicator text
+### Batch G — Field-level data/edit keywords + indicator text [DONE]
 **Goal:** `ALIAS` (simple rename field), `BLKFOLD`/`CVTDTA`/`DLTEDT`/
 `FLTFIXDEC`/`FLTPCN`/`TRNSPY`/`TXTRTT` (simple enumerated/numeric forms per
 KEYWORD-INVENTORY §3/§4), and `INDTXT` — the last one is the interesting
@@ -220,28 +247,88 @@ their human-readable meaning next to the checkbox, matching the UX I-SDA
 already has for the same concept on DSPF. Check I-SDA's implementation
 (`I-SDA/src/dspfEngine.js` / webview client) for the pattern before building
 this from scratch.
-- Tests: round-trip for the simple keywords; a specific test that `INDTXT`
-  text shows up correctly attached to the right indicator in the resolved
-  model passed to the webview.
+- **Note:** I-SDA turned out not to have a direct INDTXT-equivalent to copy
+  (`I-SDA/src/dspfEngine.js` has no indicator-text concept — its closest
+  relative is `resolveFunctionKeyLegend`'s CA/CF key labels, which is a
+  different keyword entirely). Built the panel from scratch instead, per
+  IBM's own DDS reference for `INDTXT`'s file/record/field-level shape.
+- `src/prtfEngine.js`: `validateFieldKeywords(field)` — applicability
+  warnings (DLTEDT needs "Reference a field" on; FLTFIXDEC/FLTPCN need data
+  type F; TRNSPY needs data type A; TXTRTT's degrees must be 0/90/180/270;
+  FLTPCN's own parameter must be `*SINGLE`/`*DOUBLE`). `parseIndtxt`/
+  `collectIndicatorDescriptions(model, record)` — parses `INDTXT(nn 'text')`
+  and merges file-, record-, and field-level occurrences, most-specific-
+  scope-wins (same convention as REF/REFFLD's precedence).
+- `media/webviewClient.js`: field properties panel gets a "Data/edit
+  keywords" section (checkboxes for the valueless ones, selects for
+  FLTPCN/TXTRTT, a text box for ALIAS), applied immediately via the new
+  `setFieldKeyword`/`removeFieldKeyword` edit kinds — same "changes apply
+  immediately, no separate Save" UX as Batch F's record-keyword panel,
+  since these are independent of the base positional-attribute Save
+  button. The indicator toolbar panel now shows each indicator's INDTXT
+  description as a tooltip + inline text next to its checkbox; a new
+  per-record "Indicator text (INDTXT)" panel lets the text be added/edited/
+  cleared (record-level scope only — file/field-level INDTXT are still
+  read and shown, just not editable from this panel; see the panel's own
+  comment for why).
+- `src/extension.ts`: generic `setFieldKeyword`/`removeFieldKeyword` edit
+  kinds (mirroring Batch F's `setRecordKeyword`/`removeRecordKeyword`, per
+  the reuse pointer left in the codebase-organization table) plus
+  `setIndicatorText`/`removeIndicatorText`, which — unlike the generic
+  by-name setters — has to find the specific INDTXT entry for one
+  indicator among possibly several, via `PrtfEngine.parseIndtxt`.
+- Tests (`test/prtfFieldEditKeywords.test.ts`, 14 tests): every
+  `validateFieldKeywords` applicability rule, `parseIndtxt`'s quote-
+  escaping, `collectIndicatorDescriptions`' three-level precedence, and a
+  write → reparse round trip (plus idempotence) for a field carrying
+  several of these keywords plus a record-level `INDTXT` at once.
+- **Not done, left for a future batch/session:** file- and field-level
+  INDTXT are read but not editable from the UI (only record-level); adding
+  that would mean either a second, smaller "file-level INDTXT" panel or
+  folding INDTXT editing into the field properties panel too, for
+  documenting an indicator a specific field's own conditions reference.
 
-### Batch H — REF/REFFLD resolution
+### Batch H — REF/REFFLD resolution [PART 1 DONE]
 **Goal:** two parts, can be split further if needed:
-1. **UI shape** (no Code for i needed): replicate RLU's own field-property
-   pattern confirmed in KEYWORD-INVENTORY §3 — a "Reference a field" Y/N
-   toggle that opens a file/library/record-format/field picker, plus a
-   separate "Use referenced values" Y/N toggle governing whether the
-   referenced field's length/type/decimals are pulled in verbatim vs. only
-   defaulted. This can be built and tested against manually-entered
-   type/length/decimals without a live IBM i.
-2. **Live resolution** (needs Code for i): actually query the referenced
-   physical file's field definition via Code for i's API, same integration
-   pattern as the existing `CRTPRTF` compile command in `src/extension.ts`.
-   This part is legitimately blocked without a connected test environment —
-   land part 1 first regardless.
-- Tests: part 1 fully testable with mocked reference data; part 2 needs
-  either a live IBM i in CI (unlikely available) or a mocked Code for i
-  client — follow whatever mocking pattern I-SDA's tests use for its
-  Code for i integration, if any.
+1. **UI shape** (no Code for i needed) — **done.** `resolveReferenceTarget`
+   in `src/prtfEngine.js` works out which field/library/file a position-29
+   'R' field resolves against (REFFLD's own field/file overrides
+   record-then-file-level `REF`; `*SRC` and no-reference-anywhere both
+   correctly return unresolvable), mirroring I-SDA's own
+   `DspfEngine.resolveReferenceTarget`. `src/prtfWriter.js`'s
+   `upsertReffldKeyword` builds/updates/removes the `REFFLD` keyword. The
+   properties panel (`media/webviewClient.js`) now shows the "Reference a
+   field" Y/N toggle plus manually-entered field/library/file inputs and a
+   "Use referenced values" Y/N toggle, per KEYWORD-INVENTORY §3's confirmed
+   RLU UI shape — no live file/library/record-format/field *picker* yet
+   (that would need Code for i's own browsing API), just direct text entry,
+   which is enough for the toggle pair's own semantics and for round-trip
+   correctness.
+2. **Live resolution** (needs Code for i) — **written, unverified.**
+   `fetchReferencedFieldAttributes`/`handleResolveReferencedField` in
+   `src/extension.ts` query the referenced physical file's field definition
+   via Code for i's API (DSPFFD to a `QTEMP` outfile + an SQL read), same
+   integration pattern as I-SDA's own `fetchReferencedFieldAttributes` and
+   as the existing `CRTPRTF` compile command already in this file. The "Use
+   referenced values" toggle (`msg.useReferencedValues`) governs whether a
+   successful resolve overwrites the field's current length/type/decimals
+   outright or only fills them in where blank. This part is legitimately
+   blocked without a connected test environment — compiles and follows
+   I-SDA's proven pattern, but has not been exercised against a real IBM i.
+- Tests (`test/prtfReferenceField.test.ts`): part 1 is fully covered —
+  every precedence rule in `resolveReferenceTarget`'s doc comment, the
+  `upsertReffldKeyword` add/replace/remove cases, and a parse → regenerate
+  round trip for a field carrying `REFFLD`. Part 2 has no test — same
+  reasoning as the roadmap entry: it needs either a live IBM i in CI
+  (unlikely available) or a mocked Code for i client, and I-SDA's own test
+  suite doesn't mock its Code for i integration either, so there's no
+  established pattern here to follow.
+- **Not done, left for a future batch/session:** a real file/library/
+  record-format/field *picker* (currently direct text entry) — this needs
+  Code for i's own object-browsing API, a separate integration from the
+  DSPFFD resolution built here, and IS-DA's own Task L14
+  (`fetchDatabaseFileFields`/`listDatabaseFields`) is the closest existing
+  pattern to follow for it.
 
 ### Batch I — UOM modeling + AFPDS SKIPA/SKIPB file-level validation
 **Update:** the UOM half of this batch has already landed on `main`
@@ -280,11 +367,13 @@ incomplete-but-working extension is fine for internal testing.
   to `./out/src/extension.js`; verified against the real `.vsix` manifest
   (`unzip -p i-rlu-*.vsix extension/package.json`) rather than just the
   source `package.json`, in case packaging rewrites paths.
-- Added `.vscodeignore` (I-SDA wasn't reachable to copy its shape from — it
-  doesn't appear to be a public repo — so this follows standard `vsce`
-  convention instead: ship `out/**/*.js` plus `package.json`/`README.md`,
-  exclude `src/`, `media/`, `test/`, `docs/`, source maps, and
-  `node_modules/` since there are no runtime `dependencies`).
+- Added `.vscodeignore` (following standard `vsce` convention: ship
+  `out/**/*.js` plus `package.json`/`README.md`, exclude `src/`, `media/`,
+  `test/`, `docs/`, source maps, and `node_modules/` since there are no
+  runtime `dependencies`) — written before I-SDA's own `.vscodeignore` was
+  checked; I-SDA's `LICENSE`/icon were reachable via `git clone` in the
+  Batch K follow-up below, so its `.vscodeignore` shape could be
+  cross-checked too, but this one's already working and wasn't revisited.
 - Added `@vscode/vsce` as a devDependency, plus `vscode:prepublish` (runs
   `npm run compile` — `vsce` invokes this automatically before packaging)
   and `package` (`vsce package`) npm scripts.
@@ -298,7 +387,7 @@ incomplete-but-working extension is fine for internal testing.
   `images/icon.png`, with matching `"license": "MIT"` and
   `"icon": "images/icon.png"` added to `package.json`.
 
-### Batch L — Real AFP font metrics [PARTIALLY DONE]
+### Batch L — Real AFP font metrics [MOSTLY DONE]
 **FGID identification: done.** `src/afpFontMetrics.js` now resolves the
 `FONT` keyword's FGID parameter against a table verified against IBM's own
 FGID/typeface documentation (Printer Device Programming, the AFP Font
@@ -326,9 +415,14 @@ remove or "fix" it back the other way without re-checking the source.
 
 **Still blocked, still needs font resource data or live IBM i access:**
 real per-glyph advance widths for the proportional (Helvetica/Times New
-Roman) families — current implementation uses a rough Helvetica-shaped
-placeholder table, not IBM's actual font character-set/code-page width
-data, so proportional text layout is still approximate. Also unresolved:
+Roman) families now use the actual published Adobe AFM widths for the
+metric-compatible PostScript substitute fonts (Helvetica, Times-Roman/
+Bold/Italic/BoldItalic) — real, stable, industry-standard data, a genuine
+improvement over the earlier flat placeholder table. The honest caveat
+that remains: these are the substitute font's published metrics, not a
+verified extraction of IBM's own FGID resource data (which this tool has
+no access to) — don't treat this as guaranteed pixel-identical to a
+specific target printer's actual rendering. Also still unresolved:
 `CDEFNT` (coded font), `FNTCHRSET` (host font character set + code page),
 and `FONTNAME` (TrueType/OpenType by name) — none of these three are
 parsed for font resolution at all yet; they reference host/IFS font
@@ -445,6 +539,130 @@ render the actual image/graphic at the position/size Batch E already
 computes.
 - Tests: will need real (or realistic sample) resource files as fixtures —
   can't be meaningfully tested with synthetic data alone.
+
+### Batch P — Add/rename/delete/reorder record formats from the designer
+**Source:** raised directly (not from README/REQUIREMENTS' existing Known
+limitations lists) — the toolbar's record-format `<select>` dropdown
+(`media/webviewClient.js`, present since the very first webview build) only
+lets you *switch between* record formats that already exist in the parsed
+source. There's currently no way to create a new record format, rename one,
+delete one, or change the order they appear in the source, from the
+designer itself — you'd have to drop into the raw DDS text editor for any
+of that, which somewhat defeats the point of a WYSIWYG designer for a file
+type where most real printer files have several record formats (header/
+detail/footer being the minimum common case).
+
+**No dependency**: unlike most other batches, this doesn't build on
+anything unfinished. The pieces it needs already exist:
+- `state.model.records` (an ordered array, per `src/prtfModel.ts`'s
+  `RecordFormatEntry[]`) is exactly the array a reorder operation would
+  splice, and exactly what the toolbar `<select>` already renders from.
+- `applyEdit`'s edit-kind dispatch in `src/extension.ts` (`move`,
+  `updateField`, `updateConstant`, `delete`, `setRecordKeyword`,
+  `removeRecordKeyword`, `addField`, `addConstant`) is the established
+  pattern to extend — add `addRecord`, `renameRecord`, `deleteRecord`, and
+  `reorderRecord` alongside these, not a parallel mechanism.
+
+**Goal:**
+1. **Add record format**: a "+ Record" affordance next to the toolbar's
+   `<select>` (matching the existing "+ Field"/"+ Constant" button style)
+   that prompts for a record-format name (validate: 1–10 chars, DDS name
+   rules — same validation the field-name input already applies, reuse it)
+   and inserts a new, empty `RecordFormatEntry` into `model.records`.
+   Decide and document where it's inserted (end of the file is the simplest
+   default; inserting after the currently-selected record is more
+   intuitive for building up a header/detail/footer sequence one at a time
+   — pick one and note the reasoning in the PR/commit, don't leave it
+   ambiguous).
+2. **Rename**: an edit affordance on the currently-selected record (a
+   pencil icon next to the `<select>`, or an editable-on-click label — match
+   whatever pattern feels most consistent with the existing field/constant
+   properties panel's own inline-edit conventions). Renaming a record format
+   must also update any `REF`/`REFFLD` keywords elsewhere in the *same*
+   model that reference the old name by name, or at minimum flag them as
+   now-dangling references rather than silently leaving them pointing at a
+   name that no longer exists — check how `REF`/`REFFLD` are modeled today
+   (Batch H hasn't landed real resolution yet, but the keyword text itself
+   still needs to stay consistent).
+3. **Delete**: remove a record format from `model.records` entirely (not
+   just clear its fields) with a confirmation step, since this is
+   destructive and, unlike deleting a single field/constant, can't be
+   trivially undone by re-adding — match VS Code's own undo/redo (the text
+   document edit should go through the normal edit application path so
+   `Ctrl+Z` in the underlying text editor still works, the same way
+   existing field/constant edits already do).
+4. **Reorder**: since DDS record-format order in the source can matter
+   (some shops rely on RLU's original top-to-bottom convention for
+   readability, and `STRPAGGRP`/`ENDPAGGRP` bracketing — KEYWORD-INVENTORY
+   §2 — is inherently order-sensitive), add up/down reordering (buttons, or
+   drag-to-reorder in whatever list view holds record names, if one exists
+   by the time this batch is picked up — otherwise simple up/down buttons
+   next to the `<select>` are enough for v1).
+
+**Scope note:** this batch is about the record-format *container* itself —
+it doesn't touch how fields/constants within a record are added or edited,
+which is already covered by existing UI. Don't let this batch creep into
+re-doing the field/constant properties panel.
+- Tests: round-trip add/rename/delete/reorder through the model and writer,
+  same pattern as the existing `addField`/`addConstant` tests; confirm
+  `STRPAGGRP`/`ENDPAGGRP` pairing survives a reorder (or is flagged if
+  broken by one — decide which, and test for that decision explicitly);
+  confirm the toolbar `<select>` and `state.recordName` fallback logic
+  (already handles a record disappearing out from under the current
+  selection, per the empty-file guard) still behaves correctly after a
+  delete or reorder.
+
+### Batch Q — Copy/duplicate a field or constant
+**Source:** raised directly, same as Batch P — not from README/REQUIREMENTS'
+existing Known limitations lists. Add/update/delete already exist for
+fields and constants (`addField`, `addConstant`, `updateField`,
+`updateConstant`, `delete` in `src/extension.ts`'s `applyEdit`), but there's
+no copy/duplicate. This is a real gap for the common case of building up a
+detail line with several similarly-formatted fields (e.g. a row of
+right-justified numeric columns all sharing the same `EDTCDE`/`COLOR`/
+`FONT` keywords) — today that means re-entering every attribute and
+re-adding every keyword by hand for each one, when 90% of it is identical to
+a field that already exists.
+
+**No dependency**: the natural home for this is right next to the existing
+"Delete" button in `renderEditPanel` (`media/webviewClient.js`), and the
+edit it sends can reuse `addField`'s/`addConstant`'s existing shape almost
+exactly — this doesn't need any other batch to land first.
+
+**Goal:**
+1. Add a "Copy" button next to "Delete" in the field/constant properties
+   panel (`renderEditPanel`). Clicking it should **not** immediately mutate
+   the model — route it through the same "pending new entry" flow
+   `state.pendingNew` already uses for add (see `renderPropsPanel`/
+   `renderNewEntryPanel`), pre-filled with the source entry's values
+   (length, data type, decimals, usage, literal text) so the user picks a
+   new line/position (and, for fields, confirms/changes the name, since DDS
+   field names must be unique per record) rather than the copy landing
+   silently on top of the original.
+2. **Keywords must come along with the copy** — this is the actual point
+   of the feature, not just duplicating position/type. A copy that drops
+   the source field's `EDTCDE`/`COLOR`/`FONT`/etc. keywords isn't saving
+   any real work over "+ Field". Extend the `addField`/`addConstant` edit
+   payload (or add a `copyField`/`copyConstant` edit kind, if that proves
+   cleaner than overloading `addField` with an optional source-keywords
+   array — decide based on how invasive the plain-`addField` payload change
+   would be) to carry the source entry's `keywords` array through.
+3. **Name collision**: for fields specifically, since DDS requires unique
+   field names within a record, the pre-filled name in the pending-new form
+   should not be the exact source name — default to something like the
+   source name with a numeric suffix (truncated to fit the 10-char DDS name
+   limit) and let the user override it, rather than silently failing or
+   silently renaming without telling them.
+4. **Scope for v1**: same-record copy only (copy `CUSTNBR` from `DETAIL`
+   to a new field also in `DETAIL`). Cross-record copy (copy a field from
+   `HEADER` into `DETAIL`) is a reasonable stretch goal once same-record
+   copy works, but don't block v1 on it — flag it as a follow-up note in
+   whichever commit lands this, rather than scope-creeping this batch.
+- Tests: round-trip a copied field/constant through the model/writer and
+  confirm its keywords match the source; confirm the pre-filled name
+  suggestion avoids colliding with the source name; confirm copying doesn't
+  mutate the source entry itself (a bug where copy silently *moves* instead
+  of duplicates is the obvious failure mode to guard against explicitly).
 
 
 ## Adding a new batch
