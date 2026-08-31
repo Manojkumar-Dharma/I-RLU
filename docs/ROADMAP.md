@@ -147,30 +147,38 @@ full detail, acceptance criteria, and file-level ownership per batch):
       Batch K for the rest (`.vscodeignore`, `vsce` scripts, and the one
       thing deliberately left open — no `LICENSE` file yet, since that's
       the repo owner's call).
-- [x]/[ ] **Batch L — Real AFP font metrics — partially done.** `FONT`/FGID
-      *identification* is now resolved: a verified FGID table (Courier/
+- [x]/[ ] **Batch L — Real AFP font metrics — mostly done.** `FONT`/FGID
+      *identification* is resolved: a verified FGID table (Courier/
       Gothic fixed families, Helvetica/Times New Roman proportional
       families, point-size-to-CPI conversion for scalable monospace fonts),
       sourced against IBM's own FGID/typeface documentation, with
       field-over-record-over-file precedence matching DDS's own rules.
       Caught and corrected an error from an earlier reference along the way
       (FGID 416 is Courier Roman Medium, not "Times Roman" as that
-      reference had it — regression test guards this). **Still open, and
-      still the blocked part of Batch L:** real per-glyph advance widths
-      for the proportional (Helvetica/Times New Roman) families — current
-      implementation uses a rough placeholder table, not IBM's actual font
-      character-set/code-page width data; and `CDEFNT`/`FNTCHRSET`/
-      `FONTNAME` resolution, which reference host/IFS font objects that
-      `FONT`/FGID doesn't touch at all (these overlap with Batch B's scope
-      for the DDS-editing side, but the actual metric/resource data behind
-      them is Batch L's blocker). A promising direction raised for closing
-      the remaining gap: extracting real font data from a connected IBM i
-      (TrueType files under `/QIBM/UserData/OS400/Fonts/TTF/`, or FOCA font
-      character-set metrics via host APIs) — worth pursuing, but the
-      specific paths/API names haven't been independently verified yet, so
-      nothing's been built against them. See `src/afpFontMetrics.js` for
-      the full table and sourcing notes, and `docs/TASKS.md` Batch L for
-      the canonical status (update that file too if you pick this back up).
+      reference had it — regression test guards this). Proportional-font
+      per-glyph advance widths (Helvetica/Times New Roman) now use the
+      real published Adobe Font Metrics (AFM) values for the
+      metric-compatible PostScript substitute fonts (Helvetica,
+      Times-Roman/Bold/Italic/BoldItalic) — genuine, stable, industry-
+      standard data (used in every PDF library and PostScript RIP since
+      1985), not an invented approximation, replacing the earlier flat
+      placeholder table. **Still open:** the one honest caveat on the
+      above — these are the *substitute* font's published metrics, applied
+      as the best available proxy for IBM's own FGID-named fonts, not a
+      verified byte-for-byte extraction of IBM's own FGID resource data
+      (this tool has no access to that). Also still unresolved:
+      `CDEFNT`/`FNTCHRSET`/`FONTNAME` resolution, which reference host/IFS
+      font objects that `FONT`/FGID doesn't touch at all (these overlap
+      with Batch B's scope for the DDS-editing side, but the actual
+      metric/resource data behind them is Batch L's remaining blocker). A
+      promising direction raised for closing this gap: extracting real
+      font data from a connected IBM i (TrueType files under
+      `/QIBM/UserData/OS400/Fonts/TTF/`, or FOCA font character-set
+      metrics via host APIs) — worth pursuing, but the specific paths/API
+      names haven't been independently verified yet, so nothing's been
+      built against them. See `src/afpFontMetrics.js` for the full tables
+      and sourcing notes, and `docs/TASKS.md` Batch L for the canonical
+      status (update that file too if you pick this back up).
 - [ ] **Batch P — Add/rename/delete/reorder record formats from the
       designer:** the toolbar's record-format dropdown only switches
       between record formats already in the source; there's no way to

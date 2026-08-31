@@ -73,13 +73,20 @@ Courier Roman Medium; real Times New Roman Medium is FGID 2308. There's a
 regression test (`FGID 416 correctly resolves to Courier Roman Medium...`)
 guarding against that mistake resurfacing.
 
-What's still an approximation: proportional-font (Helvetica/Times)
-character widths use a rough placeholder table, not real per-glyph font
-metrics — genuinely accurate proportional layout still needs real font
-resource data (per your earlier note, that's still pending). `CDEFNT`,
-`FNTCHRSET`, and `FONTNAME` aren't resolved at all yet — those reference
-host/IFS font objects this tool doesn't have access to. Extracting real
-metrics from a live IBM i (TrueType files under
+What's still an approximation: `CDEFNT`, `FNTCHRSET`, and `FONTNAME` aren't
+resolved at all yet — those reference host/IFS font objects this tool
+doesn't have access to. Proportional-font (Helvetica/Times New Roman)
+character widths now use the real published Adobe Font Metrics (AFM)
+values for the metric-compatible PostScript substitute fonts (Helvetica,
+Times-Roman/Bold/Italic/BoldItalic) — stable, industry-standard data used
+in every PDF library and PostScript RIP since 1985, a genuine improvement
+over an earlier flat placeholder table. The one remaining honest caveat:
+these are the *substitute* font's published metrics, applied as the best
+available proxy for IBM's own FGID-named fonts — not a verified
+byte-for-byte extraction of IBM's own FGID resource data (which this tool
+has no access to), so don't treat this as guaranteed pixel-identical to
+what a specific target printer actually renders. Extracting real metrics
+from a live IBM i (TrueType files under
 `/QIBM/UserData/OS400/Fonts/TTF/`, or FOCA font objects via host APIs) is a
 promising direction for later, but the specific paths/API names haven't
 been independently verified yet, so it's not implemented against unverified

@@ -380,6 +380,26 @@ test("afpFontMetrics: getAdvanceWidth varies by character for proportional fonts
   assert.equal(AfpFontMetrics.isPlaceholder("11"), false);
 });
 
+test("afpFontMetrics: proportional widths are real published Adobe AFM values, not a flat approximation", () => {
+  // Spot-check against Adobe's published AFM widths (units 1/1000 em):
+  // Helvetica capital W = 944, lowercase i = 222 — these are exact,
+  // stable, industry-standard values, not something this project invented.
+  const avg = 543; // PROPORTIONAL_AVG_WIDTH used for normalization
+  assert.equal(Math.round(AfpFontMetrics.getAdvanceWidth("2304", "W") * avg), 944);
+  assert.equal(Math.round(AfpFontMetrics.getAdvanceWidth("2304", "i") * avg), 222);
+  assert.equal(Math.round(AfpFontMetrics.getAdvanceWidth("2309", "W") * avg), 1000); // Times-Bold W
+  assert.equal(Math.round(AfpFontMetrics.getAdvanceWidth("2308", "a") * avg), 444); // Times-Roman a
+});
+
+test("afpFontMetrics: Times Italic genuinely differs from Times Roman (unlike Helvetica Oblique, which shares Roman's metrics)", () => {
+  const romanA = AfpFontMetrics.getAdvanceWidth("2308", "a");
+  const italicA = AfpFontMetrics.getAdvanceWidth("2310", "a");
+  assert.notEqual(romanA, italicA, "Times-Italic's widths differ from Times-Roman's per Adobe's AFM data");
+  // But Helvetica Oblique (2306) shares Helvetica Roman's (2304) metrics —
+  // that's correct per the Adobe spec, not a bug.
+  assert.equal(AfpFontMetrics.getAdvanceWidth("2304", "a"), AfpFontMetrics.getAdvanceWidth("2306", "a"));
+});
+
 test("afpFontMetrics: pointSizeToCpi follows IBM's documented reference point (12pt = 10 CPI)", () => {
   assert.equal(AfpFontMetrics.pointSizeToCpi(12), 10);
   assert.equal(AfpFontMetrics.pointSizeToCpi(6), 20);
