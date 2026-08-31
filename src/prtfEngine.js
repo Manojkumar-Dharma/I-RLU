@@ -357,16 +357,20 @@ function resolveLayout(model, recordName, indicatorState, uom) {
       // already say.
       reference: entry.kind === "field" ? !!entry.reference : undefined,
       refTarget: entry.kind === "field" && entry.reference ? resolveReferenceTarget(model, record, entry) : undefined,
-      // Batch G (docs/TASKS.md) — field-level data/edit keywords. Raw
-      // keywords so the properties panel can prefill ALIAS/BLKFOLD/CVTDTA/
-      // DLTEDT/FLTFIXDEC/FLTPCN/TRNSPY/TXTRTT without a second round trip,
-      // plus any applicability warnings (e.g. FLTPCN on a non-F field).
-      keywords: entry.kind === "field" ? entry.keywords : undefined,
+      // Batch G (docs/TASKS.md) — field-level applicability warnings for
+      // data/edit keywords (e.g. FLTPCN on a non-F field).
       fieldWarnings: entry.kind === "field" ? validateFieldKeywords(entry) : undefined,
       barcode: barcodeKw ? parseBarcodeGeometry(barcodeKw, lpi, uom) : undefined,
-      // Batch B: raw keyword array so the webview's Font & sizing panel can
-      // read/prefill FONT/CDEFNT/FNTCHRSET/FONTNAME/CHRID/CHRSIZ/CCSID for
-      // the selected field/constant without a second round trip.
+      // Raw keyword array (fields and constants) so the webview's various
+      // properties-panel sections — Batch G data/edit keywords, Batch B
+      // font & sizing (FONT/CDEFNT/FNTCHRSET/FONTNAME/CHRID/CHRSIZ/CCSID),
+      // and Batch A general keywords — can all prefill from the same
+      // entry.keywords without a second round trip. NOTE: this key used to
+      // be set twice in this object literal (once field-only for Batch G,
+      // once unconditionally for Batch B) — the second silently won, so the
+      // field-only restriction was already dead. Keeping the unconditional
+      // version since Batch A's general-keywords panel needs it for
+      // constants too.
       keywords: entry.keywords,
       font: {
         fgid: font.fgid,

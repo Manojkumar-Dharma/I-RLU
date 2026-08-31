@@ -722,7 +722,7 @@
   // for this panel's own Save button (which only covers the base
   // positional attributes + REF/REFFLD).
   const BATCH_G_FIELD_KEYWORDS = [
-    { name: "ALIAS", kind: "text", placeholder: "alt. field name", hint: "Alternative name for the field — a second name HLL programs can reference it by." },
+    { name: "ALIAS", kind: "text", placeholder: "alt. field name", maxlength: "10", upper: true, hint: "Alternative name for the field — a second name HLL programs can reference it by." },
     { name: "BLKFOLD", kind: "flag", hint: "Wrap to a blank instead of a hard break when data exceeds the field width. Only has effect with FOLD(*YES) on CRTPRTF/CHGPRTF/OVRPRTF." },
     { name: "CVTDTA", kind: "flag", hint: "Convert Data — the field carries hex code points rather than character data (used with DFNCHR on SCS/IPDS printers)." },
     { name: "DLTEDT", kind: "flag", hint: "Delete Edit — ignores any EDTCDE/EDTWRD copied in from a referenced field. Only has effect when \"Reference a field\" is on." },
@@ -741,56 +741,9 @@
       section.appendChild(el("div", { class: "hint warning" }, [w.message]));
     });
 
-    BATCH_G_FIELD_KEYWORDS.forEach((def) => {
-      const existing = PrtfEngine.findKeyword(cell.keywords, def.name);
-      const rowWrap = el("div", { class: "prop-row" });
-
-      const cbId = "fkw-" + cell.id + "-" + def.name;
-      const cb = el("input", { type: "checkbox", id: cbId });
-      if (existing) cb.setAttribute("checked", "checked");
-      rowWrap.appendChild(el("label", { class: "ind-label", for: cbId, title: def.hint }, [cb, " " + def.name]));
-
-      let valueInput = null;
-      if (def.kind === "select") {
-        const sel = el("select", {});
-        def.options.forEach((opt) => {
-          const o = el("option", { value: opt }, [opt]);
-          if (opt === paramsInnerText(existing)) o.setAttribute("selected", "selected");
-          sel.appendChild(o);
-        });
-        valueInput = sel;
-        rowWrap.appendChild(sel);
-      } else if (def.kind === "text") {
-        const inp = el("input", { type: "text", maxlength: "10", placeholder: def.placeholder, value: paramsInnerText(existing) });
-        valueInput = inp;
-        rowWrap.appendChild(inp);
-      }
-
-      const sendUpdate = () => {
-        if (!cb.checked) {
-          vscode.postMessage({ type: "edit", edit: { kind: "removeFieldKeyword", id: cell.id, name: def.name } });
-          return;
-        }
-        // ALIAS requires a real value — an empty text box would otherwise
-        // write a bare "ALIAS()", which isn't valid DDS. Leave the box
-        // checked but don't send anything until there's a value.
-        if (def.kind === "text" && valueInput && !valueInput.value.trim()) return;
-        vscode.postMessage({
-          type: "edit",
-          edit: {
-            kind: "setFieldKeyword",
-            id: cell.id,
-            name: def.name,
-            params: valueInput ? paramsToText(def.kind, valueInput.value.toUpperCase()) : "",
-          },
-        });
-      };
-
-      cb.addEventListener("change", sendUpdate);
-      if (valueInput) valueInput.addEventListener("change", sendUpdate);
-
-      section.appendChild(rowWrap);
-    });
+    const onSet = (name, params) => vscode.postMessage({ type: "edit", edit: { kind: "setFieldKeyword", id: cell.id, name, params } });
+    const onRemove = (name) => vscode.postMessage({ type: "edit", edit: { kind: "removeFieldKeyword", id: cell.id, name } });
+    appendKeywordRows(section, BATCH_G_FIELD_KEYWORDS, cell.keywords, "fkw-" + cell.id, onSet, onRemove);
 
     return section;
   }
@@ -839,8 +792,27 @@
     ["*PNK", "Pink"], ["*RED", "Red"], ["*TRQ", "Turquoise"], ["*YLW", "Yellow"],
   ];
 
-  /** Appends one prop-row per keyword definition into an existing container — shared by the general-record-keywords panel above and the field/constant section below. Handles the "flag"/"select"/"quotedSelect"/"quotedText" kinds; EDTCDE/MSGCON/COLOR are bespoke (appended separately) since their shape doesn't fit a single value input. */
-  function appendBatchAKeywordRows(container, keywordDefs, entryKeywords, idPrefix, onSet, onRemove) {
+  /**
+   * Appends one prop-row per keyword definition into an existing container —
+   * the single "checkbox toggles a keyword, optional select/text input
+   * supplies its parameter, changes apply immediately" building block shared
+   * by every keyword panel in this file: the Batch G field data/edit-keywords
+   * section, the Batch F record print/finishing panel, the Batch A general
+   * record-keywords panel, and the Batch A general field/constant-keywords
+   * section. (Previously each of those four re-implemented this loop with
+   * small, accidental differences — see the code review that prompted this
+   * refactor. EDTCDE/MSGCON/COLOR stay bespoke, appended separately by their
+   * callers, since their multi-part shape doesn't fit a single value input.)
+   *
+   * Handles kinds "flag" (checkbox only), "text"/"quotedText" (checkbox + a
+   * free-text input; "quotedText" DDS-quotes the value, plain "text" doesn't),
+   * and "select"/"quotedSelect" (checkbox + a dropdown of def.options).
+   *
+   * Per-definition options beyond `name`/`kind`/`hint`/`options`/`placeholder`:
+   *   - `maxlength`: HTML maxlength for a text input (e.g. ALIAS's 10-char DDS name limit).
+   *   - `upper`: uppercase the value before sending (e.g. ALIAS, a DDS name).
+   */
+  function appendKeywordRows(container, keywordDefs, entryKeywords, idPrefix, onSet, onRemove) {
     keywordDefs.forEach((def) => {
       const existing = PrtfEngine.findKeyword(entryKeywords, def.name);
       const rowWrap = el("div", { class: "prop-row" });
@@ -860,8 +832,10 @@
         });
         valueInput = sel;
         rowWrap.appendChild(sel);
-      } else if (def.kind === "quotedText") {
-        const inp = el("input", { type: "text", placeholder: def.placeholder || "", value: paramsInnerText(existing, def.kind) });
+      } else if (def.kind === "quotedText" || def.kind === "text") {
+        const inputAttrs = { type: "text", placeholder: def.placeholder || "", value: paramsInnerText(existing, def.kind) };
+        if (def.maxlength) inputAttrs.maxlength = def.maxlength;
+        const inp = el("input", inputAttrs);
         valueInput = inp;
         rowWrap.appendChild(inp);
       }
@@ -871,8 +845,13 @@
           onRemove(def.name);
           return;
         }
-        if (def.kind === "quotedText" && valueInput && !valueInput.value.trim()) return;
-        onSet(def.name, valueInput ? paramsToText(def.kind, valueInput.value) : "");
+        // A checked keyword whose value is required (ALIAS/OUTBIN/INVMMAP/
+        // EDTWRD/DFT/...) would otherwise write a bare "NAME()", which isn't
+        // valid DDS. Leave the box checked but don't send anything until
+        // there's a value.
+        if ((def.kind === "quotedText" || def.kind === "text") && valueInput && !valueInput.value.trim()) return;
+        const rawValue = valueInput ? valueInput.value : "";
+        onSet(def.name, valueInput ? paramsToText(def.kind, def.upper ? rawValue.toUpperCase() : rawValue) : "");
       };
 
       cb.addEventListener("change", sendUpdate);
@@ -1048,12 +1027,12 @@
 
     if (cell.kind === "field") {
       appendEdtcdeRow(section, cell.keywords, idPrefix, onSet, onRemove);
-      appendBatchAKeywordRows(section, BATCH_A_FIELD_ONLY_KEYWORDS, cell.keywords, idPrefix, onSet, onRemove);
+      appendKeywordRows(section, BATCH_A_FIELD_ONLY_KEYWORDS, cell.keywords, idPrefix, onSet, onRemove);
     } else {
-      appendBatchAKeywordRows(section, BATCH_A_CONSTANT_ONLY_KEYWORDS, cell.keywords, idPrefix, onSet, onRemove);
+      appendKeywordRows(section, BATCH_A_CONSTANT_ONLY_KEYWORDS, cell.keywords, idPrefix, onSet, onRemove);
       appendMsgconRow(section, cell.keywords, idPrefix, onSet, onRemove);
     }
-    appendBatchAKeywordRows(section, BATCH_A_SHARED_KEYWORDS, cell.keywords, idPrefix, onSet, onRemove);
+    appendKeywordRows(section, BATCH_A_SHARED_KEYWORDS, cell.keywords, idPrefix, onSet, onRemove);
     appendColorRow(section, cell.keywords, idPrefix, onSet, onRemove);
 
     return section;
@@ -1260,60 +1239,13 @@
       panel.appendChild(el("div", { class: "hint warning" }, [w.message]));
     });
 
-    BATCH_F_KEYWORDS.forEach((def) => {
-      const existing = PrtfEngine.findKeyword(record.keywords, def.name);
-      const rowWrap = el("div", { class: "prop-row" });
-
-      const cbId = "kw-" + record.name + "-" + def.name;
-      const cb = el("input", { type: "checkbox", id: cbId });
-      if (existing) cb.setAttribute("checked", "checked");
-      rowWrap.appendChild(el("label", { class: "ind-label", for: cbId, title: def.hint }, [cb, " " + def.name]));
-
-      let valueInput = null;
-      if (def.kind === "select") {
-        // No blank option: every keyword modeled with kind "select" (just
-        // DUPLEX today) requires a parameter, so the checkbox alone isn't
-        // enough — default to the first choice when nothing's set yet.
-        const sel = el("select", {});
-        def.options.forEach((opt) => {
-          const o = el("option", { value: opt }, [opt]);
-          if (opt === paramsInnerText(existing)) o.setAttribute("selected", "selected");
-          sel.appendChild(o);
-        });
-        valueInput = sel;
-        rowWrap.appendChild(sel);
-      } else if (def.kind === "text") {
-        const inp = el("input", { type: "text", placeholder: def.placeholder, value: paramsInnerText(existing) });
-        valueInput = inp;
-        rowWrap.appendChild(inp);
-      }
-
-      const sendUpdate = () => {
-        if (!cb.checked) {
-          vscode.postMessage({ type: "edit", edit: { kind: "removeRecordKeyword", recordName: record.name, name: def.name } });
-          return;
-        }
-        // OUTBIN/INVMMAP require a real value — an empty text box would
-        // otherwise write a bare "OUTBIN"/"INVMMAP" with no params, which
-        // isn't valid DDS for either keyword. Leave the box checked but
-        // don't send anything until there's a value to write.
-        if (def.kind === "text" && valueInput && !valueInput.value.trim()) return;
-        vscode.postMessage({
-          type: "edit",
-          edit: {
-            kind: "setRecordKeyword",
-            recordName: record.name,
-            name: def.name,
-            params: valueInput ? paramsToText(def.kind, valueInput.value) : "",
-          },
-        });
-      };
-
-      cb.addEventListener("change", sendUpdate);
-      if (valueInput) valueInput.addEventListener("change", sendUpdate);
-
-      panel.appendChild(rowWrap);
-    });
+    // No blank option on the "select" keywords here: every one modeled with
+    // kind "select" (just DUPLEX today) requires a parameter, so the
+    // checkbox alone isn't enough — the dropdown defaults to its first
+    // option when nothing's set yet.
+    const onSet = (name, params) => vscode.postMessage({ type: "edit", edit: { kind: "setRecordKeyword", recordName: record.name, name, params } });
+    const onRemove = (name) => vscode.postMessage({ type: "edit", edit: { kind: "removeRecordKeyword", recordName: record.name, name } });
+    appendKeywordRows(panel, BATCH_F_KEYWORDS, record.keywords, "kw-" + record.name, onSet, onRemove);
 
     return panel;
   }
@@ -1341,48 +1273,9 @@
     // shown by the "Font & sizing" panel below (Batch B's
     // validateFontKeywords call) — not duplicated here.
 
-    BATCH_A_RECORD_KEYWORDS.forEach((def) => {
-      const existing = PrtfEngine.findKeyword(record.keywords, def.name);
-      const rowWrap = el("div", { class: "prop-row" });
-
-      const cbId = "gkw-" + record.name + "-" + def.name;
-      const cb = el("input", { type: "checkbox", id: cbId });
-      if (existing) cb.setAttribute("checked", "checked");
-      rowWrap.appendChild(el("label", { class: "ind-label", for: cbId, title: def.hint }, [cb, " " + def.name]));
-
-      let valueInput = null;
-      if (def.kind === "select") {
-        const sel = el("select", {});
-        def.options.forEach((opt) => {
-          const o = el("option", { value: opt }, [opt]);
-          if (opt === paramsInnerText(existing)) o.setAttribute("selected", "selected");
-          sel.appendChild(o);
-        });
-        valueInput = sel;
-        rowWrap.appendChild(sel);
-      }
-
-      const sendUpdate = () => {
-        if (!cb.checked) {
-          vscode.postMessage({ type: "edit", edit: { kind: "removeRecordKeyword", recordName: record.name, name: def.name } });
-          return;
-        }
-        vscode.postMessage({
-          type: "edit",
-          edit: {
-            kind: "setRecordKeyword",
-            recordName: record.name,
-            name: def.name,
-            params: valueInput ? paramsToText(def.kind, valueInput.value) : "",
-          },
-        });
-      };
-
-      cb.addEventListener("change", sendUpdate);
-      if (valueInput) valueInput.addEventListener("change", sendUpdate);
-
-      panel.appendChild(rowWrap);
-    });
+    const onSet = (name, params) => vscode.postMessage({ type: "edit", edit: { kind: "setRecordKeyword", recordName: record.name, name, params } });
+    const onRemove = (name) => vscode.postMessage({ type: "edit", edit: { kind: "removeRecordKeyword", recordName: record.name, name } });
+    appendKeywordRows(panel, BATCH_A_RECORD_KEYWORDS, record.keywords, "gkw-" + record.name, onSet, onRemove);
 
     return panel;
   }
