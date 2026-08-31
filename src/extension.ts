@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { parseSource } from "./prtfParser";
-import { ParsedSource } from "./prtfModel";
+import { ParsedSource, RecordFormatEntry, FieldEntry, ConstantEntry } from "./prtfModel";
+import { WebviewEdit, WebviewMessage } from "./webviewProtocol";
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { regenerateSource, upsertReffldKeyword } = require("./prtfWriter.js");
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -15,6 +16,26 @@ function getNonce(): string {
   const possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
   for (let i = 0; i < 32; i++) text += possible.charAt(Math.floor(Math.random() * possible.length));
   return text;
+}
+
+/**
+ * Finds the field or constant with the given stable id, along with its
+ * owning record and index within that record's `fields` array — the lookup
+ * every id-scoped edit (move/update/delete/setFieldKeyword/...) and the
+ * "Resolve Referenced Field" handler need before they can touch an entry.
+ * Shared here so there's exactly one place that knows how to walk
+ * model.records to find an entry by id, rather than each caller
+ * re-implementing the same loop.
+ */
+function findEntryById(
+  model: ParsedSource,
+  id: string
+): { record: RecordFormatEntry; entry: FieldEntry | ConstantEntry; fieldsIndex: number } | null {
+  for (const record of model.records) {
+    const fieldsIndex = record.fields.findIndex((f) => f.id === id);
+    if (fieldsIndex !== -1) return { record, entry: record.fields[fieldsIndex], fieldsIndex };
+  }
+  return null;
 }
 
 class PrtfDesignerProvider implements vscode.CustomTextEditorProvider {
@@ -64,7 +85,7 @@ class PrtfDesignerProvider implements vscode.CustomTextEditorProvider {
       configSub.dispose();
     });
 
-    webviewPanel.webview.onDidReceiveMessage(async (msg) => {
+    webviewPanel.webview.onDidReceiveMessage(async (msg: WebviewMessage) => {
       if (msg.type === "ready") {
         postModel();
         return;
@@ -95,25 +116,17 @@ class PrtfDesignerProvider implements vscode.CustomTextEditorProvider {
    * whole document via a single WorkspaceEdit so VS Code's undo stack sees
    * one coherent change per user action.
    */
-  private async applyEdit(document: vscode.TextDocument, model: ParsedSource, edit: any): Promise<void> {
-    function findById(id: string): { record: any; entry: any; fieldsIndex: number } | null {
-      for (const record of model.records) {
-        const fieldsIndex = record.fields.findIndex((f: any) => f.id === id);
-        if (fieldsIndex !== -1) return { record, entry: record.fields[fieldsIndex], fieldsIndex };
-      }
-      return null;
-    }
-
+  private async applyEdit(document: vscode.TextDocument, model: ParsedSource, edit: WebviewEdit): Promise<void> {
     switch (edit.kind) {
       case "move": {
-        const found = findById(edit.id);
+        const found = findEntryById(model, edit.id);
         if (!found) return;
         found.entry.line = edit.line;
         found.entry.position = edit.position;
         break;
       }
       case "updateField": {
-        const found = findById(edit.id);
+        const found = findEntryById(model, edit.id);
         if (!found || found.entry.kind !== "field") return;
         Object.assign(found.entry, {
           name: edit.name,
@@ -143,13 +156,13 @@ class PrtfDesignerProvider implements vscode.CustomTextEditorProvider {
         break;
       }
       case "updateConstant": {
-        const found = findById(edit.id);
+        const found = findEntryById(model, edit.id);
         if (!found || found.entry.kind !== "constant") return;
         Object.assign(found.entry, { literal: edit.literal, line: edit.line, position: edit.position });
         break;
       }
       case "delete": {
-        const found = findById(edit.id);
+        const found = findEntryById(model, edit.id);
         if (!found) return;
         found.record.fields.splice(found.fieldsIndex, 1);
         const seqIndex = model.sequence.indexOf(found.entry);
@@ -166,7 +179,7 @@ class PrtfDesignerProvider implements vscode.CustomTextEditorProvider {
         const record = model.records.find((r) => r.name === edit.recordName);
         if (!record) return;
         const raw = edit.params ? edit.name + edit.params : edit.name;
-        const existingIndex = record.keywords.findIndex((k: any) => k.name === edit.name);
+        const existingIndex = record.keywords.findIndex((k) => k.name === edit.name);
         const newKeyword = { name: edit.name, params: edit.params || "", raw, sourceLineIndex: -1 };
         if (existingIndex !== -1) record.keywords[existingIndex] = newKeyword;
         else record.keywords.push(newKeyword);
@@ -175,7 +188,7 @@ class PrtfDesignerProvider implements vscode.CustomTextEditorProvider {
       case "removeRecordKeyword": {
         const record = model.records.find((r) => r.name === edit.recordName);
         if (!record) return;
-        const idx = record.keywords.findIndex((k: any) => k.name === edit.name);
+        const idx = record.keywords.findIndex((k) => k.name === edit.name);
         if (idx !== -1) record.keywords.splice(idx, 1);
         break;
       }
@@ -200,19 +213,19 @@ class PrtfDesignerProvider implements vscode.CustomTextEditorProvider {
         // H) or INDTXT (repeating, keyed by indicator number rather than
         // by keyword name alone — see PrtfEngine.collectIndicatorDescriptions)
         // since neither fits this "set once per name" shape.
-        const found = findById(edit.id);
+        const found = findEntryById(model, edit.id);
         if (!found) return;
         const raw = edit.params ? edit.name + edit.params : edit.name;
-        const existingIndex = found.entry.keywords.findIndex((k: any) => k.name === edit.name);
+        const existingIndex = found.entry.keywords.findIndex((k) => k.name === edit.name);
         const newKeyword = { name: edit.name, params: edit.params || "", raw, sourceLineIndex: -1 };
         if (existingIndex !== -1) found.entry.keywords[existingIndex] = newKeyword;
         else found.entry.keywords.push(newKeyword);
         break;
       }
       case "removeFieldKeyword": {
-        const found = findById(edit.id);
+        const found = findEntryById(model, edit.id);
         if (!found) return;
-        const idx = found.entry.keywords.findIndex((k: any) => k.name === edit.name);
+        const idx = found.entry.keywords.findIndex((k) => k.name === edit.name);
         if (idx !== -1) found.entry.keywords.splice(idx, 1);
         break;
       }
@@ -234,7 +247,7 @@ class PrtfDesignerProvider implements vscode.CustomTextEditorProvider {
         const params = "(" + edit.indicator + " '" + text + "')";
         const newKeyword = { name: "INDTXT", params, raw: "INDTXT" + params, sourceLineIndex: -1 };
         const existingIndex = record.keywords.findIndex(
-          (k: any) => k.name === "INDTXT" && PrtfEngine.parseIndtxt(k) && PrtfEngine.parseIndtxt(k).indicator === edit.indicator
+          (k) => k.name === "INDTXT" && PrtfEngine.parseIndtxt(k) && PrtfEngine.parseIndtxt(k).indicator === edit.indicator
         );
         if (existingIndex !== -1) record.keywords[existingIndex] = newKeyword;
         else record.keywords.push(newKeyword);
@@ -244,7 +257,7 @@ class PrtfDesignerProvider implements vscode.CustomTextEditorProvider {
         const record = model.records.find((r) => r.name === edit.recordName);
         if (!record) return;
         const idx = record.keywords.findIndex(
-          (k: any) => k.name === "INDTXT" && PrtfEngine.parseIndtxt(k) && PrtfEngine.parseIndtxt(k).indicator === edit.indicator
+          (k) => k.name === "INDTXT" && PrtfEngine.parseIndtxt(k) && PrtfEngine.parseIndtxt(k).indicator === edit.indicator
         );
         if (idx !== -1) record.keywords.splice(idx, 1);
         break;
@@ -253,7 +266,7 @@ class PrtfDesignerProvider implements vscode.CustomTextEditorProvider {
       case "addConstant": {
         const record = model.records.find((r) => r.name === edit.recordName);
         if (!record) return;
-        const newEntry: any =
+        const newEntry: FieldEntry | ConstantEntry =
           edit.kind === "addField"
             ? {
                 kind: "field",
@@ -415,20 +428,18 @@ async function handleResolveReferencedField(
   model: ParsedSource,
   msg: { id: string; useReferencedValues?: boolean }
 ): Promise<void> {
-  let found: { record: any; entry: any } | null = null;
-  for (const record of model.records) {
-    const entry = record.fields.find((f: any) => f.id === msg.id);
-    if (entry) {
-      found = { record, entry };
-      break;
-    }
-  }
+  const found = findEntryById(model, msg.id);
   if (!found || found.entry.kind !== "field") {
     vscode.window.showErrorMessage("I-RLU: field not found.");
     return;
   }
+  // Pulled into its own const, typed as FieldEntry, so the "kind === field"
+  // narrowing above survives into the async closure below — TS doesn't
+  // carry narrowing of an object property (found.entry.kind) across a
+  // function boundary, only of a variable that's never reassigned.
+  const entry: FieldEntry = found.entry;
 
-  const target = PrtfEngine.resolveReferenceTarget(model, found.record, found.entry);
+  const target = PrtfEngine.resolveReferenceTarget(model, found.record, entry);
   if (!target) {
     vscode.window.showInformationMessage("I-RLU: no REF/REFFLD file to resolve against for this field.");
     return;
@@ -445,9 +456,9 @@ async function handleResolveReferencedField(
 
       const useReferencedValues = msg.useReferencedValues !== false;
       const shouldSet = (current: unknown) => useReferencedValues || current === undefined || current === null;
-      if (shouldSet(found!.entry.length)) found!.entry.length = outcome.length;
-      if (shouldSet(found!.entry.dataType)) found!.entry.dataType = outcome.dataType || found!.entry.dataType;
-      if (shouldSet(found!.entry.decimalPositions)) found!.entry.decimalPositions = outcome.decimalPositions === null ? undefined : outcome.decimalPositions;
+      if (shouldSet(entry.length)) entry.length = outcome.length;
+      if (shouldSet(entry.dataType)) entry.dataType = outcome.dataType || entry.dataType;
+      if (shouldSet(entry.decimalPositions)) entry.decimalPositions = outcome.decimalPositions === null ? undefined : outcome.decimalPositions;
 
       const newText = regenerateSource(model);
       const fullRange = new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length));
