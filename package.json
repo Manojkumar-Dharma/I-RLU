@@ -4,6 +4,8 @@
   "description": "Interactive, WYSIWYG designer for IBM i printer file DDS (RLU replacement), with live SCS/AFPDS page preview.",
   "version": "0.0.1",
   "publisher": "Manojkumar-Dharma",
+  "icon": "images/icon.png",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/Manojkumar-Dharma/I-RLU.git"

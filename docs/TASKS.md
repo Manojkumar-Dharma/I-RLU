@@ -289,16 +289,14 @@ incomplete-but-working extension is fine for internal testing.
   `npm run compile` — `vsce` invokes this automatically before packaging)
   and `package` (`vsce package`) npm scripts.
 - Verified end-to-end: `npm run package` produces `i-rlu-0.0.1.vsix`
-  (43.96 KB, 12 files) with the corrected `main` entry point; `npm test`
-  still passes (50/50) afterward.
-- **Not done, flagged rather than guessed at:** `vsce package` warns that
-  no `LICENSE`/`LICENSE.md`/`LICENSE.txt` is present. Not fixed here since
-  choosing a license is the repo owner's call, not a packaging-mechanics
-  decision — add one (and a matching `"license"` field in `package.json`)
-  whenever that's decided. No `icon` was added either, for the same
-  "needs a real decision, not a default" reason — `vsce` packages fine
-  without one, VS Code just shows a generic icon in the Marketplace/Extensions
-  view until it's set.
+  (427.66 KB, 14 files) with the corrected `main` entry point, LICENSE, and
+  icon all included; `npm test` still passes (50/50) afterward. No
+  remaining `vsce package` warnings.
+- **License and icon:** copied from the I-SDA repo (same author/publisher,
+  `Manojkumar-Dharma`) at the repo owner's direction rather than choosing
+  independently — `LICENSE` (MIT, Manojkumar Dharmalingam) and
+  `images/icon.png`, with matching `"license": "MIT"` and
+  `"icon": "images/icon.png"` added to `package.json`.
 
 ### Batch L — Real AFP font metrics [PARTIALLY DONE]
 **FGID identification: done.** `src/afpFontMetrics.js` now resolves the
