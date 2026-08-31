@@ -364,6 +364,10 @@ function resolveLayout(model, recordName, indicatorState, uom) {
       keywords: entry.kind === "field" ? entry.keywords : undefined,
       fieldWarnings: entry.kind === "field" ? validateFieldKeywords(entry) : undefined,
       barcode: barcodeKw ? parseBarcodeGeometry(barcodeKw, lpi, uom) : undefined,
+      // Batch B: raw keyword array so the webview's Font & sizing panel can
+      // read/prefill FONT/CDEFNT/FNTCHRSET/FONTNAME/CHRID/CHRSIZ/CCSID for
+      // the selected field/constant without a second round trip.
+      keywords: entry.keywords,
       font: {
         fgid: font.fgid,
         name: fontInfo.name,
@@ -535,6 +539,45 @@ function validateFieldKeywords(field) {
 }
 
 /**
+ * Batch B validation hints for FONT/CDEFNT/FNTCHRSET/CHRSIZ/CHRID, generic
+ * over a keyword array so it works for both record-level and field-level
+ * keywords without duplicating the checks. Per IBM's DDS reference:
+ *  - HIGHLIGHT is ignored (with a compile-time message) if CDEFNT or
+ *    FNTCHRSET is also coded on the same record/field.
+ *  - CHRID is ignored (with a compile-time message) if CDEFNT or FNTCHRSET
+ *    is also coded on the same record/field.
+ *  - CHRSIZ requires an IPDS printer and is explicitly documented as one
+ *    of the few keywords *not* supported under Host Print Transform — this
+ *    is always worth a heads-up when CHRSIZ is present, not conditional on
+ *    another keyword.
+ * Returns [] when there's nothing to flag.
+ */
+function validateFontKeywords(keywords) {
+  const warnings = [];
+  const hasCdefnt = !!findKeyword(keywords, "CDEFNT");
+  const hasFntchrset = !!findKeyword(keywords, "FNTCHRSET");
+  if ((hasCdefnt || hasFntchrset) && findKeyword(keywords, "HIGHLIGHT")) {
+    warnings.push({
+      keyword: "HIGHLIGHT",
+      message: "HIGHLIGHT is ignored (with a compile-time message) because " + (hasCdefnt ? "CDEFNT" : "FNTCHRSET") + " is also coded here.",
+    });
+  }
+  if ((hasCdefnt || hasFntchrset) && findKeyword(keywords, "CHRID")) {
+    warnings.push({
+      keyword: "CHRID",
+      message: "CHRID is ignored (with a compile-time message) because " + (hasCdefnt ? "CDEFNT" : "FNTCHRSET") + " is also coded here.",
+    });
+  }
+  if (findKeyword(keywords, "CHRSIZ")) {
+    warnings.push({
+      keyword: "CHRSIZ",
+      message: "CHRSIZ requires an IPDS printer — it's one of the few keywords not supported under Host Print Transform.",
+    });
+  }
+  return warnings;
+}
+
+/**
  * Parses one INDTXT keyword's "(indicator 'text')" params into
  * {indicator, text}, or null if malformed. Indicator numbers are
  * normalized to uppercase (INDTXT documents response/option indicators,
@@ -604,6 +647,14 @@ const mod = {
   validateFieldKeywords,
   parseIndtxt,
   collectIndicatorDescriptions,
+  // Batch B
+  validateFontKeywords,
+  // Batch B — shared parsing helpers, reused by the webview's font/sizing
+  // properties-panel UI so P-field (&NAME) detection and the FONT
+  // nested-*POINTSIZE grammar aren't duplicated between engine and UI code.
+  paramTokens,
+  isFieldRef,
+  parseFontKeyword,
 };
 if (typeof module !== "undefined" && module.exports) module.exports = mod;
 if (typeof window !== "undefined") window.PrtfEngine = mod;

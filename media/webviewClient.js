@@ -92,6 +92,14 @@
     root.appendChild(renderRecordKeywordsPanel(record));
     const indTextPanel = renderIndicatorTextPanel(record);
     if (indTextPanel) root.appendChild(indTextPanel);
+    root.appendChild(
+      renderFontSizingPanel(
+        record.keywords,
+        (name, params) => vscode.postMessage({ type: "edit", edit: { kind: "setRecordKeyword", recordName: record.name, name, params } }),
+        (name) => vscode.postMessage({ type: "edit", edit: { kind: "removeRecordKeyword", recordName: record.name, name } }),
+        record.name + " (record)"
+      )
+    );
 
     if (layout.skippedByIndicator && layout.skippedByIndicator.length) {
       root.appendChild(
@@ -338,6 +346,276 @@
   function labeledInput(labelText, inputAttrs) {
     const input = el("input", inputAttrs);
     return { row: el("label", { class: "prop-row" }, [labelText, input]), input };
+  }
+
+  // ---------------------------------------------------------------------
+  // Batch B: shared "literal or program-to-system field" (P-field) input.
+  // DDS's &FIELDNAME substitution recurs across nearly every AFPDS
+  // sizing/naming parameter (KEYWORD-INVENTORY §5) — this is one component
+  // built once and reused for FONT/CDEFNT/FNTCHRSET/FONTNAME/CHRID below,
+  // and available to other batches (A, C) that need the same pattern.
+  // When a P-field is in use, no attempt is made to resolve its runtime
+  // value — same "flagged default" treatment already used elsewhere for
+  // program-to-system fields (see docs/REQUIREMENTS.md's known
+  // limitations, and the LINE/BOX "approximate" note above).
+  // ---------------------------------------------------------------------
+  function pFieldRow(labelText, opts) {
+    opts = opts || {};
+    const wrap = el("div", { class: "prop-row pfield-row" });
+    wrap.appendChild(el("span", { class: "pfield-label" }, [labelText]));
+    let isPField = !!opts.initialIsPField;
+    const literalInput = el("input", {
+      type: opts.numeric ? "number" : "text",
+      value: isPField ? "" : opts.initialValue || "",
+      style: isPField ? "display:none;" : "",
+      placeholder: opts.placeholder || "",
+    });
+    const pfieldInput = el("input", {
+      type: "text",
+      maxlength: "10",
+      placeholder: "FIELDNAME",
+      value: isPField ? opts.initialValue || "" : "",
+      style: isPField ? "" : "display:none;",
+    });
+    const toggleBtn = el("button", { class: "btn pfield-toggle", type: "button" }, [isPField ? "P-field" : "Literal"]);
+    toggleBtn.addEventListener("click", () => {
+      isPField = !isPField;
+      literalInput.style.display = isPField ? "none" : "";
+      pfieldInput.style.display = isPField ? "" : "none";
+      toggleBtn.textContent = isPField ? "P-field" : "Literal";
+    });
+    wrap.appendChild(literalInput);
+    wrap.appendChild(pfieldInput);
+    wrap.appendChild(toggleBtn);
+    return {
+      row: wrap,
+      getValue() {
+        if (isPField) {
+          const name = pfieldInput.value.trim().toUpperCase().slice(0, 10);
+          return name ? "&" + name : "";
+        }
+        return literalInput.value.trim();
+      },
+    };
+  }
+
+  /** Splits a single already-extracted param token into {isPField, value} — "&NAME" -> {true,"NAME"}, "11" -> {false,"11"}. */
+  function tokenToPField(tok) {
+    if (!tok) return { isPField: false, value: "" };
+    if (PrtfEngine.isFieldRef(tok)) return { isPField: true, value: tok.slice(1) };
+    return { isPField: false, value: tok };
+  }
+
+  /**
+   * Parses an existing FONT/CDEFNT/FNTCHRSET/FONTNAME/CHRID keyword's raw
+   * params into per-param values plus an optional trailing
+   * "(*POINTSIZE height [width])" block, per spec.params' order. IBM's DDS
+   * reference places *POINTSIZE last, after all name/library params, for
+   * every keyword that supports it — this assumes that documented order
+   * rather than trying to parse an arbitrary interleaving.
+   */
+  function parseFontSpecKeyword(spec, existingKw) {
+    const raw = existingKw ? String(existingKw.params || "").replace(/^\(/, "").replace(/\)$/, "").trim() : "";
+    let plainPart = raw;
+    let height = null;
+    let width = null;
+    if (spec.pointSize) {
+      const m = raw.match(/\(\s*\*POINTSIZE\s+(\S+?)(?:\s+(\S+?))?\s*\)\s*$/i);
+      if (m) {
+        height = m[1];
+        width = m[2] || null;
+        plainPart = raw.slice(0, m.index).trim();
+      }
+    }
+    const tokens = plainPart === "" ? [] : plainPart.split(/\s+/);
+    const values = spec.params.map((_p, i) => tokenToPField(tokens[i]));
+    return { values, height: tokenToPField(height), width: tokenToPField(width) };
+  }
+
+  /** Builds a keyword's params text ("(...)") from its param rows and optional pointsize rows. Returns null if the mandatory first param is empty (meaning: don't write this keyword). */
+  function buildFontSpecParams(spec, paramRows, heightRow, widthRow) {
+    const vals = paramRows.map((r) => r.getValue());
+    if (!vals[0]) return null;
+    // Trim trailing empty *optional* params so e.g. an omitted library
+    // doesn't leave a stray blank positional slot.
+    while (vals.length > 1 && !vals[vals.length - 1] && spec.params[vals.length - 1] && spec.params[vals.length - 1].optional) {
+      vals.pop();
+    }
+    let inner = vals.join(" ").replace(/\s+$/, "");
+    if (spec.pointSize) {
+      const h = heightRow.getValue();
+      const w = widthRow.getValue();
+      if (h) inner += (inner ? " " : "") + "(*POINTSIZE " + h + (w ? " " + w : "") + ")";
+    }
+    return "(" + inner + ")";
+  }
+
+  // Batch B keyword shapes, sourced from docs/KEYWORD-INVENTORY.md §1-§3.
+  // FONT/CDEFNT/FNTCHRSET/FONTNAME/CHRID all support P-field indirection on
+  // their name/library params (§5); CHRSIZ and CCSID don't (plain numeric),
+  // so they're handled separately below rather than forced into this shape.
+  const FONT_SIZING_SPECS = [
+    {
+      name: "FONT",
+      hint: "Selects the font by FGID (Font Global Identifier) or a program-to-system field.",
+      params: [{ key: "fgid", label: "Font (FGID)", placeholder: "e.g. 11" }],
+      pointSize: true,
+    },
+    {
+      name: "CDEFNT",
+      hint: "Selects an AFP coded font by name (e.g. X0N51EHC) or a program-to-system field.",
+      params: [
+        { key: "name", label: "Coded font name" },
+        { key: "library", label: "Library", optional: true },
+      ],
+      pointSize: true,
+    },
+    {
+      name: "FNTCHRSET",
+      hint: "Selects a host font character set + code page (FOCA font resource).",
+      params: [
+        { key: "charset", label: "Font char set name" },
+        { key: "charsetLib", label: "Char set library", optional: true },
+        { key: "codepage", label: "Code page name" },
+        { key: "codepageLib", label: "Code page library", optional: true },
+      ],
+      pointSize: true,
+    },
+    {
+      name: "FONTNAME",
+      hint: "Selects a TrueType/OpenType font by resource name.",
+      params: [{ key: "name", label: "Font resource name" }],
+      pointSize: false,
+    },
+    {
+      name: "CHRID",
+      hint: "Selects the graphic character set/code page for a printer-resident font. Ignored if CDEFNT or FNTCHRSET is also coded.",
+      params: [
+        { key: "charset", label: "Graphic character set" },
+        { key: "codepage", label: "Code page" },
+      ],
+      pointSize: false,
+    },
+  ];
+
+  /**
+   * Renders the Batch B "Font & sizing" panel: FONT/CDEFNT/FNTCHRSET/
+   * FONTNAME/CHRID (via the shared P-field component) plus plain-numeric
+   * CHRSIZ/CCSID, against whatever keyword array is passed in (a record's
+   * or a field's). `applyFn(name, params)`/`removeFn(name)` post the
+   * appropriate edit message — record-level and field-level callers supply
+   * different ones, but the panel itself doesn't know or care which.
+   */
+  function renderFontSizingPanel(keywords, applyFn, removeFn, titleSuffix) {
+    const panel = el("div", { class: "props" });
+    panel.appendChild(el("h4", {}, ["Font & sizing" + (titleSuffix ? " — " + titleSuffix : "")]));
+
+    (PrtfEngine.validateFontKeywords(keywords) || []).forEach((w) => {
+      panel.appendChild(el("div", { class: "hint warning" }, [w.message]));
+    });
+
+    FONT_SIZING_SPECS.forEach((spec) => {
+      const existing = PrtfEngine.findKeyword(keywords, spec.name);
+      const parsed = parseFontSpecKeyword(spec, existing);
+
+      const cbId = "fk-" + spec.name + "-" + Math.random().toString(36).slice(2, 7);
+      const cb = el("input", { type: "checkbox", id: cbId });
+      if (existing) cb.setAttribute("checked", "checked");
+      panel.appendChild(el("label", { class: "ind-label", for: cbId, title: spec.hint }, [cb, " " + spec.name]));
+
+      const body = el("div", { style: existing ? "" : "display:none;" });
+      const paramRows = spec.params.map((p, i) => {
+        const r = pFieldRow(p.label, { initialIsPField: parsed.values[i].isPField, initialValue: parsed.values[i].value, placeholder: p.placeholder });
+        body.appendChild(r.row);
+        return r;
+      });
+      let heightRow = null;
+      let widthRow = null;
+      if (spec.pointSize) {
+        heightRow = pFieldRow("Point size height", { initialIsPField: parsed.height.isPField, initialValue: parsed.height.value, numeric: !parsed.height.isPField, placeholder: "optional" });
+        widthRow = pFieldRow("Point size width", { initialIsPField: parsed.width.isPField, initialValue: parsed.width.value, numeric: !parsed.width.isPField, placeholder: "optional" });
+        body.appendChild(heightRow.row);
+        body.appendChild(widthRow.row);
+      }
+      const applyBtn = el("button", { class: "btn", type: "button" }, ["Apply " + spec.name]);
+      applyBtn.addEventListener("click", () => {
+        const params = buildFontSpecParams(spec, paramRows, heightRow, widthRow);
+        if (params) applyFn(spec.name, params);
+      });
+      body.appendChild(applyBtn);
+      panel.appendChild(body);
+
+      cb.addEventListener("change", () => {
+        if (cb.checked) {
+          body.style.display = "";
+        } else {
+          body.style.display = "none";
+          removeFn(spec.name);
+        }
+      });
+    });
+
+    // CHRSIZ and CCSID: plain numeric, no P-field indirection per
+    // KEYWORD-INVENTORY §2/§3 (neither is listed among the P-field-capable
+    // parameters there).
+    const chrsizExisting = PrtfEngine.findKeyword(keywords, "CHRSIZ");
+    const chrsizTokens = chrsizExisting ? PrtfEngine.paramTokens(chrsizExisting) : [];
+    const chrsizCbId = "fk-chrsiz-" + Math.random().toString(36).slice(2, 7);
+    const chrsizCb = el("input", { type: "checkbox", id: chrsizCbId });
+    if (chrsizExisting) chrsizCb.setAttribute("checked", "checked");
+    panel.appendChild(
+      el("label", { class: "ind-label", for: chrsizCbId, title: "Character size multipliers 1.0-20.0. Requires an IPDS printer." }, [
+        chrsizCb,
+        " CHRSIZ",
+      ])
+    );
+    const chrsizBody = el("div", { style: chrsizExisting ? "" : "display:none;" });
+    const widthMultRow = labeledInput("Width multiplier", { type: "number", min: "1", max: "20", step: "0.1", value: chrsizTokens[0] || "1.0" });
+    const heightMultRow = labeledInput("Height multiplier", { type: "number", min: "1", max: "20", step: "0.1", value: chrsizTokens[1] || "1.0" });
+    chrsizBody.appendChild(widthMultRow.row);
+    chrsizBody.appendChild(heightMultRow.row);
+    const chrsizApplyBtn = el("button", { class: "btn", type: "button" }, ["Apply CHRSIZ"]);
+    chrsizApplyBtn.addEventListener("click", () => {
+      const w = widthMultRow.input.value || "1.0";
+      const h = heightMultRow.input.value || "1.0";
+      applyFn("CHRSIZ", "(" + w + " " + h + ")");
+    });
+    chrsizBody.appendChild(chrsizApplyBtn);
+    panel.appendChild(chrsizBody);
+    chrsizCb.addEventListener("change", () => {
+      if (chrsizCb.checked) chrsizBody.style.display = "";
+      else {
+        chrsizBody.style.display = "none";
+        removeFn("CHRSIZ");
+      }
+    });
+
+    const ccsidExisting = PrtfEngine.findKeyword(keywords, "CCSID");
+    const ccsidCbId = "fk-ccsid-" + Math.random().toString(36).slice(2, 7);
+    const ccsidCb = el("input", { type: "checkbox", id: ccsidCbId });
+    if (ccsidExisting) ccsidCb.setAttribute("checked", "checked");
+    panel.appendChild(
+      el("label", { class: "ind-label", for: ccsidCbId, title: "Coded character set ID for this file/record/field's text." }, [ccsidCb, " CCSID"])
+    );
+    const ccsidBody = el("div", { style: ccsidExisting ? "" : "display:none;" });
+    const ccsidValRow = labeledInput("CCSID", { type: "number", min: "1", value: ccsidExisting ? String(ccsidExisting.params).replace(/[()]/g, "").trim() : "" });
+    ccsidBody.appendChild(ccsidValRow.row);
+    const ccsidApplyBtn = el("button", { class: "btn", type: "button" }, ["Apply CCSID"]);
+    ccsidApplyBtn.addEventListener("click", () => {
+      const v = ccsidValRow.input.value.trim();
+      if (v) applyFn("CCSID", "(" + v + ")");
+    });
+    ccsidBody.appendChild(ccsidApplyBtn);
+    panel.appendChild(ccsidBody);
+    ccsidCb.addEventListener("change", () => {
+      if (ccsidCb.checked) ccsidBody.style.display = "";
+      else {
+        ccsidBody.style.display = "none";
+        removeFn("CCSID");
+      }
+    });
+
+    return panel;
   }
 
   function labeledSelect(labelText, options, currentValue) {
@@ -599,6 +877,17 @@
     panel.appendChild(lineRow.row);
     panel.appendChild(posRow.row);
 
+    if (cell.keywords) {
+      panel.appendChild(
+        renderFontSizingPanel(
+          cell.keywords,
+          (name, params) => vscode.postMessage({ type: "edit", edit: { kind: "setFieldKeyword", id: cell.id, name, params } }),
+          (name) => vscode.postMessage({ type: "edit", edit: { kind: "removeFieldKeyword", id: cell.id, name } }),
+          cell.kind === "field" ? cell.name : "constant"
+        )
+      );
+    }
+
     const btnRow = el("div", { class: "prop-buttons" });
     const saveBtn = el("button", { class: "btn primary" }, ["Save"]);
     saveBtn.addEventListener("click", () => {
@@ -791,6 +1080,8 @@
 
     return panel;
   }
+
+  window.addEventListener("message", (event) => {
     const msg = event.data;
     if (msg.type === "setModel") {
       state.model = msg.model;

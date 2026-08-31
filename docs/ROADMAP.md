@@ -80,11 +80,23 @@ full detail, acceptance criteria, and file-level ownership per batch):
       `EDTCDE`, `EDTWRD`, `DATE`/`DATFMT`/`DATSEP`, `TIME`/`TIMFMT`/`TIMSEP`,
       `DFT`, `MSGCON`, `COLOR` (all 5 color models), `HIGHLIGHT`,
       `UNDERLINE`, `PAGNBR`, `PRTQLTY`, `DRAWER`, `PAGRTT`.
-- [ ] **Batch B — Font/character-sizing keyword editing incl. P-field
-      indirection:** `FONT`, `CDEFNT`, `FNTCHRSET`, `FONTNAME`, `CHRSIZ`,
-      `CHRID`, `CCSID`, plus the generic literal-vs-P-field toggle component
-      these all share (see KEYWORD-INVENTORY §5) — build the toggle once,
-      reuse across this whole batch.
+- [x] **Batch B — Font/character-sizing keyword editing incl. P-field
+      indirection — done.** Built the generic literal-vs-P-field toggle
+      component (`pFieldRow`) once and reused it across `FONT`, `CDEFNT`,
+      `FNTCHRSET`, `FONTNAME`, and `CHRID`; `CHRSIZ`/`CCSID` are plain
+      numeric per KEYWORD-INVENTORY, so they skip the toggle. Editable at
+      both record level (new panel next to Batch F's) and field level (new
+      `setFieldKeyword`/`removeFieldKeyword` edit kinds, extending Batch
+      F's `setRecordKeyword` pattern to target by id). Added
+      `validateFontKeywords` for the documented `HIGHLIGHT`/`CHRID`
+      mutual-exclusion-with-`CDEFNT`/`FNTCHRSET` warnings and `CHRSIZ`'s
+      "requires IPDS, no effect under HPT" note. 15 new tests
+      (`test/prtfBatchB.test.ts`) cover literal/P-field round-trips for
+      every keyword at both record and field level, plus all four
+      validation cases. No `prtfModel.ts` change was needed — confirmed
+      the raw-params-text model already represents `&NAME` vs. a literal
+      identically either way, as this batch's own task description
+      anticipated might be true.
 - [ ] **Batch C — Real `BARCODE` parameter surface (still placeholder
       rendering):** expose the full parameter set now confirmed in
       KEYWORD-INVENTORY §3 (symbology id, height-in-lines-or-UOM, bar format,

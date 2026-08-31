@@ -180,19 +180,28 @@ class PrtfDesignerProvider implements vscode.CustomTextEditorProvider {
         break;
       }
       case "setFieldKeyword": {
-        // Batch G (and reusable by future field-keyword-panel batches,
-        // same as setRecordKeyword/removeRecordKeyword below are for
-        // record-level ones) — adds or replaces a field-level keyword by
-        // name. Batch G's own set (ALIAS, BLKFOLD, CVTDTA, DLTEDT,
-        // FLTFIXDEC, FLTPCN, TRNSPY, TXTRTT) are all non-repeating (at most
-        // one per field), so "set" replaces any existing entry with the
-        // same name rather than appending a duplicate. Not used for
-        // REFFLD (see upsertReffldKeyword, Batch H) or INDTXT (repeating,
-        // keyed by indicator number rather than by keyword name alone —
-        // see PrtfEngine.collectIndicatorDescriptions) since neither fits
-        // this "set once per name" shape.
+        // Shared by Batch G (ALIAS, BLKFOLD, CVTDTA, DLTEDT, FLTFIXDEC,
+        // FLTPCN, TRNSPY, TXTRTT) and Batch B (FONT, CDEFNT, FNTCHRSET,
+        // FONTNAME, CHRID, CHRSIZ, CCSID) — adds or replaces a
+        // field/constant-level keyword by name, targeting by id (fields/
+        // constants don't have a unique name the way record formats do).
+        // Deliberately NOT restricted to entry.kind === "field": Batch B's
+        // keywords (FONT etc.) are valid DDS on constants too — a
+        // constant is rendered text, same as a field, and DDS doesn't
+        // distinguish them for font/sizing purposes. Batch G's own keyword
+        // set happens to be field-specific (several require a data type
+        // constants don't have), but that's enforced by Batch G's UI only
+        // showing its panel for fields, not by this shared handler — don't
+        // re-add a kind check here without checking both batches' UIs
+        // still work if you do. Both sets are non-repeating (at most one
+        // keyword instance per name per entry), so "set" replaces any
+        // existing entry with the same name rather than appending a
+        // duplicate. Not used for REFFLD (see upsertReffldKeyword, Batch
+        // H) or INDTXT (repeating, keyed by indicator number rather than
+        // by keyword name alone — see PrtfEngine.collectIndicatorDescriptions)
+        // since neither fits this "set once per name" shape.
         const found = findById(edit.id);
-        if (!found || found.entry.kind !== "field") return;
+        if (!found) return;
         const raw = edit.params ? edit.name + edit.params : edit.name;
         const existingIndex = found.entry.keywords.findIndex((k: any) => k.name === edit.name);
         const newKeyword = { name: edit.name, params: edit.params || "", raw, sourceLineIndex: -1 };
@@ -202,7 +211,7 @@ class PrtfDesignerProvider implements vscode.CustomTextEditorProvider {
       }
       case "removeFieldKeyword": {
         const found = findById(edit.id);
-        if (!found || found.entry.kind !== "field") return;
+        if (!found) return;
         const idx = found.entry.keywords.findIndex((k: any) => k.name === edit.name);
         if (idx !== -1) found.entry.keywords.splice(idx, 1);
         break;

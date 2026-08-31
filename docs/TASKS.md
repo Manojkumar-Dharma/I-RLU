@@ -77,7 +77,7 @@ vice versa.
 | Batch | Description | Keywords in scope | Status | Depends on |
 |---|---|---|---|---|
 | A | Properties-panel editing: general field/record keywords | `EDTCDE`, `EDTWRD`, `DATE`, `DATFMT`, `DATSEP`, `TIME`, `TIMFMT`, `TIMSEP`, `DFT`, `MSGCON`, `COLOR`, `HIGHLIGHT`, `UNDERLINE`, `PAGNBR`, `PRTQLTY`, `DRAWER`, `PAGRTT` | **In progress** | none |
-| B | Font/sizing keyword editing + shared P-field toggle component | `FONT`, `CDEFNT`, `FNTCHRSET`, `FONTNAME`, `CHRSIZ`, `CHRID`, `CCSID` | Not started | none (but A and C benefit from B's P-field component if B lands first) |
+| B | Font/sizing keyword editing + shared P-field toggle component | `FONT`, `CDEFNT`, `FNTCHRSET`, `FONTNAME`, `CHRSIZ`, `CHRID`, `CCSID` | **Done** | none (but A and C benefit from B's P-field component if B lands first) |
 | C | `BARCODE` full parameter surface (still placeholder render) | `BARCODE` | Not started | none |
 | D | `BARCODE` real symbol rendering | `BARCODE` | Not started | **C** |
 | E | AFP page-group / resource keyword placeholders | `OVERLAY` (record), `PAGSEG`, `STRPAGGRP`, `ENDPAGGRP`, `DOCIDXTAG`, `AFPRSC`, `DTASTMCMD` | Not started | none |
@@ -124,25 +124,52 @@ rendering required except where noted.
 - Tests: `test/propertiesPanelBatchA.test.ts` (or `.js`, match existing test
   runner convention) — round-trip each keyword through add/edit/remove.
 
-### Batch B — Font/sizing + shared P-field component
-**Goal:** build one reusable "literal or program-to-system field" input
-component and use it for every parameter in `FONT`, `CDEFNT`, `FNTCHRSET`,
-`FONTNAME`, `CHRSIZ`, `CHRID`, `CCSID`. This is worth building once, well,
-since KEYWORD-INVENTORY §5 shows the same pattern recurring across nearly
-every AFPDS sizing/naming parameter — other batches (A, C) may want to reuse
-it once it exists.
-- Component behavior: a toggle or paired fields — literal value entry, or a
-  "P-field" entry that accepts a field name and renders as `&FIELDNAME` in
-  the generated DDS. When a P-field is used, the preview should render the
-  existing "flagged default position" treatment already used for other
-  program-to-system fields (per `docs/REQUIREMENTS.md`'s known limitations),
-  not attempt to resolve it.
-- Model consideration: check whether `prtfModel.ts` needs any addition to
-  distinguish "this param is a P-field reference" cleanly, or whether it's
-  already representable as-is (the DDS text itself, `&NAME` vs a literal, may
-  already round-trip fine through the generic model — confirm before adding
-  new model surface).
-- Tests: round-trip literal and P-field variants of each keyword.
+### Batch B — Font/sizing + shared P-field component [DONE]
+**Delivered:** a shared, reusable "literal or program-to-system field"
+input component (`pFieldRow` in `media/webviewClient.js`) — a small toggle
+switching between a literal value box and a `&FIELDNAME` box, returning
+whichever text should be spliced into the keyword's DDS params. Used for
+every P-field-capable parameter across `FONT` (FGID + *POINTSIZE height/
+width), `CDEFNT` (name, library, *POINTSIZE), `FNTCHRSET` (char-set name +
+library, code-page name + library, *POINTSIZE), `FONTNAME` (resource
+name), and `CHRID` (character set, code page). `CHRSIZ` (width/height
+multipliers) and `CCSID` (a single CCSID number) are plain-numeric per
+KEYWORD-INVENTORY §2/§3 (neither is documented as P-field-capable there),
+so they get simple numeric inputs rather than being forced through the
+P-field toggle.
+
+**Model consideration, resolved:** no `prtfModel.ts` change was needed — a
+keyword's raw params text already represents a literal or a `&NAME`
+reference identically either way (confirmed by round-tripping both forms
+through parse → regenerate → reparse in `test/prtfBatchB.test.ts`), exactly
+as this batch's own task description predicted might be the case.
+
+**Available at both record and field level**, reusing/extending the exact
+`setRecordKeyword`/`removeRecordKeyword` edit-kind pattern Batch F
+established (per the file-ownership table's explicit instruction to reuse
+it) — plus a new field-level counterpart, `setFieldKeyword`/
+`removeFieldKeyword` in `src/extension.ts`, targeting by the field/
+constant's stable `id` the same way `updateField`/`updateConstant`/
+`delete` already do. Record-level keywords render in a new panel appended
+next to Batch F's print/finishing panel; field-level keywords render
+inside the existing click-a-cell properties panel (`renderEditPanel`),
+gated on the layout cell now also carrying its entry's raw `keywords`
+array (a small `src/prtfEngine.js` addition — cells didn't expose that
+before this batch).
+
+**Validation added** (`validateFontKeywords` in `src/prtfEngine.js`, IBM
+DDS reference-sourced): `HIGHLIGHT` and `CHRID` are each flagged when
+`CDEFNT` or `FNTCHRSET` is also coded on the same record/field (both are
+genuinely ignored by the compiler in that case, per IBM's own mutual-
+exclusion documentation); `CHRSIZ` always gets a heads-up that it requires
+an IPDS printer and has no effect under Host Print Transform.
+
+**Test coverage:** `test/prtfBatchB.test.ts`, 15 tests — literal and
+P-field round-trips (parse → regenerate → reparse) for every keyword in
+scope, all four validation-warning cases, and a field-level (not just
+record-level) round-trip to confirm the shared code path actually works
+identically at both levels rather than just being copy-pasted and hoped
+to match.
 
 ### Batch C — BARCODE parameter surface
 **Current state, precisely** (checked against `src/prtfEngine.js`'s

@@ -46,6 +46,10 @@ body { font-family: var(--vscode-editor-font-family, monospace); color: var(--vs
 .props h4 { margin: 0 0 8px 0; font-size: 12px; }
 .prop-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 11px; margin-bottom: 6px; }
 .prop-row input, .prop-row select { width: 140px; font-size: 11px; }
+.pfield-row { flex-wrap: wrap; }
+.pfield-label { flex: 1 1 auto; min-width: 90px; }
+.pfield-row input { width: 100px; }
+.pfield-toggle { font-size: 10px; padding: 2px 6px; }
 .prop-buttons { display: flex; gap: 6px; margin-top: 8px; }
 `;
 
