@@ -94,6 +94,7 @@ vice versa.
 | P | ~~Add/rename/delete/reorder record formats from the designer~~ | n/a (tooling/UI, not a keyword) | **Done** | none |
 | Q | Copy/duplicate a field or constant | n/a (tooling/UI, not a keyword) | Not started | none |
 | R | ~~**Bug fix:** `emitWithKeywords` collapses multiple consecutive internal spaces inside any quoted keyword literal~~ | n/a (parser/writer correctness) | **Done** | none |
+| S | ~~**Bug fix:** wide record formats (e.g. 130/132-position) pushed the properties/keywords panels below the fold instead of alongside the report~~ | n/a (webview UI/CSS, `media/webviewClient.js` + `src/buildWebviewTemplate.js`) | **Done** | none |
 
 ## Batch detail
 
@@ -1158,6 +1159,79 @@ consecutive internal space. Batch A's `EDTWRD` test was the first to.
 - Full suite: 186 tests, all passing (177 prior + 9 net new — 8 new
   `tokenizeKeywordText`/`emitWithKeywords` unit tests, plus the existing
   Batch A test fixed in place rather than added as a new one).
+
+### Batch S — Fix wide-record-format panel layout [DONE]
+**Reported symptom:** for a record format wide enough to need a large
+`PAGSIZE` (e.g. 130/132 print positions — `test/fixtures/sample1.pf`'s
+`PAGSIZE(66 132)` is a real example already in the repo), the report
+preview (`.page`, sized to `layout.pageCols * cellWidthPx` in
+`renderPage`) is comfortably wider than the panel viewport. Before this
+fix, `render()` in `media/webviewClient.js` appended every section —
+toolbar, report preview, THEN the properties/keywords panels — to `#root`
+as one long vertical stack in plain block flow. A wide preview didn't
+just need horizontal scrolling; because nothing bounded `#root`'s height,
+the whole page grew taller than the viewport and the browser's own
+page-level scroll took over, shoving every properties/keywords panel far
+below the fold — reachable only by scrolling past the (possibly very
+wide) report first.
+
+**Fix — two independently-scrollable columns**, modeled directly on
+I-SDA's own `aside`/`main`/`.props-panel` three-column webview shell
+(`I-SDA/src/buildWebviewTemplate.js`; I-RLU uses two columns, not three,
+since it has no separate left-hand palette to show):
+- `media/webviewClient.js`'s `render()` now builds a `.workspace` row
+  under the toolbar, containing a `.canvas-col` (report preview: ruler +
+  page + the "hidden by indicator"/approximate-position notes) and a
+  `.side-col` (every properties/keywords panel — field/constant edit or
+  new-entry, record print/finishing keywords, general record keywords,
+  indicator text, font & sizing, AFP page-group/resource keywords —
+  stacked in the same order they used to render in, just into the side
+  column instead of the root-level stack). The record add/rename/delete
+  inline form (`renderRecordManagementPanel`) stays in `.canvas-col`,
+  above the ruler, since it's opened from toolbar buttons and isn't a
+  per-field/record properties panel.
+- `src/buildWebviewTemplate.js`'s CSS: `html, body { height: 100vh;
+  overflow: hidden; }` plus `body { display: flex; flex-direction:
+  column; }` pins the whole panel to the real viewport height instead of
+  an unbounded minimum — the same "constrain the column's own height so
+  its own `overflow-y: auto` actually takes effect" fix I-SDA's own
+  `buildWebviewTemplate.js` documents for its three-column shell (see
+  that file's comment above its own `html, body` rule). `.workspace {
+  display: flex; flex: 1; min-height: 0; overflow: hidden; }` fills the
+  remaining height below the (now `flex-shrink: 0`) toolbar. `.canvas-col
+  { flex: 1; min-width: 0; overflow: auto; }` scrolls the report both
+  horizontally and vertically without affecting `.side-col`. `.side-col {
+  width: 340px; flex: 0 0 340px; overflow-y: auto; overflow-x: hidden; }`
+  is a fixed-width column that only ever scrolls vertically, with a
+  left border/background echoing I-SDA's `.props-panel` treatment so it
+  reads as a distinct sidebar rather than a continuation of the report.
+  `.main` (the ruler+page wrapper) gained `width: max-content` so it
+  shrink-wraps to the report's real (possibly very wide) intrinsic width
+  instead of stretching to fill `.canvas-col` — required for
+  `.canvas-col`'s `overflow: auto` to actually trigger a horizontal
+  scrollbar rather than the report silently clipping.
+- `.props` lost its old `max-width: 320px` (sized for wherever it used to
+  land below the report) in favor of `width: 100%` within the new
+  `.side-col`, and its spacing switched from `margin-top: 10px` to
+  `margin-bottom: 12px` (with `.props:last-child` zeroing the last one) so
+  stacked panels get a consistent gap without a stray leading gap before
+  the first one. `.prop-row` gained `flex-wrap: wrap` and its inputs
+  `max-width: 100%` so a keyword row with several inputs wraps cleanly at
+  340px instead of overflowing the sidebar.
+- No DOM-structure test depends on `render()`'s exact tree shape (checked
+  `test/webviewAssembly.test.ts` and `test/prtfWebviewLogic.test.ts` —
+  both test module wiring and pure pixel/text logic, not
+  `document.getElementById`/`querySelector` against rendered output), so
+  this was verified instead with a standalone jsdom smoke check: the
+  assembled webview script, given a `setModel` built from
+  `test/fixtures/sample1.pf` (`PAGSIZE(66 132)`), produces
+  `#root > .toolbar, .workspace` and `.workspace > .canvas-col,
+  .side-col`, with the report's `.page` at its full real pixel width
+  (1267.2px for this fixture) inside `.canvas-col` and all 5 properties/
+  keywords panels stacked inside `.side-col`.
+- Full suite: 272 tests, all passing, no changes needed to any existing
+  test — this batch only touched webview rendering/CSS, not any
+  model/parser/writer/engine logic any existing test exercises.
 
 ## Adding a new batch
 

@@ -96,6 +96,18 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       forms rather than native browser dialogs, matching this codebase's
       existing add-field/add-constant UX. 25 new tests
       (`test/prtfBatchP.test.ts`).
+- [x] **Batch S — Fixed wide-record-format panel layout.** A wide
+      record format (e.g. `PAGSIZE(66 132)`) rendered a report preview
+      wider than the panel viewport; since every section used to be one
+      long vertical stack in plain block flow, this pushed the
+      properties/keywords panels far below the fold instead of leaving
+      them reachable alongside the report. Reworked the webview into two
+      independently-scrollable columns — a left report-preview column
+      (scrolls both ways) and a right, fixed-width properties/keywords
+      column (scrolls vertically only) — modeled on I-SDA's own
+      `aside`/`main`/`.props-panel` shell. See `docs/TASKS.md` Batch S for
+      the full writeup. No existing test depended on the old DOM shape;
+      full suite still 272 tests, all passing.
 
 ## Next up
 

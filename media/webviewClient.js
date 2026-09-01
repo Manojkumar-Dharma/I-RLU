@@ -76,6 +76,26 @@
     return PrtfEngine.resolveLayout(state.model, state.recordName, state.indicators, state.uom);
   }
 
+  /**
+   * Layout shell: a full-width toolbar on top, then a two-column
+   * "workspace" row below it — a left .canvas-col holding the ruler+page
+   * report preview (independently HORIZONTALLY scrollable, since a wide
+   * record format — e.g. 130-position — can be much wider than the
+   * viewport) and a right, fixed-width .side-col holding every
+   * properties/keywords panel stacked one after another (independently
+   * VERTICALLY scrollable), same split I-SDA uses for its own
+   * aside/main/.props-panel three-column shell (see that project's
+   * src/buildWebviewTemplate.js) — just two columns here rather than
+   * three, since I-RLU has no separate left-hand palette to show. Before
+   * this, every panel below the toolbar (report preview AND every
+   * props/keywords panel) was appended to #root as one long vertical
+   * stack in normal block flow, so a wide report pushed the properties
+   * panels far below the fold instead of leaving them reachable
+   * alongside it. See the accompanying CSS in src/buildWebviewTemplate.js
+   * (.workspace/.canvas-col/.side-col) for the actual scroll containment —
+   * same "constrain the column's height, THEN overflow-y:auto on it
+   * actually works" fix I-SDA's own buildWebviewTemplate.js documents.
+   */
   function render() {
     const root = document.getElementById("root");
     root.innerHTML = "";
@@ -87,8 +107,12 @@
 
     root.appendChild(renderToolbar());
 
+    const workspace = el("div", { class: "workspace" });
+    const canvasCol = el("div", { class: "canvas-col" });
+    const sideCol = el("div", { class: "side-col" });
+
     const recordMgmtPanel = renderRecordManagementPanel();
-    if (recordMgmtPanel) root.appendChild(recordMgmtPanel);
+    if (recordMgmtPanel) canvasCol.appendChild(recordMgmtPanel);
 
     const layout = currentLayout();
     if (layout.grid) {
@@ -98,17 +122,37 @@
     const main = el("div", { class: "main" });
     main.appendChild(renderRuler(layout));
     main.appendChild(renderPage(layout));
-    root.appendChild(main);
+    canvasCol.appendChild(main);
+
+    if (layout.skippedByIndicator && layout.skippedByIndicator.length) {
+      canvasCol.appendChild(
+        el("div", { class: "note" }, ["Hidden by indicator state: " + layout.skippedByIndicator.join(", ")])
+      );
+    }
+    if ((layout.draws || []).some((d) => d.approximate)) {
+      canvasCol.appendChild(
+        el("div", { class: "note" }, [
+          "One or more LINE/BOX positions depend on a program-to-system field and are shown at their default position — actual placement is set at print time.",
+        ])
+      );
+    }
+    if ((layout.resources || []).some((r) => r.approximate)) {
+      canvasCol.appendChild(
+        el("div", { class: "note" }, [
+          "One or more OVERLAY/PAGSEG/AFPRSC positions depend on a program-to-system field and are shown at their default position — actual placement is set at print time.",
+        ])
+      );
+    }
 
     const panel = renderPropsPanel(layout);
-    if (panel) root.appendChild(panel);
+    if (panel) sideCol.appendChild(panel);
 
     const record = state.model.records.find((r) => r.name === state.recordName);
-    root.appendChild(renderRecordKeywordsPanel(record));
-    root.appendChild(renderGeneralRecordKeywordsPanel(record));
+    sideCol.appendChild(renderRecordKeywordsPanel(record));
+    sideCol.appendChild(renderGeneralRecordKeywordsPanel(record));
     const indTextPanel = renderIndicatorTextPanel(record);
-    if (indTextPanel) root.appendChild(indTextPanel);
-    root.appendChild(
+    if (indTextPanel) sideCol.appendChild(indTextPanel);
+    sideCol.appendChild(
       renderFontSizingPanel(
         record.keywords,
         (name, params) => vscode.postMessage({ type: "edit", edit: { kind: "setRecordKeyword", recordName: record.name, name, params } }),
@@ -116,27 +160,11 @@
         record.name + " (record)"
       )
     );
-    root.appendChild(renderPageGroupPanel(record, layout));
+    sideCol.appendChild(renderPageGroupPanel(record, layout));
 
-    if (layout.skippedByIndicator && layout.skippedByIndicator.length) {
-      root.appendChild(
-        el("div", { class: "note" }, ["Hidden by indicator state: " + layout.skippedByIndicator.join(", ")])
-      );
-    }
-    if ((layout.draws || []).some((d) => d.approximate)) {
-      root.appendChild(
-        el("div", { class: "note" }, [
-          "One or more LINE/BOX positions depend on a program-to-system field and are shown at their default position — actual placement is set at print time.",
-        ])
-      );
-    }
-    if ((layout.resources || []).some((r) => r.approximate)) {
-      root.appendChild(
-        el("div", { class: "note" }, [
-          "One or more OVERLAY/PAGSEG/AFPRSC positions depend on a program-to-system field and are shown at their default position — actual placement is set at print time.",
-        ])
-      );
-    }
+    workspace.appendChild(canvasCol);
+    workspace.appendChild(sideCol);
+    root.appendChild(workspace);
   }
 
   /**
