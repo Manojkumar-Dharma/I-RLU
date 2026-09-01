@@ -93,7 +93,7 @@ vice versa.
 | O | Real AFP resource rendering (actual pixel content for page segments/overlays) | `PAGSEG`, `OVERLAY` (record-level) | Blocked — needs external resource files, see REQUIREMENTS.md §8 | **E** |
 | P | Add/rename/delete/reorder record formats from the designer | n/a (tooling/UI, not a keyword) | Not started | none |
 | Q | Copy/duplicate a field or constant | n/a (tooling/UI, not a keyword) | Not started | none |
-| R | **Bug fix:** `emitWithKeywords` collapses multiple consecutive internal spaces inside any quoted keyword literal | n/a (parser/writer correctness) | Not started — logged below, not yet fixed | none |
+| R | **Bug fix:** `emitWithKeywords` collapses multiple consecutive internal spaces inside any quoted keyword literal | n/a (parser/writer correctness) | In progress | none |
 
 ## Batch detail
 
