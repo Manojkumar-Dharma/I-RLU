@@ -677,6 +677,28 @@ work, not just the missing picker itself:**
   validation, and `buildCrtprtfCommand` covering both bug fixes above plus
   the differing FILE/SRCFILE blank-library defaults.
 
+**Follow-up consolidation (done, separate from the batch above):**
+`fetchReferencedFieldAttributes` and `fetchDatabaseFileFields` (Batch H)
+each had their own inline copy of the exact same extension-lookup/
+activate/`getConnection()` sequence `getCodeForIConnection` now
+encapsulates — three near-identical copies of the same logic in one file,
+once Batch J's fix landed alongside the two pre-existing ones. Both
+functions now call `getCodeForIConnection()` and its returned
+`connection.runCommand(...)`/`.runSQL(...)`, replacing their own inline
+lookup and their own `vscode.commands.executeCommand("code-for-ibmi.runCommand",
+...)` calls. `getCodeForIConnection`'s return type and validity check were
+extended to also cover `runSQL` (it previously only checked `runCommand`,
+since `compilePrtf` was its only caller), and the function itself was
+moved earlier in the file, right before its first consumer, since it's
+now the shared entry point rather than something specific to the compile
+command. No behavior change for either function — their combined
+"extension missing or not connected" error messages already covered both
+cases in wording, so consolidating to `getCodeForIConnection`'s single
+undefined-return path didn't lose any message specificity. No new tests
+needed: neither function has ever had live-connection unit tests (same as
+`compilePrtf` itself — they depend entirely on the real VS Code extension
+host), and nothing in their unit-testable surface changed.
+
 ### Batch K — Packaging [DONE]
 **Goal:** `vsce package` producing a real `.vsix`. Mostly checking
 `package.json` metadata (icon, categories, publisher, repository fields all

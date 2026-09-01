@@ -142,6 +142,51 @@ type ReferencedFieldAttributes = { length: number; dataType: string; decimalPosi
 const mapDspffdRowToAttributes = PrtfEngine.mapDspffdRowToAttributes;
 
 /**
+ * Resolves Code for i's `code-for-ibmi.runCommand`/`runSQL` API the
+ * documented way (`instance.getConnection().runCommand`/`.runSQL`, per
+ * codefori.github.io/docs/dev/examples/ and I-SDA's own
+ * `getConnectedCodeForIBMi()`) — the ONE place in this file that looks up
+ * the Code for i extension, activates it, and resolves its connection.
+ *
+ * This consolidates what used to be three separate, near-identical copies
+ * of the same lookup/activate/getConnection sequence: fetchReferencedFieldAttributes
+ * and fetchDatabaseFileFields below each had their own inline copy (paired
+ * with their own `vscode.commands.executeCommand("code-for-ibmi.runCommand",
+ * ...)` calls), and compilePrtf (further down) originally had a broken
+ * fourth variant — `codeForI.exports.runCommand(...)` — which doesn't work
+ * at all, since `runCommand` was never a method on the extension's
+ * top-level `exports`, only on the connection object
+ * `exports.instance.getConnection()` returns once actually connected (that
+ * bug meant compiling was broken outright, not just missing a nice picker,
+ * until it was first fixed here as part of Batch J). Validates both
+ * `runCommand` and `runSQL` are present on the resolved connection, since
+ * fetchReferencedFieldAttributes/fetchDatabaseFileFields need runSQL too
+ * (compilePrtf itself only ever needed runCommand).
+ */
+async function getCodeForIConnection(): Promise<
+  | {
+      runCommand: (info: { command: string; environment: string }) => Promise<{ code: number; stdout: string; stderr: string }>;
+      runSQL: (sql: string) => Promise<any[]>;
+    }
+  | undefined
+> {
+  const ext = vscode.extensions.getExtension("halcyontechltd.code-for-ibmi");
+  if (!ext) return undefined;
+  if (!ext.isActive) {
+    try {
+      await ext.activate();
+    } catch {
+      // fall through — exports may still be usable, or the check below correctly reports "not connected"
+    }
+  }
+  if (!ext.exports) return undefined;
+  const instance = ext.exports.instance;
+  const connection = instance && typeof instance.getConnection === "function" ? instance.getConnection() : undefined;
+  if (!connection || typeof connection.runCommand !== "function" || typeof connection.runSQL !== "function") return undefined;
+  return connection;
+}
+
+/**
  * Fetches one referenced field's real length/type/decimals from a connected
  * IBM i via Code for IBM i — the network half of "Resolve Referenced
  * Field", kept separate from PrtfEngine.resolveReferenceTarget (which only
@@ -158,29 +203,17 @@ const mapDspffdRowToAttributes = PrtfEngine.mapDspffdRowToAttributes;
 async function fetchReferencedFieldAttributes(
   target: { fieldName: string; library: string | null; file: string }
 ): Promise<ReferencedFieldAttributes | { error: string }> {
-  const ext = vscode.extensions.getExtension("halcyontechltd.code-for-ibmi");
-  if (!ext) {
-    return { error: "Resolve Referenced Field requires the Code for IBM i extension (halcyontechltd.code-for-ibmi), installed and connected." };
-  }
-  if (!ext.isActive) {
-    try {
-      await ext.activate();
-    } catch {
-      // fall through — exports may still be usable, or the connection check below will catch it
-    }
-  }
-  const instance: any = ext.exports && ext.exports.instance;
-  const connection = instance && typeof instance.getConnection === "function" ? instance.getConnection() : undefined;
+  const connection = await getCodeForIConnection();
   if (!connection) {
-    return { error: "Not connected to an IBM i - connect via the Code for IBM i panel first." };
+    return { error: "Resolve Referenced Field requires the Code for IBM i extension (halcyontechltd.code-for-ibmi), installed and connected." };
   }
 
   const qualifiedFile = (target.library ? target.library + "/" : "") + target.file;
   const tempMember = "IRLURFFD";
   const dspffdCmd = `DSPFFD FILE(${qualifiedFile}) OUTPUT(*OUTFILE) OUTFILE(QTEMP/${tempMember}) OUTMBR(*FIRST *REPLACE)`;
-  let cmdResult: any;
+  let cmdResult: { code: number; stdout: string; stderr: string };
   try {
-    cmdResult = await vscode.commands.executeCommand("code-for-ibmi.runCommand", { command: dspffdCmd, environment: "ile" });
+    cmdResult = await connection.runCommand({ command: dspffdCmd, environment: "ile" });
   } catch (err) {
     return { error: `DSPFFD failed for ${qualifiedFile}: ${err}` };
   }
@@ -237,29 +270,17 @@ async function fetchDatabaseFileFields(
   file: string,
   recordFormat?: string
 ): Promise<{ fields: DatabaseFileField[]; recordFormat: string } | { formats: string[] } | { error: string }> {
-  const ext = vscode.extensions.getExtension("halcyontechltd.code-for-ibmi");
-  if (!ext) {
-    return { error: "Browsing fields requires the Code for IBM i extension (halcyontechltd.code-for-ibmi), installed and connected." };
-  }
-  if (!ext.isActive) {
-    try {
-      await ext.activate();
-    } catch {
-      // fall through — exports may still be usable, or the connection check below will catch it
-    }
-  }
-  const instance: any = ext.exports && ext.exports.instance;
-  const connection = instance && typeof instance.getConnection === "function" ? instance.getConnection() : undefined;
+  const connection = await getCodeForIConnection();
   if (!connection) {
-    return { error: "Not connected to an IBM i - connect via the Code for IBM i panel first." };
+    return { error: "Browsing fields requires the Code for IBM i extension (halcyontechltd.code-for-ibmi), installed and connected." };
   }
 
   const qualifiedFile = (library ? library + "/" : "") + file;
   const tempMember = "IRLUDBFF";
   const dspffdCmd = `DSPFFD FILE(${qualifiedFile}) OUTPUT(*OUTFILE) OUTFILE(QTEMP/${tempMember}) OUTMBR(*FIRST *REPLACE)`;
-  let cmdResult: any;
+  let cmdResult: { code: number; stdout: string; stderr: string };
   try {
-    cmdResult = await vscode.commands.executeCommand("code-for-ibmi.runCommand", { command: dspffdCmd, environment: "ile" });
+    cmdResult = await connection.runCommand({ command: dspffdCmd, environment: "ile" });
   } catch (err) {
     return { error: `DSPFFD failed for ${qualifiedFile}: ${err}` };
   }
@@ -419,35 +440,6 @@ async function handleResolveReferencedField(
       vscode.window.showInformationMessage(`I-RLU: Resolved ${target.fieldName} from ${target.library ? target.library + "/" : ""}${target.file}.`);
     }
   );
-}
-
-/**
- * Batch J (docs/TASKS.md) — resolves Code for i's `code-for-ibmi.runCommand`
- * API the documented way (`instance.getConnection().runCommand`, per
- * codefori.github.io/docs/dev/examples/ and I-SDA's own
- * `getConnectedCodeForIBMi()`), replacing the pre-Batch-J code's
- * `codeForI.exports.runCommand(...)` — `runCommand` was never a method on
- * the extension's top-level `exports`, only on the connection object
- * `exports.instance.getConnection()` returns once actually connected. The
- * old code would have thrown "not a function" the first time anyone tried
- * to compile, connection or not — this wasn't just a picker gap, compiling
- * was broken outright before this batch.
- */
-async function getCodeForIConnection(): Promise<{ runCommand: (info: { command: string; environment: string }) => Promise<{ code: number; stdout: string; stderr: string }> } | undefined> {
-  const ext = vscode.extensions.getExtension("halcyontechltd.code-for-ibmi");
-  if (!ext) return undefined;
-  if (!ext.isActive) {
-    try {
-      await ext.activate();
-    } catch {
-      // fall through — exports may still be usable, or the check below correctly reports "not connected"
-    }
-  }
-  if (!ext.exports) return undefined;
-  const instance = ext.exports.instance;
-  const connection = instance && typeof instance.getConnection === "function" ? instance.getConnection() : undefined;
-  if (!connection || typeof connection.runCommand !== "function") return undefined;
-  return connection;
 }
 
 const COMPILE_TARGET_STATE_PREFIX = "i-rlu.compileTarget:";
