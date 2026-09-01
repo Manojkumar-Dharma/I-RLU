@@ -196,6 +196,21 @@ export function applyEditToModel(model: ParsedSource, edit: WebviewEdit): boolea
     case "addConstant": {
       const record = model.records.find((r) => r.name === edit.recordName);
       if (!record) return false;
+      // Batch Q (docs/TASKS.md) — the actual point of "copy a field/
+      // constant" is that its keywords come along too, not just its
+      // position/type. edit.sourceKeywords carries name/params pairs only
+      // (see webviewProtocol.ts's comment on this field for why); rebuild
+      // each into a full Keyword the same way setRecordKeyword/
+      // setFieldKeyword already do for a freshly-set keyword (raw =
+      // name+params, sourceLineIndex -1, since this entry has no source
+      // line yet either). A plain "+ Field"/"+ Constant" add (no
+      // sourceKeywords) still gets the same empty [] it always has.
+      const copiedKeywords = (edit.sourceKeywords || []).map((k) => ({
+        name: k.name,
+        params: k.params || "",
+        raw: k.params ? k.name + k.params : k.name,
+        sourceLineIndex: -1,
+      }));
       const newEntry: FieldEntry | ConstantEntry =
         edit.kind === "addField"
           ? {
@@ -211,7 +226,7 @@ export function applyEditToModel(model: ParsedSource, edit: WebviewEdit): boolea
               line: edit.line,
               position: edit.position,
               conditions: [],
-              keywords: [],
+              keywords: copiedKeywords,
             }
           : {
               kind: "constant",
@@ -221,7 +236,7 @@ export function applyEditToModel(model: ParsedSource, edit: WebviewEdit): boolea
               line: edit.line,
               position: edit.position,
               conditions: [],
-              keywords: [],
+              keywords: copiedKeywords,
             };
       record.fields.push(newEntry);
       // Insert into the sequence right after this record's last existing

@@ -139,6 +139,65 @@ function pixelToLineCol(x, y, cellWidthPx, cellHeightPx) {
   };
 }
 
+/**
+ * Batch Q (docs/TASKS.md) — suggests a non-colliding field name for a
+ * same-record copy: DDS requires unique field names within a record, so
+ * the copy can't default to the exact source name. Appends the lowest
+ * available numeric suffix (2, 3, 4, ...), truncating the base name as
+ * needed so the result still fits DDS's 10-character name limit — e.g.
+ * copying a field literally named "CUSTNAME9" (9 chars, no room to just
+ * append "2") produces "CUSTNAME2", not an 11-char name. Pulled out here
+ * (rather than left inline in webviewClient.js) so it's unit-testable —
+ * same "pure logic extension.ts/webviewClient.js call into" split this
+ * file already uses for everything else in it. The person can still
+ * freely edit the suggestion in the pending-new form before saving; this
+ * only has to avoid a silent same-name collision, not read the person's
+ * mind about what they actually want to call it.
+ */
+function suggestCopyName(sourceName, existingNames) {
+  const base = String(sourceName || "FIELD").toUpperCase();
+  for (let n = 2; n < 1000; n++) {
+    const suffix = String(n);
+    const candidate = (base.slice(0, Math.max(0, 10 - suffix.length)) + suffix).toUpperCase();
+    if (!existingNames.has(candidate)) return candidate;
+  }
+  return base.slice(0, 10); // exhausted 2-999 — vanishingly unlikely, but don't throw
+}
+
+/**
+ * Batch Q — builds the pre-filled `pendingNew` shape for a copy, once the
+ * person has clicked where to place it. `source` and `existingFieldNames`
+ * are plain data (a layout cell, and a Set of field names already in the
+ * current record) — no DOM, no vscode — so this stays testable the same
+ * way the rest of this file is. Keywords come along via `sourceKeywords`
+ * (name/params pairs only — prtfEdits.ts rebuilds `raw`/`sourceLineIndex`
+ * for the new entry, same as every other keyword-adding edit kind already
+ * does). Scoped to the CURRENT record only (the caller passes
+ * `existingFieldNames` already filtered to it) — matches this batch's own
+ * "same-record copy only for v1" scope; cross-record copy is a follow-up,
+ * not supported here. Does NOT mutate `source` in any way — every value
+ * read from it is copied into a fresh plain object, so the source entry
+ * this was copied from is left completely untouched regardless of what
+ * happens to the pending-new form afterward.
+ */
+function buildCopyPendingNew(kind, line, position, source, existingFieldNames) {
+  const sourceKeywords = (source.keywords || []).map((k) => ({ name: k.name, params: k.params }));
+  if (kind === "field") {
+    return {
+      kind,
+      line,
+      position,
+      name: suggestCopyName(source.name, existingFieldNames),
+      length: source.length,
+      dataType: source.dataType,
+      decimalPositions: source.decimalPositions,
+      usage: source.usage,
+      sourceKeywords,
+    };
+  }
+  return { kind, line, position, literal: source.literal || "", sourceKeywords };
+}
+
 const mod = {
   paramsToText,
   paramsInnerText,
@@ -146,6 +205,8 @@ const mod = {
   parseFontSpecKeyword,
   buildFontSpecParamsFromValues,
   pixelToLineCol,
+  suggestCopyName,
+  buildCopyPendingNew,
 };
 if (typeof module !== "undefined" && module.exports) module.exports = mod;
 if (typeof window !== "undefined") window.PrtfWebviewLogic = mod;

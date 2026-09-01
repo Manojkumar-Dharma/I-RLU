@@ -41,6 +41,10 @@
       {
         "command": "i-rlu.compilePrtf",
         "title": "I-RLU: Compile Printer File (CRTPRTF)"
+      },
+      {
+        "command": "i-rlu.setCompileTarget",
+        "title": "I-RLU: Set Compile Target (Library/Source File/Member)"
       }
     ],
     "configuration": {

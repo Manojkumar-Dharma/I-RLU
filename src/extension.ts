@@ -3,6 +3,13 @@ import { parseSource } from "./prtfParser";
 import { ParsedSource, FieldEntry } from "./prtfModel";
 import { WebviewEdit, WebviewMessage } from "./webviewProtocol";
 import { findEntryById, applyEditToModel } from "./prtfEdits";
+import {
+  CompileTarget,
+  targetFromMemberUri,
+  deriveMemberNameFromFileName,
+  validateIbmIObjectName,
+  buildCrtprtfCommand,
+} from "./prtfCompileTarget";
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { regenerateSource, upsertReffldKeyword } = require("./prtfWriter.js");
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -414,35 +421,177 @@ async function handleResolveReferencedField(
   );
 }
 
-async function compilePrtf(): Promise<void> {
+/**
+ * Batch J (docs/TASKS.md) — resolves Code for i's `code-for-ibmi.runCommand`
+ * API the documented way (`instance.getConnection().runCommand`, per
+ * codefori.github.io/docs/dev/examples/ and I-SDA's own
+ * `getConnectedCodeForIBMi()`), replacing the pre-Batch-J code's
+ * `codeForI.exports.runCommand(...)` — `runCommand` was never a method on
+ * the extension's top-level `exports`, only on the connection object
+ * `exports.instance.getConnection()` returns once actually connected. The
+ * old code would have thrown "not a function" the first time anyone tried
+ * to compile, connection or not — this wasn't just a picker gap, compiling
+ * was broken outright before this batch.
+ */
+async function getCodeForIConnection(): Promise<{ runCommand: (info: { command: string; environment: string }) => Promise<{ code: number; stdout: string; stderr: string }> } | undefined> {
+  const ext = vscode.extensions.getExtension("halcyontechltd.code-for-ibmi");
+  if (!ext) return undefined;
+  if (!ext.isActive) {
+    try {
+      await ext.activate();
+    } catch {
+      // fall through — exports may still be usable, or the check below correctly reports "not connected"
+    }
+  }
+  if (!ext.exports) return undefined;
+  const instance = ext.exports.instance;
+  const connection = instance && typeof instance.getConnection === "function" ? instance.getConnection() : undefined;
+  if (!connection || typeof connection.runCommand !== "function") return undefined;
+  return connection;
+}
+
+const COMPILE_TARGET_STATE_PREFIX = "i-rlu.compileTarget:";
+
+/**
+ * Batch J — prompts for library/source-file/member, one showInputBox each
+ * (matching I-SDA's `createRemoteMember` prompt shape — plain inputs with
+ * placeholder defaults, not a live library/member browser, since Code for
+ * i doesn't expose an API for listing libraries/members that this project
+ * has confirmed). Returns undefined if the person cancels at any step.
+ */
+async function promptForCompileTarget(defaultMemberName: string): Promise<CompileTarget | undefined> {
+  const library = await vscode.window.showInputBox({
+    prompt: "Library for the compiled printer file and its source (blank uses CRTPRTF's own default: *CURLIB for the object, *LIBL to search for the source)",
+    placeHolder: "blank = *CURLIB / *LIBL",
+    validateInput: (v) => (v.trim() ? validateIbmIObjectName(v) : undefined),
+  });
+  if (library === undefined) return undefined;
+
+  const sourceFile = await vscode.window.showInputBox({
+    prompt: "Source physical file containing this member's DDS",
+    placeHolder: "QDDSSRC",
+    value: "QDDSSRC",
+    validateInput: validateIbmIObjectName,
+  });
+  if (sourceFile === undefined) return undefined;
+
+  const memberName = await vscode.window.showInputBox({
+    prompt: "Source member name",
+    value: defaultMemberName,
+    validateInput: validateIbmIObjectName,
+  });
+  if (memberName === undefined) return undefined;
+
+  return { library: library.trim(), sourceFile: sourceFile.trim(), memberName: memberName.trim() };
+}
+
+/**
+ * Batch J — resolves where CRTPRTF should compile from, in priority order:
+ * 1. A `member:` URI (opened directly from Code for i) names the exact
+ *    library/source-file/member itself — used as-is, no prompt, and NOT
+ *    cached (re-deriving it is free and always accurate; caching a stale
+ *    copy would only risk drifting from the real URI if the file were ever
+ *    reopened from a different location).
+ * 2. A previously prompted-and-cached target for this exact document
+ *    (`context.workspaceState`, keyed by the document's URI string) — so
+ *    repeat compiles of the same local file don't re-prompt every time.
+ * 3. Prompt (`promptForCompileTarget`), then cache the result for next time.
+ * Returns undefined if the person cancels the prompt.
+ */
+async function resolveCompileTarget(context: vscode.ExtensionContext, document: vscode.TextDocument, forcePrompt: boolean): Promise<CompileTarget | undefined> {
+  const memberTarget = targetFromMemberUri(document.uri.scheme, document.uri.path);
+  if (memberTarget) return memberTarget;
+
+  const stateKey = COMPILE_TARGET_STATE_PREFIX + document.uri.toString();
+  if (!forcePrompt) {
+    const cached = context.workspaceState.get<CompileTarget>(stateKey);
+    if (cached) return cached;
+  }
+
+  const fileName = document.uri.path.split("/").pop() || "";
+  const target = await promptForCompileTarget(deriveMemberNameFromFileName(fileName));
+  if (!target) return undefined;
+  await context.workspaceState.update(stateKey, target);
+  return target;
+}
+
+async function compilePrtf(context: vscode.ExtensionContext): Promise<void> {
   const editor = vscode.window.activeTextEditor;
   if (!editor) {
     vscode.window.showWarningMessage("I-RLU: open a printer file source member first.");
     return;
   }
-  const uri = editor.document.uri;
+  const document = editor.document;
+
+  // CRTPRTF has no stream-file source equivalent — confirmed against IBM's
+  // own CRTPRTF parameter reference (ibm.com/docs/ssw_ibm_i_72/cl/crtprtf.htm):
+  // SRCFILE/SRCMBR (a database source member) are the only source options;
+  // TOSTMF is the command's *output* stream-file target, unrelated. Rather
+  // than silently guessing a library/file for an IFS-opened source (which
+  // has neither), this is surfaced as the genuine IBM i command limitation
+  // it is.
+  if (document.uri.scheme === "streamfile") {
+    vscode.window.showErrorMessage(
+      "I-RLU: CRTPRTF can't compile directly from an IFS stream file — it has no SRCSTMF-equivalent parameter (verified against IBM's CRTPRTF reference). Copy this source into a database source member (e.g. via Code for i) and compile that instead."
+    );
+    return;
+  }
+
   try {
-    // Delegates to Code for i's "runCommand" API if that extension is
-    // installed and the workspace has an active IBM i connection — same
-    // integration point I-SDA uses for its "Compile Menu (CRTMNU)" command.
-    const codeForI = vscode.extensions.getExtension("halcyontechltd.code-for-ibmi");
-    if (!codeForI) {
+    const connection = await getCodeForIConnection();
+    if (!connection) {
       vscode.window.showErrorMessage(
         "I-RLU: the Code for IBM i extension is required to compile (CRTPRTF). Install it and connect to your system first."
       );
       return;
     }
-    if (!codeForI.isActive) await codeForI.activate();
-    const api = codeForI.exports;
-    const fileName = uri.path.split("/").pop() || "";
-    const memberName = fileName.replace(/\.[^.]+$/, "").toUpperCase();
-    const command = `CRTPRTF FILE(&CURLIB/${memberName}) SRCFILE(&CURLIB/QDDSSRC) SRCMBR(${memberName})`;
-    await api.runCommand({ command, environment: "ile" });
-    vscode.window.showInformationMessage(`I-RLU: submitted CRTPRTF for ${memberName}. Check the Code for IBM i output panel for results.`);
+
+    const target = await resolveCompileTarget(context, document, false);
+    if (!target) return; // person cancelled the prompt
+
+    if (document.isDirty) await document.save();
+
+    const command = buildCrtprtfCommand(target);
+    const result = await connection.runCommand({ command, environment: "ile" });
+    if (result && typeof result.code === "number" && result.code !== 0) {
+      vscode.window.showErrorMessage(`I-RLU: CRTPRTF failed - ${(result.stderr || result.stdout || "unknown error").trim()}`);
+      return;
+    }
+    vscode.window.showInformationMessage(`I-RLU: submitted CRTPRTF for ${target.memberName}. Check the Code for IBM i output panel for results.`);
   } catch (err: any) {
     vscode.window.showErrorMessage(`I-RLU: compile failed - ${err?.message || err}`);
   }
 }
+
+/**
+ * Batch J — lets the person change (or set for the first time) the cached
+ * compile target for the active document, without waiting for the next
+ * compile to prompt. A no-op with an explanatory message for `member:`
+ * URIs, since there's nothing to override there — the URI itself is
+ * already the exact, correct target (see resolveCompileTarget).
+ */
+async function setCompileTarget(context: vscode.ExtensionContext): Promise<void> {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) {
+    vscode.window.showWarningMessage("I-RLU: open a printer file source member first.");
+    return;
+  }
+  const document = editor.document;
+  if (document.uri.scheme === "member") {
+    vscode.window.showInformationMessage(
+      "I-RLU: this file was opened directly from an IBM i member, so its library/source file/member are already exact — nothing to set."
+    );
+    return;
+  }
+  const target = await resolveCompileTarget(context, document, true);
+  if (target) {
+    vscode.window.showInformationMessage(
+      `I-RLU: compile target set to ${target.library || "*CURLIB/*LIBL"}/${target.sourceFile}(${target.memberName}). It'll be reused for future compiles of this file.`
+    );
+  }
+}
+
+
 
 export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(PrtfDesignerProvider.register(context));
@@ -457,7 +606,8 @@ export function activate(context: vscode.ExtensionContext): void {
       );
     })
   );
-  context.subscriptions.push(vscode.commands.registerCommand("i-rlu.compilePrtf", compilePrtf));
+  context.subscriptions.push(vscode.commands.registerCommand("i-rlu.compilePrtf", () => compilePrtf(context)));
+  context.subscriptions.push(vscode.commands.registerCommand("i-rlu.setCompileTarget", () => setCompileTarget(context)));
 }
 
 export function deactivate(): void {

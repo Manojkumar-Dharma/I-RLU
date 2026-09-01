@@ -48,8 +48,23 @@ export type WebviewEdit =
       dataType: string;
       decimalPositions?: number;
       usage: string;
+      // Batch Q — carries the source field/constant's keywords along on a
+      // copy (media/webviewClient.js's "Copy" button, renderEditPanel).
+      // name/params only (not the full Keyword shape) — prtfEdits.ts
+      // rebuilds `raw`/`sourceLineIndex` for the new entry, same as every
+      // other keyword-adding edit kind already does. Omitted (or empty)
+      // for a plain "+ Field" add.
+      sourceKeywords?: { name: string; params: string }[];
     }
-  | { kind: "addConstant"; recordName: string; line: number; position: number; literal: string }
+  | {
+      kind: "addConstant";
+      recordName: string;
+      line: number;
+      position: number;
+      literal: string;
+      // Batch Q — see addField's own comment on this field, same shape and purpose.
+      sourceKeywords?: { name: string; params: string }[];
+    }
   // Batch P — record-format container operations. Unlike field/constant
   // edits, record formats are identified by NAME (there's no stable `id`
   // for them in prtfModel.ts's RecordFormatEntry — see prtfEdits.ts).
