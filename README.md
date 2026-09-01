@@ -108,9 +108,11 @@ dependencies and status; don't let this list and that mapping drift apart.
 
 - Editing through the webview covers move (drag), add, update, and delete
   for fields and constants (via the properties panel), but not yet editing
-  arbitrary keywords directly (`EDTCDE`, `COLOR`, `LINE`/`BOX` params,
-  etc.) — the writer/engine already support arbitrary model edits, only the
-  UI for triggering keyword-level edits is missing. *(Batches A, B, C, E, F, G)*
+  arbitrary keywords directly (`LINE`/`BOX` params, etc.) — the
+  writer/engine already support arbitrary model edits, only the UI for
+  triggering keyword-level edits is missing for whatever isn't yet covered
+  by a landed batch. *(Batches A, B, C, E, F, G all done; remaining gaps
+  are keyword-specific — see docs/TASKS.md)*
 - `LINE`/`BOX`/`BARCODE` physical measurements are converted to the
   preview's character grid via CPI/LPI and a unit-of-measure assumption.
   **Important correction:** there is no `UOM` keyword in DDS source — unit
@@ -134,11 +136,13 @@ dependencies and status; don't let this list and that mapping drift apart.
   `EDTCDE`/`EDTWRD`/`FONT`/`HIGHLIGHT`/`PAGNBR`/`TIME`/`UNDERLINE` on the
   same field — as a live-editor hint; `CRTPRTF` remains the actual
   enforcement point. *(Batch N, depends on Batch C — done)*
-- Page segments, overlays, and other external AFP resource objects render
-  as nothing (not yet stubbed as placeholder boxes) — see
-  `docs/REQUIREMENTS.md` §8 for why this is a hard limit regardless of
-  priority. *(Batch E for placeholder boxes; Batch O for real pixel content,
-  blocked pending resource-file access, depends on Batch E)*
+- Page segments (`PAGSEG`), overlays (`OVERLAY`), and AFP resources
+  (`AFPRSC`) render as labeled placeholder boxes (resource name + keyword),
+  not their real pixel content — see `docs/REQUIREMENTS.md` §8 for why
+  that's a hard limit regardless of priority. `STRPAGGRP`/`ENDPAGGRP`/
+  `DOCIDXTAG`/`DTASTMCMD` (no page position of their own) are editable via
+  the same panel, summarized as a badge list. *(Batch E, done)* Real pixel
+  content is Batch O, blocked pending resource-file access.
 - The `CRTPRTF` compile command assumes `*CURLIB/QDDSSRC` and derives the
   member name from the file name; it doesn't yet let you pick
   library/source-file/member explicitly. *(Batch J)*

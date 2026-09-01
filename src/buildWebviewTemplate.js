@@ -43,6 +43,14 @@ const WEBVIEW_MODULE_FILES = [
   // delegates parseBarcodeGeometry's HRI/height parsing to it) and
   // prtfEngine.js (which re-exports it for the webview's BARCODE panel).
   ["src", "prtfBarcodeParams.js"],
+  // Batch E — OVERLAY/PAGSEG/AFPRSC/STRPAGGRP/ENDPAGGRP/DOCIDXTAG/DTASTMCMD
+  // parse/build helpers. Depends on prtfKeywordHelpers.js AND
+  // prtfBarcodeParams.js (reuses its quote-aware groupTokens tokenizer —
+  // see prtfPageGroupKeywords.js's own header for why), so must land after
+  // both — and before prtfLayout.js (which delegates OVERLAY/PAGSEG/AFPRSC
+  // placeholder geometry to it) and prtfEngine.js (which re-exports it for
+  // the webview's page-group/resource properties panel).
+  ["src", "prtfPageGroupKeywords.js"],
   ["src", "prtfLayout.js"],
   ["src", "prtfEngine.js"],
   // Pure keyword-text/pixel-math helpers pulled out of webviewClient.js
@@ -102,6 +110,11 @@ body { font-family: var(--vscode-editor-font-family, monospace); color: var(--vs
 .cell.barcode { background: repeating-linear-gradient(90deg, var(--vscode-charts-purple, #b180d7) 0 2px, transparent 2px 5px); border: 1px solid var(--vscode-charts-purple, #b180d7); display: flex; align-items: flex-end; justify-content: center; }
 .cell.barcode.rendered { background: var(--vscode-editor-background); display: block; }
 .barcode-label { background: var(--vscode-editor-background); font-size: 9px; padding: 0 2px; }
+.resource-placeholder { box-sizing: border-box; border: 1px dashed var(--vscode-charts-green, #89d185); background: repeating-linear-gradient(45deg, rgba(137,209,133,0.15) 0 6px, transparent 6px 12px); display: flex; align-items: center; justify-content: center; font-size: 9px; overflow: hidden; }
+.resource-placeholder.approximate { opacity: 0.6; }
+.resource-placeholder-label { background: var(--vscode-editor-background); padding: 0 2px; white-space: nowrap; }
+.badge-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.badge { font-size: 10px; padding: 2px 6px; border: 1px solid var(--vscode-panel-border); border-radius: 10px; background: var(--vscode-editorWidget-background); }
 .empty, .note { font-size: 12px; color: var(--vscode-descriptionForeground); margin-top: 8px; }
 .btn { font-size: 11px; padding: 3px 8px; background: var(--vscode-button-secondaryBackground, #3a3d41); color: var(--vscode-button-secondaryForeground, #fff); border: none; border-radius: 2px; cursor: pointer; }
 .btn:hover { opacity: 0.85; }

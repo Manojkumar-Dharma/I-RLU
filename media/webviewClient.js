@@ -49,6 +49,12 @@
     selectedId: null, // id of the currently selected cell, if any
     placing: null, // null | "field" | "constant" — armed "click to place" mode
     pendingNew: null, // { kind, line, position } — set right after a placement click, before Save
+    // Batch P — record-format container operations, mutually exclusive
+    // with each other and with placing/pendingNew/selectedId (see each
+    // toolbar button's click handler).
+    pendingNewRecord: false, // true: showing the inline "new record format" form
+    renamingRecord: false, // true: showing the inline rename form for state.recordName
+    confirmDeleteRecord: false, // true: showing the delete-confirmation row for state.recordName
   };
 
   let CELL_W = 8; // px per character column — recomputed per record from CPI via layout.grid (96/CPI); see render()
@@ -81,6 +87,9 @@
 
     root.appendChild(renderToolbar());
 
+    const recordMgmtPanel = renderRecordManagementPanel();
+    if (recordMgmtPanel) root.appendChild(recordMgmtPanel);
+
     const layout = currentLayout();
     if (layout.grid) {
       CELL_W = layout.grid.cellWidthPx;
@@ -107,6 +116,7 @@
         record.name + " (record)"
       )
     );
+    root.appendChild(renderPageGroupPanel(record, layout));
 
     if (layout.skippedByIndicator && layout.skippedByIndicator.length) {
       root.appendChild(
@@ -120,6 +130,29 @@
         ])
       );
     }
+    if ((layout.resources || []).some((r) => r.approximate)) {
+      root.appendChild(
+        el("div", { class: "note" }, [
+          "One or more OVERLAY/PAGSEG/AFPRSC positions depend on a program-to-system field and are shown at their default position — actual placement is set at print time.",
+        ])
+      );
+    }
+  }
+
+  /**
+   * Resets every toolbar "pending action" flag to its closed/off state —
+   * used by every toolbar button's click handler (field/constant placement,
+   * and Batch P's record add/rename/delete) so opening one of these
+   * mutually-exclusive inline forms always closes any other one that might
+   * already be open, rather than stacking several at once.
+   */
+  function clearPendingUiState() {
+    state.placing = null;
+    state.pendingNew = null;
+    state.selectedId = null;
+    state.pendingNewRecord = false;
+    state.renamingRecord = false;
+    state.confirmDeleteRecord = false;
   }
 
   function renderToolbar() {
@@ -134,11 +167,53 @@
     });
     select.addEventListener("change", (e) => {
       state.recordName = e.target.value;
-      state.selectedId = null;
-      state.pendingNew = null;
+      clearPendingUiState();
       render();
     });
     toolbar.appendChild(el("label", {}, ["Record: ", select]));
+
+    // Batch P — reorder buttons act on the currently-selected record
+    // format; simple up/down (rather than drag-to-reorder) per this
+    // batch's own "enough for v1" scope note, since there's no dedicated
+    // record-list view to drag within (just this single-select dropdown).
+    const recordIdx = state.model.records.findIndex((r) => r.name === state.recordName);
+    const upBtn = el("button", { class: "btn", title: "Move this record format earlier in the source" }, ["\u25b2"]);
+    if (recordIdx <= 0) upBtn.setAttribute("disabled", "disabled");
+    upBtn.addEventListener("click", () => {
+      vscode.postMessage({ type: "edit", edit: { kind: "reorderRecord", name: state.recordName, direction: "up" } });
+    });
+    const downBtn = el("button", { class: "btn", title: "Move this record format later in the source" }, ["\u25bc"]);
+    if (recordIdx === -1 || recordIdx >= state.model.records.length - 1) downBtn.setAttribute("disabled", "disabled");
+    downBtn.addEventListener("click", () => {
+      vscode.postMessage({ type: "edit", edit: { kind: "reorderRecord", name: state.recordName, direction: "down" } });
+    });
+    toolbar.appendChild(upBtn);
+    toolbar.appendChild(downBtn);
+
+    const addRecordBtn = el("button", { class: "btn" + (state.pendingNewRecord ? " active" : "") }, ["+ Record"]);
+    addRecordBtn.addEventListener("click", () => {
+      const opening = !state.pendingNewRecord;
+      clearPendingUiState();
+      state.pendingNewRecord = opening;
+      render();
+    });
+    const renameRecordBtn = el("button", { class: "btn" + (state.renamingRecord ? " active" : "") }, ["Rename"]);
+    renameRecordBtn.addEventListener("click", () => {
+      const opening = !state.renamingRecord;
+      clearPendingUiState();
+      state.renamingRecord = opening;
+      render();
+    });
+    const deleteRecordBtn = el("button", { class: "btn" + (state.confirmDeleteRecord ? " active" : "") }, ["Delete"]);
+    deleteRecordBtn.addEventListener("click", () => {
+      const opening = !state.confirmDeleteRecord;
+      clearPendingUiState();
+      state.confirmDeleteRecord = opening;
+      render();
+    });
+    toolbar.appendChild(addRecordBtn);
+    toolbar.appendChild(renameRecordBtn);
+    toolbar.appendChild(deleteRecordBtn);
 
     const addFieldBtn = el(
       "button",
@@ -146,9 +221,9 @@
       ["+ Field"]
     );
     addFieldBtn.addEventListener("click", () => {
-      state.placing = state.placing === "field" ? null : "field";
-      state.pendingNew = null;
-      state.selectedId = null;
+      const nextPlacing = state.placing === "field" ? null : "field";
+      clearPendingUiState();
+      state.placing = nextPlacing;
       render();
     });
     const addConstBtn = el(
@@ -157,9 +232,9 @@
       ["+ Constant"]
     );
     addConstBtn.addEventListener("click", () => {
-      state.placing = state.placing === "constant" ? null : "constant";
-      state.pendingNew = null;
-      state.selectedId = null;
+      const nextPlacing = state.placing === "constant" ? null : "constant";
+      clearPendingUiState();
+      state.placing = nextPlacing;
       render();
     });
     toolbar.appendChild(addFieldBtn);
@@ -380,6 +455,31 @@
           })
         );
       }
+    });
+
+    // Batch E (docs/TASKS.md) — OVERLAY/PAGSEG/AFPRSC labeled placeholder
+    // boxes. These name external AFP resources this tool has no pixel
+    // content for (docs/REQUIREMENTS.md §8) — same "honest placeholder,
+    // not a guess" treatment as the BARCODE cells above, just at a fixed
+    // default size since these keywords don't carry their own dimensions
+    // the way BARCODE's height parameter does.
+    (layout.resources || []).forEach((r) => {
+      page.appendChild(
+        el(
+          "div",
+          {
+            class: "resource-placeholder" + (r.approximate ? " approximate" : ""),
+            style: `position:absolute;left:${(r.col - 1) * CELL_W}px;top:${(r.row - 1) * CELL_H}px;width:${r.widthCols * CELL_W}px;height:${r.heightRows * CELL_H}px;`,
+            title:
+              r.keyword +
+              " placeholder — " +
+              (r.name || "(unnamed)") +
+              ". Real resource content not rendered (needs the AFP resource file itself)." +
+              (r.approximate ? " Position depends on a program-to-system field value; shown at its default (0)." : ""),
+          },
+          [el("span", { class: "resource-placeholder-label" }, [r.keyword + (r.name ? ": " + r.name : "")])]
+        )
+      );
     });
 
     page.addEventListener("click", (ev) => {
@@ -667,6 +767,110 @@
       if (cell) return renderEditPanel(cell);
     }
     return null;
+  }
+
+  /**
+   * Batch P — inline forms for the record-format container operations
+   * (add/rename/delete) armed by renderToolbar's buttons above. Rendered
+   * in the same "props" slot renderPropsPanel uses for field/constant
+   * editing, since only one of these is ever showing at a time
+   * (clearPendingUiState keeps them mutually exclusive) — but as a
+   * SEPARATE call from renderPropsPanel (not folded into it), since this
+   * operates on the record CONTAINER itself, not on a field/constant
+   * within it, and doesn't depend on `layout.cells` the way
+   * renderPropsPanel/renderEditPanel do.
+   *
+   * Matches the existing "no separate Save/confirm round trip needed for
+   * Cancel, but wait for the setModel round trip after a real edit" pattern
+   * already used by renderNewEntryPanel below: a Save/Add/Rename/Delete
+   * button posts the edit and closes the form immediately (optimistic,
+   * without calling render() itself) — the next incoming `setModel`
+   * message (after the extension host applies the edit and re-parses) is
+   * what actually redraws the toolbar/select with the new state; Cancel
+   * buttons close the form AND call render() directly, since there's no
+   * round trip to wait for.
+   */
+  function renderRecordManagementPanel() {
+    if (!state.pendingNewRecord && !state.renamingRecord && !state.confirmDeleteRecord) return null;
+    const panel = el("div", { class: "props" });
+
+    if (state.pendingNewRecord) {
+      panel.appendChild(el("h4", {}, ["New record format"]));
+      panel.appendChild(
+        el("div", { class: "hint" }, ["Inserted right after \"" + state.recordName + "\" in the source."])
+      );
+      const nameRow = labeledInput("Name", { type: "text", maxlength: "10" });
+      panel.appendChild(nameRow.row);
+      const btnRow = el("div", { class: "prop-buttons" });
+      const addBtn = el("button", { class: "btn primary" }, ["Add"]);
+      addBtn.addEventListener("click", () => {
+        const name = nameRow.input.value.trim().toUpperCase().slice(0, 10);
+        if (!name) return;
+        vscode.postMessage({ type: "edit", edit: { kind: "addRecord", name, afterRecordName: state.recordName } });
+        state.pendingNewRecord = false;
+      });
+      const cancelBtn = el("button", { class: "btn" }, ["Cancel"]);
+      cancelBtn.addEventListener("click", () => {
+        state.pendingNewRecord = false;
+        render();
+      });
+      btnRow.appendChild(addBtn);
+      btnRow.appendChild(cancelBtn);
+      panel.appendChild(btnRow);
+    }
+
+    if (state.renamingRecord) {
+      panel.appendChild(el("h4", {}, ["Rename record format \"" + state.recordName + "\""]));
+      const nameRow = labeledInput("New name", { type: "text", maxlength: "10", value: state.recordName || "" });
+      panel.appendChild(nameRow.row);
+      const btnRow = el("div", { class: "prop-buttons" });
+      const saveBtn = el("button", { class: "btn primary" }, ["Rename"]);
+      saveBtn.addEventListener("click", () => {
+        const newName = nameRow.input.value.trim().toUpperCase().slice(0, 10);
+        if (!newName) return;
+        vscode.postMessage({ type: "edit", edit: { kind: "renameRecord", oldName: state.recordName, newName } });
+        // Optimistically track the rename locally so the toolbar <select>
+        // doesn't flash back to the old name before the setModel round
+        // trip completes; the incoming setModel's own fallback (see the
+        // bottom of this file) still corrects this if the edit was
+        // rejected as a no-op (e.g. a duplicate name).
+        state.recordName = newName;
+        state.renamingRecord = false;
+      });
+      const cancelBtn = el("button", { class: "btn" }, ["Cancel"]);
+      cancelBtn.addEventListener("click", () => {
+        state.renamingRecord = false;
+        render();
+      });
+      btnRow.appendChild(saveBtn);
+      btnRow.appendChild(cancelBtn);
+      panel.appendChild(btnRow);
+    }
+
+    if (state.confirmDeleteRecord) {
+      panel.appendChild(el("h4", {}, ["Delete record format \"" + state.recordName + "\"?"]));
+      panel.appendChild(
+        el("div", { class: "hint warning" }, [
+          "This removes the record format and all its fields/constants. Undo with Ctrl+Z in the text editor if needed — this panel has no separate undo of its own.",
+        ])
+      );
+      const btnRow = el("div", { class: "prop-buttons" });
+      const confirmBtn = el("button", { class: "btn danger" }, ["Delete"]);
+      confirmBtn.addEventListener("click", () => {
+        vscode.postMessage({ type: "edit", edit: { kind: "deleteRecord", name: state.recordName } });
+        state.confirmDeleteRecord = false;
+      });
+      const cancelBtn = el("button", { class: "btn" }, ["Cancel"]);
+      cancelBtn.addEventListener("click", () => {
+        state.confirmDeleteRecord = false;
+        render();
+      });
+      btnRow.appendChild(confirmBtn);
+      btnRow.appendChild(cancelBtn);
+      panel.appendChild(btnRow);
+    }
+
+    return panel;
   }
 
   function renderNewEntryPanel(pending) {
@@ -1455,6 +1659,206 @@
     { name: "PAGRTT", kind: "select", options: ["0", "90", "180", "270"], hint: "Degrees of page rotation." },
     { name: "HIGHLIGHT", kind: "flag", hint: "Highlighted printing. Ignored if CDEFNT or FNTCHRSET is also coded on this record." },
   ];
+
+  // Batch E (docs/TASKS.md) — the three simple keywords in this batch's
+  // scope that fit appendKeywordRows' single-value shape directly:
+  // STRPAGGRP's group-name (a quoted character value, or a bare &field),
+  // ENDPAGGRP (no params at all), and DTASTMCMD's text (also a quoted
+  // character value). OVERLAY/PAGSEG/AFPRSC/DOCIDXTAG each have 2+
+  // positional params and get bespoke rows below instead, same split this
+  // codebase already uses for COLOR/MSGCON/EDTCDE vs. the simpler
+  // Batch A/F/G keywords.
+  const BATCH_E_SIMPLE_KEYWORDS = [
+    { name: "STRPAGGRP", kind: "quotedText", placeholder: "group name, or &field", hint: "Begins a named logical grouping of pages (for AFP document indexing / PDF bookmarks). Must be matched by an ENDPAGGRP later in the file — groups can't nest or overlap." },
+    { name: "ENDPAGGRP", kind: "flag", hint: "Ends the page group most recently started by STRPAGGRP. Ignored if no group is active." },
+    { name: "DTASTMCMD", kind: "quotedText", placeholder: "raw AFP data-stream command text, or &field", hint: "Embeds a raw AFP data-stream structured-field command — an escape hatch, not something this tool interprets." },
+  ];
+
+  /** Bespoke OVERLAY row (Batch E) — OVERLAY([library/]overlay-name position-down position-across [extra]), name unquoted (object name, not a literal). */
+  function appendOverlayRow(container, record, onSet, onRemove) {
+    const existing = PrtfEngine.findKeyword(record.keywords, "OVERLAY");
+    const f = existing ? PrtfEngine.parseOverlay(existing, 10, 6, state.uom) : { name: "", posDown: "", posAcross: "", extra: "" };
+
+    const rowWrap = el("div", { class: "prop-row" });
+    const cbId = "pg-" + record.name + "-OVERLAY";
+    const cb = el("input", { type: "checkbox", id: cbId });
+    if (existing) cb.setAttribute("checked", "checked");
+    rowWrap.appendChild(el("label", { class: "ind-label", for: cbId, title: "Names an AFP overlay resource (e.g. a preprinted form image) placed at a fixed offset on every page of this record format." }, [cb, " OVERLAY"]));
+    container.appendChild(rowWrap);
+
+    const nameInp = el("input", { type: "text", placeholder: "[library/]overlay-name, or &field", value: f.name || "" });
+    const downInp = el("input", { type: "text", placeholder: "position-down", value: f.posDown || "" });
+    const acrossInp = el("input", { type: "text", placeholder: "position-across", value: f.posAcross || "" });
+    const extraInp = el("input", { type: "text", placeholder: "extra, e.g. (*ROTATION 90)", value: f.extra || "" });
+    [nameInp, downInp, acrossInp, extraInp].forEach((i) => container.appendChild(i));
+
+    const sendUpdate = () => {
+      if (!cb.checked) {
+        onRemove("OVERLAY");
+        return;
+      }
+      const params = PrtfEngine.buildOverlayParams({ name: nameInp.value, posDown: downInp.value, posAcross: acrossInp.value, extra: extraInp.value });
+      if (!params) return;
+      onSet("OVERLAY", params);
+    };
+    cb.addEventListener("change", sendUpdate);
+    [nameInp, downInp, acrossInp, extraInp].forEach((i) => i.addEventListener("change", sendUpdate));
+  }
+
+  /** Bespoke PAGSEG row (Batch E) — PAGSEG(page-segment-name [vertical-offset horizontal-offset] [extra]), offsets optional as a pair. */
+  function appendPagsegRow(container, record, onSet, onRemove) {
+    const existing = PrtfEngine.findKeyword(record.keywords, "PAGSEG");
+    const f = existing ? PrtfEngine.parsePagseg(existing, 10, 6, state.uom) : { name: "", posDown: "", posAcross: "", extra: "" };
+
+    const rowWrap = el("div", { class: "prop-row" });
+    const cbId = "pg-" + record.name + "-PAGSEG";
+    const cb = el("input", { type: "checkbox", id: cbId });
+    if (existing) cb.setAttribute("checked", "checked");
+    rowWrap.appendChild(el("label", { class: "ind-label", for: cbId, title: "Places an AFP page segment (a scanned image resource, e.g. a logo) at a fixed offset on every page of this record format." }, [cb, " PAGSEG"]));
+    container.appendChild(rowWrap);
+
+    const nameInp = el("input", { type: "text", placeholder: "[library/]page-segment-name, or &field", value: f.name || "" });
+    const downInp = el("input", { type: "text", placeholder: "vertical offset (optional)", value: f.posDown || "" });
+    const acrossInp = el("input", { type: "text", placeholder: "horizontal offset (optional)", value: f.posAcross || "" });
+    const extraInp = el("input", { type: "text", placeholder: "extra, e.g. (*ROTATION 90)", value: f.extra || "" });
+    [nameInp, downInp, acrossInp, extraInp].forEach((i) => container.appendChild(i));
+
+    const sendUpdate = () => {
+      if (!cb.checked) {
+        onRemove("PAGSEG");
+        return;
+      }
+      const params = PrtfEngine.buildPagsegParams({ name: nameInp.value, posDown: downInp.value, posAcross: acrossInp.value, extra: extraInp.value });
+      if (!params) return;
+      onSet("PAGSEG", params);
+    };
+    cb.addEventListener("change", sendUpdate);
+    [nameInp, downInp, acrossInp, extraInp].forEach((i) => i.addEventListener("change", sendUpdate));
+  }
+
+  /** Bespoke AFPRSC row (Batch E) — AFPRSC('resource-name' object-type position-down position-across [extra]). resource-name IS a quoted character value (unlike OVERLAY/PAGSEG's object names). */
+  function appendAfprscRow(container, record, onSet, onRemove) {
+    const existing = PrtfEngine.findKeyword(record.keywords, "AFPRSC");
+    const f = existing ? PrtfEngine.parseAfprsc(existing, 10, 6, state.uom) : { name: "", objectType: "", posDown: "", posAcross: "", extra: "" };
+
+    const rowWrap = el("div", { class: "prop-row" });
+    const cbId = "pg-" + record.name + "-AFPRSC";
+    const cb = el("input", { type: "checkbox", id: cbId });
+    if (existing) cb.setAttribute("checked", "checked");
+    rowWrap.appendChild(el("label", { class: "ind-label", for: cbId, title: "Names an arbitrary AFP or non-AFP resource by IFS path. Cannot be used for fonts, overlays, page segments, or form/page definitions — those go through their own keywords." }, [cb, " AFPRSC"]));
+    container.appendChild(rowWrap);
+
+    const nameInp = el("input", { type: "text", placeholder: "resource name, or &field", value: f.name || "" });
+    const typeInp = el("input", { type: "text", placeholder: "object type (e.g. *PAGSEG), or &field", value: f.objectType || "" });
+    const downInp = el("input", { type: "text", placeholder: "position-down", value: f.posDown || "" });
+    const acrossInp = el("input", { type: "text", placeholder: "position-across", value: f.posAcross || "" });
+    const extraInp = el("input", { type: "text", placeholder: "extra, e.g. (*SIZE 2 1)", value: f.extra || "" });
+    [nameInp, typeInp, downInp, acrossInp, extraInp].forEach((i) => container.appendChild(i));
+
+    const sendUpdate = () => {
+      if (!cb.checked) {
+        onRemove("AFPRSC");
+        return;
+      }
+      const params = PrtfEngine.buildAfprscParams({ name: nameInp.value, objectType: typeInp.value, posDown: downInp.value, posAcross: acrossInp.value, extra: extraInp.value });
+      if (!params) return;
+      onSet("AFPRSC", params);
+    };
+    cb.addEventListener("change", sendUpdate);
+    [nameInp, typeInp, downInp, acrossInp, extraInp].forEach((i) => i.addEventListener("change", sendUpdate));
+  }
+
+  /** Bespoke DOCIDXTAG row (Batch E) — DOCIDXTAG(attribute-name attribute-value tag-level), tag-level is GROUP or PAGE (unquoted special value). */
+  function appendDocidxtagRow(container, record, onSet, onRemove) {
+    const existing = PrtfEngine.findKeyword(record.keywords, "DOCIDXTAG");
+    const f = existing ? PrtfEngine.parseDocidxtag(existing) : { attributeName: "", attributeValue: "", tagLevel: "" };
+
+    const rowWrap = el("div", { class: "prop-row" });
+    const cbId = "pg-" + record.name + "-DOCIDXTAG";
+    const cb = el("input", { type: "checkbox", id: cbId });
+    if (existing) cb.setAttribute("checked", "checked");
+    rowWrap.appendChild(el("label", { class: "ind-label", for: cbId, title: "Attaches a document index tag (name/value pair) to the page group currently active — used by PSF's AFP document indexing for viewers like PDF bookmarks." }, [cb, " DOCIDXTAG"]));
+    container.appendChild(rowWrap);
+
+    const nameInp = el("input", { type: "text", placeholder: "attribute name, or &field", value: f.attributeName || "" });
+    const valueInp = el("input", { type: "text", placeholder: "attribute value, or &field", value: f.attributeValue || "" });
+    const levelSel = el("select", {});
+    ["GROUP", "PAGE"].forEach((opt) => {
+      const o = el("option", { value: opt }, [opt]);
+      if (opt === f.tagLevel) o.setAttribute("selected", "selected");
+      levelSel.appendChild(o);
+    });
+    [nameInp, valueInp, levelSel].forEach((i) => container.appendChild(i));
+
+    const sendUpdate = () => {
+      if (!cb.checked) {
+        onRemove("DOCIDXTAG");
+        return;
+      }
+      const params = PrtfEngine.buildDocidxtagParams({ attributeName: nameInp.value, attributeValue: valueInp.value, tagLevel: levelSel.value });
+      if (!params) return;
+      onSet("DOCIDXTAG", params);
+    };
+    cb.addEventListener("change", sendUpdate);
+    [nameInp, valueInp, levelSel].forEach((i) => i.addEventListener("change", sendUpdate));
+  }
+
+  /**
+   * Batch E (docs/TASKS.md) — AFP page-group / resource keyword panel:
+   * OVERLAY, PAGSEG, AFPRSC (rendered as placeholder boxes on the page —
+   * see renderPage's `layout.resources` loop), plus STRPAGGRP/ENDPAGGRP/
+   * DOCIDXTAG/DTASTMCMD (no page position — summarized as badges instead,
+   * from `layout.pageGroupKeywords`).
+   *
+   * Like every other record-keyword panel in this file, editing here
+   * targets the keyword by NAME via setRecordKeyword/removeRecordKeyword
+   * (the same generic edit kinds Batch F established) — for a record that
+   * codes the same one of these keywords more than once (e.g. two OVERLAYs
+   * for front/back), only the first occurrence is reachable from this
+   * panel; every occurrence still renders correctly on the page (see
+   * prtfLayout.js's resolveResourcePlaceholders, which uses
+   * findAllKeywords, not findKeyword) and round-trips correctly whether or
+   * not it's ever touched here.
+   */
+  function renderPageGroupPanel(record, layout) {
+    const panel = el("div", { class: "props" });
+    panel.appendChild(el("h4", {}, ["AFP page-group / resource keywords — " + record.name]));
+    panel.appendChild(
+      el("div", { class: "hint" }, [
+        "These name external AFP resources (overlays, page segments) or page-grouping metadata — I-RLU can't show their real pixel content without the resource files themselves, so OVERLAY/PAGSEG/AFPRSC render as a labeled placeholder box on the page instead.",
+      ])
+    );
+
+    const onSet = (name, params) => vscode.postMessage({ type: "edit", edit: { kind: "setRecordKeyword", recordName: record.name, name, params } });
+    const onRemove = (name) => vscode.postMessage({ type: "edit", edit: { kind: "removeRecordKeyword", recordName: record.name, name } });
+
+    appendOverlayRow(panel, record, onSet, onRemove);
+    appendPagsegRow(panel, record, onSet, onRemove);
+    appendAfprscRow(panel, record, onSet, onRemove);
+    appendDocidxtagRow(panel, record, onSet, onRemove);
+    appendKeywordRows(panel, BATCH_E_SIMPLE_KEYWORDS, record.keywords, "pgs-" + record.name, onSet, onRemove);
+
+    // Batch P: STRPAGGRP/ENDPAGGRP pairing is a property of record ORDER
+    // across the whole file (not just this one record's own keywords),
+    // since reordering record formats (this batch's own reorderRecord
+    // edit) is the most direct way to break it — see
+    // PrtfEngine.validatePageGroupOrder's own header for the exact rules.
+    // Scoped to warnings naming THIS record, so each affected record's own
+    // panel shows only what's relevant to it.
+    (PrtfEngine.validatePageGroupOrder(state.model) || [])
+      .filter((w) => w.recordName === record.name)
+      .forEach((w) => panel.appendChild(el("div", { class: "hint warning" }, [w.message])));
+
+    const badges = (layout && layout.pageGroupKeywords) || [];
+    if (badges.length) {
+      const badgeList = el("div", { class: "badge-list" });
+      badges.forEach((b) => badgeList.appendChild(el("span", { class: "badge", title: b.summary }, [b.keyword])));
+      panel.appendChild(el("div", { class: "hint" }, ["On this record now: "]));
+      panel.appendChild(badgeList);
+    }
+
+    return panel;
+  }
 
   function renderGeneralRecordKeywordsPanel(record) {
     const panel = el("div", { class: "props" });
