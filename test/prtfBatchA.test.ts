@@ -63,10 +63,9 @@ test("Batch A round-trip: record-level PRTQLTY/DRAWER/PAGRTT/HIGHLIGHT survive r
 
 test("Batch A round-trip: field-level EDTWRD, DATFMT, DATSEP, TIMFMT, TIMSEP, DFT survive regenerate + reparse", () => {
   let model = parseSource(fs.readFileSync(fixturePath, "utf8"));
-  // Single-space EDTWRD content here deliberately — see the dedicated test
-  // below for a pre-existing writer bug (logged as Batch R) that collapses
-  // *multiple* consecutive internal spaces inside any quoted keyword
-  // literal, discovered while writing this batch's tests.
+  // Single-space EDTWRD content here; a dedicated test below (Batch R)
+  // covers multiple consecutive internal spaces inside a quoted literal,
+  // which used to be a separate writer bug (now fixed).
   model = withFieldKeyword(model, "HEADER", "CUSTNAME", { name: "EDTWRD", params: "(' . ')", raw: "EDTWRD(' . ')" });
   model = withFieldKeyword(model, "HEADER", "INVDATE", { name: "DATFMT", params: "(*DMY)", raw: "DATFMT(*DMY)" });
   model = withFieldKeyword(model, "HEADER", "INVDATE", { name: "DATSEP", params: "('-')", raw: "DATSEP('-')" });
@@ -86,27 +85,23 @@ test("Batch A round-trip: field-level EDTWRD, DATFMT, DATSEP, TIMFMT, TIMSEP, DF
   assert.equal(PrtfEngine.findKeyword(custnbr.keywords, "DFT").params, "('0')");
 });
 
-test("KNOWN BUG (logged as Batch R, not fixed here — out of Batch A's scope): emitWithKeywords collapses multiple consecutive internal spaces inside a quoted keyword literal", () => {
-  // Discovered while writing this batch's tests: a realistic EDTWRD mask
-  // like '  .  ' (multiple spaces are common in real edit-word masks, e.g.
-  // for currency column alignment) gets corrupted to ' . ' by
-  // prtfWriter.js's emitWithKeywords, because its tokenizer
-  // (`keywordText.trim().split(/\s+/)`) splits on ANY whitespace run with
-  // no awareness of quote boundaries — the same class of bug as Batch M
-  // (docs/TASKS.md), but affecting quoted literal *content* instead of the
-  // continuation-wrap point. Any quoted keyword parameter with deliberate
-  // multiple internal spaces is affected, not just EDTWRD.
-  //
-  // This test pins down the CURRENT (broken) behavior so a future fix is
-  // measurable, and exists to make sure nobody "fixes" it by accident as a
-  // side effect of unrelated work without updating this test.
+test("Batch R (fixed): emitWithKeywords no longer collapses multiple consecutive internal spaces inside a quoted keyword literal", () => {
+  // A realistic EDTWRD mask like '  .  ' (multiple spaces are common in real
+  // edit-word masks, e.g. for currency column alignment) used to get
+  // corrupted to ' . ' by prtfWriter.js's emitWithKeywords, because its
+  // tokenizer (`keywordText.trim().split(/\s+/)`) split on ANY whitespace
+  // run with no awareness of quote boundaries — the same class of bug as
+  // Batch M (docs/TASKS.md), but affecting quoted literal *content* instead
+  // of the continuation-wrap point. Fixed by tokenizeKeywordText, which
+  // treats an entire quoted span as one indivisible token. This test used
+  // to pin down the broken behavior (see git history for the "KNOWN BUG"
+  // version); it now asserts the correct, fixed behavior.
   let model = parseSource(fs.readFileSync(fixturePath, "utf8"));
   model = withFieldKeyword(model, "HEADER", "CUSTNAME", { name: "EDTWRD", params: "('  .  ')", raw: "EDTWRD('  .  ')" });
   const reparsed = roundTrip(model);
   const header = reparsed.records.find((r: any) => r.name === "HEADER")!;
   const custname = header.fields.find((f: any) => f.kind === "field" && f.name === "CUSTNAME") as any;
-  // BUG: this SHOULD be "('  .  ')" (multi-space preserved) but isn't.
-  assert.equal(PrtfEngine.findKeyword(custname.keywords, "EDTWRD").params, "(' . ')");
+  assert.equal(PrtfEngine.findKeyword(custname.keywords, "EDTWRD").params, "('  .  ')");
 });
 
 test("Batch A: existing EDTCDE(J) two-part fixture value (code with no fill char) parses correctly", () => {

@@ -63,6 +63,64 @@ function keywordsToText(keywords) {
 }
 
 /**
+ * Splits keyword-area text into whitespace-separated tokens, treating an
+ * entire single-quoted DDS literal (including any spaces inside it, and
+ * respecting DDS's doubled-`''`-means-a-literal-quote escaping) as ONE
+ * indivisible token, never split on the whitespace inside it.
+ *
+ * Without this, a naive `text.split(/\s+/)` (what this function replaced —
+ * see docs/TASKS.md Batch R) treats a run of spaces *inside* a quoted
+ * parameter exactly the same as the spaces *between* separate keywords, so
+ * rejoining tokens with a single space later silently collapses any
+ * deliberate multi-space content inside a literal — e.g. `EDTWRD('  .  ')`
+ * (a realistic edit-word mask; multiple internal spaces are common for
+ * currency column alignment) round-tripped back as `EDTWRD(' . ')`.
+ */
+function tokenizeKeywordText(text) {
+  const tokens = [];
+  let current = "";
+  let inQuote = false;
+  let i = 0;
+  while (i < text.length) {
+    const ch = text[i];
+    if (inQuote) {
+      if (ch === "'") {
+        if (text[i + 1] === "'") {
+          current += "''"; // doubled quote = one literal quote char, stays inside the span
+          i += 2;
+          continue;
+        }
+        current += "'"; // closing quote
+        inQuote = false;
+        i += 1;
+        continue;
+      }
+      current += ch; // anything inside the quote, including spaces, is part of this token
+      i += 1;
+      continue;
+    }
+    if (ch === "'") {
+      inQuote = true;
+      current += ch;
+      i += 1;
+      continue;
+    }
+    if (/\s/.test(ch)) {
+      if (current) {
+        tokens.push(current);
+        current = "";
+      }
+      i += 1;
+      continue;
+    }
+    current += ch;
+    i += 1;
+  }
+  if (current) tokens.push(current);
+  return tokens;
+}
+
+/**
  * Wraps keyword text into one or more 80-column physical lines, given a
  * 44-char positional prefix for the first line (continuation lines get a
  * blank 44-char prefix).
@@ -71,11 +129,12 @@ function keywordsToText(keywords) {
  * implied at the join when the line is reassembled) from '+' (no space is
  * implied — used only when a split falls strictly inside a single token,
  * e.g. a literal or name broken mid-word). This function only ever splits
- * between separate whitespace-delimited keyword tokens (see the loop below
- * — a token is moved to the next line whole, never divided), so the space
- * that separated those two tokens in the original keyword text must always
- * be preserved across the join. That makes '-' the correct choice in every
- * case this function actually produces.
+ * between separate tokens (see tokenizeKeywordText above and the loop below
+ * — a token, including a whole quoted literal, is moved to the next line as
+ * a unit, never divided), so the space that separated those two tokens in
+ * the original keyword text must always be preserved across the join. That
+ * makes '-' the correct choice in every case this function actually
+ * produces.
  *
  * (An earlier version of this function always emitted '+', on the reasoning
  * that '+' is "safe for any token boundary" — that has it backwards: '+'
@@ -88,7 +147,7 @@ function keywordsToText(keywords) {
 function emitWithKeywords(positional44, keywordText) {
   const KEYWORD_WIDTH = 34; // columns 45-78; col 79 unused, col 80 reserved for +/-
   const lines = [];
-  const tokens = keywordText.trim() === "" ? [] : keywordText.trim().split(/\s+/);
+  const tokens = keywordText.trim() === "" ? [] : tokenizeKeywordText(keywordText.trim());
   let current = "";
   let firstLine = true;
   const flush = (hasMore) => {
@@ -194,4 +253,4 @@ function upsertReffldKeyword(keywords, target) {
   return withoutReffld.concat([{ name: "REFFLD", params: "(" + params + ")", raw, sourceLineIndex: -1 }]);
 }
 
-module.exports = { regenerateSource, buildPositional, emitWithKeywords, keywordsToText, upsertReffldKeyword };
+module.exports = { regenerateSource, buildPositional, emitWithKeywords, keywordsToText, upsertReffldKeyword, tokenizeKeywordText };
