@@ -44,6 +44,9 @@ const { validateFieldKeywords } =
 // eslint-disable-next-line no-undef
 const { parseBarcodeParams } =
   typeof module !== "undefined" && module.exports ? require("./prtfBarcodeParams.js") : window.PrtfBarcodeParams;
+// eslint-disable-next-line no-undef
+const { parseOverlay, parsePagseg, parseAfprsc } =
+  typeof module !== "undefined" && module.exports ? require("./prtfPageGroupKeywords.js") : window.PrtfPageGroupKeywords;
 
 /**
  * Resolves CPI (characters per inch) and LPI (lines per inch) for a
@@ -183,6 +186,53 @@ function parseBarcodeGeometry(kw, lpi, uom) {
   return { barCodeId, direction, hri, hriPosition, heightLines, approximateHeight };
 }
 
+/**
+ * Batch E (docs/TASKS.md) — labeled placeholder boxes for the three
+ * record-level AFP resource keywords that carry their own page position:
+ * OVERLAY, PAGSEG, AFPRSC. (STRPAGGRP/ENDPAGGRP/DOCIDXTAG/DTASTMCMD have no
+ * page position of their own — a page group is a logical grouping of
+ * whole pages, not a place on one — so they're surfaced separately as a
+ * non-positioned badge list; see collectPageGroupMetadata below.) A record
+ * can carry more than one of these (e.g. a front overlay and a back
+ * overlay via two OVERLAY keywords), so — like LINE/BOX — every instance
+ * is rendered, even though the properties panel (media/webviewClient.js)
+ * only edits by keyword name and so only reaches the first.
+ */
+function resolveResourcePlaceholders(record, cpi, lpi, uom) {
+  return [
+    ...findAllKeywords(record.keywords, "OVERLAY").map((kw) => parseOverlay(kw, cpi, lpi, uom)),
+    ...findAllKeywords(record.keywords, "PAGSEG").map((kw) => parsePagseg(kw, cpi, lpi, uom)),
+    ...findAllKeywords(record.keywords, "AFPRSC").map((kw) => parseAfprsc(kw, cpi, lpi, uom)),
+  ];
+}
+
+/**
+ * Batch E — a short, human-readable summary of each STRPAGGRP/ENDPAGGRP/
+ * DOCIDXTAG/DTASTMCMD occurrence on this record, for a non-positioned
+ * "page-group / resource keywords" panel (these four don't place anything
+ * on the printed page, so unlike resolveResourcePlaceholders above they
+ * don't get row/col geometry).
+ */
+function collectPageGroupMetadata(record) {
+  const items = [];
+  findAllKeywords(record.keywords, "STRPAGGRP").forEach((kw) => {
+    const inner = String(kw.params || "").replace(/^\(/, "").replace(/\)$/, "").trim();
+    items.push({ keyword: "STRPAGGRP", summary: inner ? "Start page group " + inner : "Start page group" });
+  });
+  findAllKeywords(record.keywords, "ENDPAGGRP").forEach(() => {
+    items.push({ keyword: "ENDPAGGRP", summary: "End page group" });
+  });
+  findAllKeywords(record.keywords, "DOCIDXTAG").forEach((kw) => {
+    const t = paramTokens(kw);
+    items.push({ keyword: "DOCIDXTAG", summary: t.length ? "Index tag: " + t.join(" ") : "Index tag" });
+  });
+  findAllKeywords(record.keywords, "DTASTMCMD").forEach((kw) => {
+    const inner = String(kw.params || "").replace(/^\(/, "").replace(/\)$/, "").trim();
+    items.push({ keyword: "DTASTMCMD", summary: inner ? "Data stream command: " + inner : "Data stream command" });
+  });
+  return items;
+}
+
 function resolvePageSize(record, fileLevel) {
   const kw = findKeyword(record.keywords, "PAGSIZE") || findKeyword(fileLevel.keywords, "PAGSIZE");
   let lines = 66;
@@ -216,6 +266,14 @@ function resolveLayout(model, recordName, indicatorState, uom) {
     ...findAllKeywords(record.keywords, "LINE").map((kw) => parseLineGeometry(kw, cpi, lpi, uom)),
     ...findAllKeywords(record.keywords, "BOX").map((kw) => parseBoxGeometry(kw, cpi, lpi, uom)),
   ];
+
+  // Batch E (docs/TASKS.md) — AFP page-group / resource keyword
+  // placeholders. `resources` are the positioned ones (OVERLAY/PAGSEG/
+  // AFPRSC, rendered as labeled boxes); `pageGroupKeywords` are the
+  // non-positioned ones (STRPAGGRP/ENDPAGGRP/DOCIDXTAG/DTASTMCMD, surfaced
+  // as a badge list instead — see collectPageGroupMetadata's own comment).
+  const resources = resolveResourcePlaceholders(record, cpi, lpi, uom);
+  const pageGroupKeywords = collectPageGroupMetadata(record);
 
   let cursorLine = 1;
   let cursorCol = 1;
@@ -317,6 +375,8 @@ function resolveLayout(model, recordName, indicatorState, uom) {
     pageCols,
     cells,
     draws,
+    resources,
+    pageGroupKeywords,
     skippedByIndicator: skipped.map((e) => (e.kind === "field" ? e.name : e.literal || "(constant)")),
     // Pixel grid derived from the record's CPI/LPI at 96 DPI (standard web
     // display density): cellWidthPx = 96/CPI, cellHeightPx = 96/LPI. This

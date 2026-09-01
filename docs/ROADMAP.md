@@ -169,12 +169,53 @@ full detail, acceptance criteria, and file-level ownership per batch):
       17 new tests (`test/prtfBatchN.test.ts`), including a parametrized
       check over the full eleven-keyword list, not just the subset README
       originally named.
-- [ ] **Batch E — AFP page-group / resource keyword support:** `OVERLAY`
-      (record-level), `PAGSEG`, `STRPAGGRP`/`ENDPAGGRP`, `DOCIDXTAG`,
-      `AFPRSC`, `DTASTMCMD` — render as labeled placeholder boxes per
-      `docs/REQUIREMENTS.md` §8's documented hard limit (no real resource
-      pixel content), but make them visible/editable instead of silently
-      inert.
+- [x] **Batch E — AFP page-group / resource keyword placeholders — done.**
+      New `src/prtfPageGroupKeywords.js` module (parse/build pair per
+      keyword, following the same shape as Batch C's
+      `prtfBarcodeParams.js`) covers all seven keywords confirmed
+      record-level against `docs/KEYWORD-INVENTORY.md` §2's own menu-grid
+      listing: `OVERLAY`, `PAGSEG`, and `AFPRSC` carry their own page
+      position, so each renders as a labeled placeholder box on the page
+      (`prtfLayout.js`'s new `resolveResourcePlaceholders`, exposed as
+      `layout.resources`) — same honest "can't show real pixel content
+      without the resource file itself" treatment as `BARCODE`'s own
+      placeholder, per `docs/REQUIREMENTS.md` §8's documented hard limit.
+      `STRPAGGRP`/`ENDPAGGRP`/`DOCIDXTAG`/`DTASTMCMD` have no page position
+      of their own (a page group is a logical grouping of whole pages, not
+      a place on one), so they're surfaced instead as a non-positioned
+      badge list (`resolvePageGroupMetadata`, `layout.pageGroupKeywords`).
+      Verified each keyword's exact parameter shape and quoting rule
+      against IBM's DDS reference: `OVERLAY`/`PAGSEG`'s resource name is an
+      **object name** (unquoted, matching this project's own
+      `sample-afpds.pf` fixture's `PAGSEG(COMPLOGO 0.5 0.5)`), while
+      `AFPRSC`'s resource name and `STRPAGGRP`'s group-name/`DOCIDXTAG`'s
+      attribute-name/attribute-value/`DTASTMCMD`'s text are **character
+      values** (quoted) — any of the above may instead be an unquoted
+      `&field` program-to-system-field reference. Anything beyond each
+      keyword's modeled positional params (e.g. `OVERLAY`/`PAGSEG`'s
+      optional `(*ROTATION n)`, `AFPRSC`'s `(*SIZE ...)`/mapping-option/
+      color-profile) is preserved verbatim in an `extra` field and
+      re-appended on build, the same "don't silently drop what isn't
+      modeled" treatment Batch C's `unrecognizedRaw` established. New
+      properties panel (`renderPageGroupPanel`, `media/webviewClient.js`)
+      reuses `setRecordKeyword`/`removeRecordKeyword` (Batch F's edit
+      kinds) for all seven; a record coding the same one of these keywords
+      more than once (e.g. two `OVERLAY`s for front/back) is fully
+      rendered (every instance, via `findAllKeywords` same as `LINE`/`BOX`)
+      but only the first is reachable for editing from the panel — noted
+      inline in the panel's own doc comment as a known, accepted
+      simplification consistent with every other record-keyword panel in
+      this codebase. Reused Batch C's quote-aware `groupTokens` tokenizer
+      (rather than the plain `paramTokens`) for parsing, since
+      `DOCIDXTAG`'s quoted attribute values can contain internal spaces
+      (`'Policy Number'`) the same way `EDTWRD` could (Batch R's bug fix)
+      — caught by a first draft's test failure before landing. 17 new
+      tests (`test/prtfBatchE.test.ts`): round-trip for all seven keywords,
+      parse/build for each keyword's own shape (including the optional-pair
+      offset rule for `PAGSEG`, quoting rules, and `&field` handling), and
+      `resolveLayout` surfacing both `layout.resources` and
+      `layout.pageGroupKeywords` correctly, including a record with two
+      `OVERLAY`s.
 - [x] **Batch F — Print/finishing device keywords (no visual,
       validation-only):** `DUPLEX`, `FORCE`, `OUTBIN`, `ZFOLD`, `STAPLE`,
       `INVMMAP` — these don't affect the page-preview layout; exposed in

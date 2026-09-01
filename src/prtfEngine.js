@@ -34,6 +34,7 @@ const Layout = req("./prtfLayout.js", "PrtfLayout");
 const ReferenceField = req("./prtfReferenceField.js", "PrtfReferenceField");
 const KeywordValidation = req("./prtfKeywordValidation.js", "PrtfKeywordValidation");
 const BarcodeParams = req("./prtfBarcodeParams.js", "PrtfBarcodeParams");
+const PageGroupKeywords = req("./prtfPageGroupKeywords.js", "PrtfPageGroupKeywords");
 
 const mod = {
   resolveLayout: Layout.resolveLayout,
@@ -71,6 +72,19 @@ const mod = {
   validateBarcodeParams: BarcodeParams.validateBarcodeParams,
   // Batch N
   validateBarcodeExclusions: BarcodeParams.validateBarcodeExclusions,
+  // Batch E — OVERLAY/PAGSEG/AFPRSC parse/build (positioned placeholders)
+  // and STRPAGGRP/ENDPAGGRP/DOCIDXTAG/DTASTMCMD's quoting helpers, used by
+  // the webview's page-group/resource properties panel.
+  quoteOrField: PageGroupKeywords.quoteOrField,
+  unquoteOrField: PageGroupKeywords.unquoteOrField,
+  parseOverlay: PageGroupKeywords.parseOverlay,
+  buildOverlayParams: PageGroupKeywords.buildOverlayParams,
+  parsePagseg: PageGroupKeywords.parsePagseg,
+  buildPagsegParams: PageGroupKeywords.buildPagsegParams,
+  parseAfprsc: PageGroupKeywords.parseAfprsc,
+  buildAfprscParams: PageGroupKeywords.buildAfprscParams,
+  parseDocidxtag: PageGroupKeywords.parseDocidxtag,
+  buildDocidxtagParams: PageGroupKeywords.buildDocidxtagParams,
 };
 if (typeof module !== "undefined" && module.exports) module.exports = mod;
 if (typeof window !== "undefined") window.PrtfEngine = mod;

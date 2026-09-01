@@ -60,7 +60,7 @@ vice versa.
 | LINE/BOX params given as `&NAME` (program-to-system field) can't be resolved, shown at default position | **Permanent, by design** | Not a task — there's no static value to resolve without a live compile/run. Batch B's P-field toggle (UI for *entering* `&NAME`) explicitly preserves this flagged-default treatment rather than trying to eliminate it; see Batch B detail. |
 | `BARCODE` renders as a labeled placeholder, not a real symbol | Actionable | Batch **D** (depends on **C**) |
 | `BARCODE`'s mutual-exclusion rule (can't combine with `FONT`/`EDTCDE`/`EDTWRD`/`DATE`/`TIME`/`PAGNBR`/etc.) isn't validated — `CRTPRTF` still catches it, but not surfaced live in the designer | Actionable, previously untracked | New **Batch N** (depends on **C** — needs BARCODE's parameter surface to attach the check to) |
-| Page segments/overlays render as nothing, not even a placeholder box | Actionable | Batch **E** |
+| Page segments/overlays render as nothing, not even a placeholder box | **Done** | Was Batch **E** |
 | Real pixel content for page segments/overlays (actual scanned logos/forms, not a placeholder) | **Blocked**, needs external resource files supplied to the tool (§8's documented hard limit — these are IFS/host AFP objects, not DDS source text) | New **Batch O** (depends on **E** landing first as the fallback baseline; blocked the same way **L** is, on external data access) |
 | AFPDS real font/graphics rendering broadly (vs. char-grid-with-keyword-labels) | **Permanent for v1, revisit only if scope changes** | Not a task on its own — the actionable slices of this are Batch **L** (font metrics) and Batch **O** (resource pixel content) above; true full-graphics AFPDS WYSIWYG beyond those two remains explicitly out of scope per REQUIREMENTS.md §6/§8. |
 | Numeric edit-code/edit-word formatting is approximate-width only, no live-system verification | **Permanent, explicit non-goal** | Not a task — Batch A's detail section explicitly excludes building a full edit-code formatter, to avoid scope creep. |
@@ -80,7 +80,7 @@ vice versa.
 | B | Font/sizing keyword editing + shared P-field toggle component | `FONT`, `CDEFNT`, `FNTCHRSET`, `FONTNAME`, `CHRSIZ`, `CHRID`, `CCSID` | **Done** | none (but A and C benefit from B's P-field component if B lands first) |
 | C | `BARCODE` full parameter surface (still placeholder render) | `BARCODE` | **Done** | none |
 | D | `BARCODE` real symbol rendering | `BARCODE` | **Done** | **C** |
-| E | AFP page-group / resource keyword placeholders | `OVERLAY` (record), `PAGSEG`, `STRPAGGRP`, `ENDPAGGRP`, `DOCIDXTAG`, `AFPRSC`, `DTASTMCMD` | Not started | none |
+| E | ~~AFP page-group / resource keyword placeholders~~ | `OVERLAY` (record), `PAGSEG`, `STRPAGGRP`, `ENDPAGGRP`, `DOCIDXTAG`, `AFPRSC`, `DTASTMCMD` | **Done** | none |
 | F | Print/finishing keywords, validation-only | `DUPLEX`, `FORCE`, `OUTBIN`, `ZFOLD`, `STAPLE`, `INVMMAP` | **Done** | none |
 | G | Field-level data/edit keywords + indicator text | `ALIAS`, `BLKFOLD`, `CVTDTA`, `DLTEDT`, `FLTFIXDEC`, `FLTPCN`, `TRNSPY`, `TXTRTT`, `INDTXT` | **Done** | none |
 | H | `REF`/`REFFLD` resolution via Code for i | `REF`, `REFFLD` | Part 1 (UI shape + pure resolution logic) done; part 2 (live Code for i round-trip) written but unverified — needs a real connected IBM i | none (needs a live/mocked Code for i connection for full completion — can land the UI shape without it) |
@@ -315,68 +315,6 @@ runs inside a VS Code webview). Scope to the symbologies IBM's DDS BARCODE
 keyword actually supports; don't over-build.
 - **Depends on Batch C** landing first (needs its parameter surface).
 
-**Implementation notes:**
-- Library chosen: **JsBarcode 3.12.3** (MIT, zero runtime dependencies,
-  pure JS, renders directly into a caller-supplied SVG or canvas element —
-  a good fit for "small pure-JS symbology library" and this project's
-  existing DOM-manipulation style). Vendored (not `npm`-`require()`d) as
-  `media/vendor/jsbarcode/JsBarcode.all.min.js` — see that directory's
-  README.md for exactly why (has to run inside the webview's sandboxed
-  browser context, not the extension host's Node process) and how to
-  update it later. Still recorded as a `devDependency` in `package.json`
-  purely for version provenance.
-- **Scope decision** (the "don't over-build" instruction above): IBM's DDS
-  reference defines specific bar-code-ID special values, split three ways
-  in `src/prtfBarcodeRender.js`'s header —
-  1. **Rendered for real**: MSI, UPCA, UPCE, UPC2, UPC5, EAN8, EAN13, EAN2,
-     EAN5, CODEABAR, CODE128, CODE3OF9, INTERL2OF5 — linear symbologies
-     JsBarcode already implements with a deterministic bar-width encoding.
-  2. **Valid DDS bar-code-IDs JsBarcode doesn't implement**: INDUST2OF5,
-     MATRIX2OF5, POSTNET, RM4SCC, AP4SCC, DUTCHKIX, JPBC, and the four 2D
-     symbologies (PDF417, MAXICODE, DATAMATRIX, QRCODE) — these need their
-     own, much more involved encoders (Reed-Solomon error correction, 2D
-     symbol placement, ...); implementing any of them was judged
-     over-building for this batch. They keep the existing labeled
-     placeholder box, unchanged.
-  3. Anything not a recognized bar-code-ID at all — same existing
-     placeholder-box fallback, also unchanged.
-- **UPC2/UPC5 mapped onto JsBarcode's EAN2/EAN5 formats**: IBM's Table 2
-  lists these as their own bar-code-IDs, but they're the same shared
-  "supplemental/add-on" symbol structure historically used by both the UPC
-  and EAN systems (same bar pattern either way), and JsBarcode only
-  implements one pair of formats for that structure. This is a *rendering*
-  equivalence only — `prtfBarcodeParams.js` (Batch C) still stores/
-  round-trips whichever bar-code-ID the source actually says.
-- **UPCE sample-data bug found and fixed during this batch**: IBM's Table 2
-  documents UPCE's field length as 10 digits, and the first implementation
-  generated a 10-digit sample accordingly — but JsBarcode's own UPCE
-  validator only accepts a plain 6-digit "middle digits" form or an
-  8-digit form starting with 0/1 (it derives the full UPC-A + check digit
-  itself), and silently reported the 10-digit sample invalid rather than
-  throwing. Caught by the jsdom integration test (see below) actually
-  calling JsBarcode rather than just checking the sample data's shape;
-  fixed by hard-coding UPCE's *rendering* sample length to 6, documented
-  in `prtfBarcodeRender.js` as a rendering-only exception (Batch C's
-  stored parameters/field-length are untouched).
-- **Design-time sample data**: I-RLU has no live compile/run, so there's no
-  runtime field value to encode (same limitation REF/REFFLD already have).
-  `sampleBarcodeData` invents a deterministic, symbology-appropriate
-  placeholder value (repeating digits for numeric symbologies, a
-  start/end-letter-bracketed value for CODEABAR per IBM's documented field
-  rule, a short readable string for CODE128/CODE3OF9) sized to the field's
-  documented length range, or the field's actual DDS length when the
-  symbology's length is itself variable (MSI/INTERL2OF5/CODEABAR/CODE128/
-  CODE3OF9). Surfaced in the cell's title tooltip so it's clear the bars
-  are a preview, not real data.
-- **Vertical direction**: JsBarcode has no native vertical-orientation
-  option. Renders normally at the "natural" (un-swapped) orientation, then
-  rotates that wrapper 90° about its own center inside the existing
-  swapped-dimension box (`isVerticalBarcode`'s `w`/`h` swap, unchanged from
-  before this batch) — the math for why a 90°-rotated (h × w) box's
-  bounding box is exactly (w × h) is in `renderBarcodeSymbol`'s comment.
-- `narrowBarWidth` (inches, Batch C) maps onto JsBarcode's `width` (px per
-  narrow bar) via a 96dpi approximation; `hriPosition` (Batch C) maps onto
-  JsBarcode's `displayValue`/`textPosition`.
 - Tests: `test/prtfBatchD.test.ts` — pure-logic coverage for the
   RENDERABLE/not-RENDERABLE split, sample-data shape per symbology
   (including the INTERL2OF5 even-length and CODEABAR start/end-letter
@@ -391,20 +329,93 @@ keyword actually supports; don't over-build.
   canvas-based text measurement, not a real-webview one).
 
 
-### Batch E — AFP page-group / resource placeholders
-**Goal:** per `docs/REQUIREMENTS.md` §8's documented hard limit, these can
-never show real resource pixel content without the resource files
-themselves — but today they're **completely invisible** in the preview,
-which is worse than a labeled placeholder. Render each as a labeled box
-(resource name + keyword) similar to the existing PAGSEG-adjacent treatment
-mentioned in the roadmap, and make the keyword's params editable.
-- `OVERLAY` (record-level): 3-param form (`&NAME`/name, vertical offset,
-  horizontal offset) — note this is a *different* keyword shape from field-
-  level considerations; don't confuse with any other same-named construct.
-- `PAGSEG`, `STRPAGGRP`/`ENDPAGGRP`, `DOCIDXTAG`, `AFPRSC`, `DTASTMCMD`: see
-  KEYWORD-INVENTORY §2 for each one's purpose; most just need a name/path
-  field and don't need deep parameter modeling.
-- Tests: round-trip + confirm placeholder box appears in engine output.
+### Batch E — AFP page-group / resource placeholders [DONE]
+**Delivered exactly per the goal below**, split into two treatments rather
+than one, since not all seven keywords actually have a page position to
+place a box at:
+
+- **Positioned (get a placeholder box, `layout.resources`):** `OVERLAY`
+  (record-level, verified format `OVERLAY([library/]overlay-name
+  position-down position-across [(*ROTATION rotation)])` — the MC Press
+  "May the AFP Overlay Forms Be with You" writeup and IBM's own reference
+  agree), `PAGSEG` (`PAGSEG(page-segment-name [vertical-offset
+  horizontal-offset] [(*ROTATION rotation)])` — offsets are an **optional
+  pair**, confirmed against this project's own `sample-afpds.pf` fixture
+  which already used the name-only form on one record and the
+  name+offsets form on another), `AFPRSC` (`AFPRSC('resource-name'
+  object-type position-down position-across [(*SIZE...)] ...)` — only the
+  first four positional params get dedicated fields, everything after is
+  preserved verbatim, see below).
+- **Non-positioned (badge list, `layout.pageGroupKeywords`):** `STRPAGGRP`
+  (`STRPAGGRP(group-name)`), `ENDPAGGRP` (no params — a bare flag),
+  `DOCIDXTAG` (`DOCIDXTAG(attribute-name attribute-value tag-level)`,
+  tag-level is `GROUP` or `PAGE`), `DTASTMCMD` (`DTASTMCMD(text)`). None of
+  these place anything on the printed page — a page group is a logical
+  grouping of whole pages, not a location — so a positioned box would have
+  been fabricated geometry with no source to justify it.
+
+**Quoting, verified per-keyword against IBM's DDS reference rather than
+assumed uniform:** `OVERLAY`/`PAGSEG`'s resource name is an **object name**
+(unquoted — `PAGSEG(COMPLOGO 0.5 0.5)`, matching the existing fixture) but
+`AFPRSC`'s resource name and `STRPAGGRP`'s group-name/`DOCIDXTAG`'s
+attribute-name/attribute-value/`DTASTMCMD`'s text are **character values**
+(quoted). `DOCIDXTAG`'s tag-level and `AFPRSC`'s object-type are unquoted
+special/enumerated values. Any of the above may be an unquoted `&field`
+program-to-system-field reference instead — never quoted regardless of
+which case it replaces.
+
+**Implementation notes:**
+- New module `src/prtfPageGroupKeywords.js` — parse/build pair per
+  keyword (same shape as Batch C's `prtfBarcodeParams.js`), re-exported
+  through `prtfEngine.js`, added to `buildWebviewTemplate.js`'s
+  `WEBVIEW_MODULE_FILES` (after `prtfBarcodeParams.js` — see below).
+- **Unmodeled optional params preserved, not dropped:** `OVERLAY`/
+  `PAGSEG`'s trailing `(*ROTATION n)` and anything in `AFPRSC` past its
+  first four positional params (`(*SIZE...)`, mapping-option,
+  color-profile, ...) round-trip via a free-text `extra` field, re-appended
+  on build — same treatment as Batch C's `unrecognizedRaw`/`extra2D`.
+- **Reused Batch C's `groupTokens`, not the plain `paramTokens`:** a first
+  draft used `prtfKeywordHelpers.js`'s plain whitespace-splitting
+  `paramTokens` and a test caught it immediately —
+  `DOCIDXTAG('Policy Number' '43127' GROUP)`'s quoted attribute value has
+  an internal space, which plain `paramTokens` split into two tokens (the
+  exact same class of bug Batch R fixed in the writer's own tokenizer).
+  Switched to `prtfBarcodeParams.js`'s quote-aware `groupTokens` (adapted
+  to this file's `paramTokens(kw)` call shape via a small wrapper) instead
+  of re-solving the same problem a third time.
+- `prtfLayout.js` adds `resolveResourcePlaceholders` (the three positioned
+  keywords, using `findAllKeywords` so a record with two `OVERLAY`s — e.g.
+  front/back — renders both) and `collectPageGroupMetadata` (the four
+  non-positioned ones), both wired into `resolveLayout`'s return value as
+  `resources`/`pageGroupKeywords`. Placeholder sizing uses the same fixed
+  default (20 cols × 3 rows) `BARCODE`'s own placeholder-height default
+  established — flagged, not guessed, since none of these three keywords
+  carry real dimensions the way `BARCODE`'s height parameter does.
+- Properties panel: `renderPageGroupPanel` in `media/webviewClient.js`.
+  `STRPAGGRP`/`ENDPAGGRP`/`DTASTMCMD` reuse `appendKeywordRows` (they fit
+  its single-value "flag"/"quotedText" shape directly); `OVERLAY`/
+  `PAGSEG`/`AFPRSC`/`DOCIDXTAG` get bespoke rows (same "hand-written
+  section" approach as `appendColorRow`/`appendMsgconRow`/Batch C's
+  `renderBarcodeSection`, since none of their shapes fit
+  `appendKeywordRows`'s one-value-per-keyword model). All seven apply via
+  the existing `setRecordKeyword`/`removeRecordKeyword` edit kinds (Batch
+  F's shared plumbing) — no `extension.ts`/`prtfEdits.ts` changes needed.
+  A badge list below the form summarizes `layout.pageGroupKeywords` for
+  the current record.
+- **Known, accepted simplification (documented inline, not a follow-up
+  task):** `setRecordKeyword` is "one keyword per name, replace whichever's
+  there" (established by Batch F) — for a record coding the same one of
+  these seven keywords more than once, the panel only edits the first
+  occurrence by name. Every occurrence still renders correctly (rendering
+  uses `findAllKeywords`, not `findKeyword`) and round-trips correctly
+  whether or not it's ever touched from the panel — the limitation is
+  edit-reachability for a 2nd+ instance via the UI, not correctness.
+- Tests: `test/prtfBatchE.test.ts`, 17 tests — round-trip for all seven
+  keywords together, parse/build for each keyword's own shape (including
+  `PAGSEG`'s optional-offset-pair rule, every quoting rule above, and
+  `&field` handling for each), and `resolveLayout` producing correct
+  `layout.resources`/`layout.pageGroupKeywords` including the two-`OVERLAY`
+  case.
 
 ### Batch F — Print/finishing keywords (validation only) [DONE]
 **Goal:** these don't change the page layout at all — they affect physical

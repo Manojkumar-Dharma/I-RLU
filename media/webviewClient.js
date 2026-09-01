@@ -104,6 +104,7 @@
         record.name + " (record)"
       )
     );
+    root.appendChild(renderPageGroupPanel(record, layout));
 
     if (layout.skippedByIndicator && layout.skippedByIndicator.length) {
       root.appendChild(
@@ -114,6 +115,13 @@
       root.appendChild(
         el("div", { class: "note" }, [
           "One or more LINE/BOX positions depend on a program-to-system field and are shown at their default position — actual placement is set at print time.",
+        ])
+      );
+    }
+    if ((layout.resources || []).some((r) => r.approximate)) {
+      root.appendChild(
+        el("div", { class: "note" }, [
+          "One or more OVERLAY/PAGSEG/AFPRSC positions depend on a program-to-system field and are shown at their default position — actual placement is set at print time.",
         ])
       );
     }
@@ -377,6 +385,31 @@
           })
         );
       }
+    });
+
+    // Batch E (docs/TASKS.md) — OVERLAY/PAGSEG/AFPRSC labeled placeholder
+    // boxes. These name external AFP resources this tool has no pixel
+    // content for (docs/REQUIREMENTS.md §8) — same "honest placeholder,
+    // not a guess" treatment as the BARCODE cells above, just at a fixed
+    // default size since these keywords don't carry their own dimensions
+    // the way BARCODE's height parameter does.
+    (layout.resources || []).forEach((r) => {
+      page.appendChild(
+        el(
+          "div",
+          {
+            class: "resource-placeholder" + (r.approximate ? " approximate" : ""),
+            style: `position:absolute;left:${(r.col - 1) * CELL_W}px;top:${(r.row - 1) * CELL_H}px;width:${r.widthCols * CELL_W}px;height:${r.heightRows * CELL_H}px;`,
+            title:
+              r.keyword +
+              " placeholder — " +
+              (r.name || "(unnamed)") +
+              ". Real resource content not rendered (needs the AFP resource file itself)." +
+              (r.approximate ? " Position depends on a program-to-system field value; shown at its default (0)." : ""),
+          },
+          [el("span", { class: "resource-placeholder-label" }, [r.keyword + (r.name ? ": " + r.name : "")])]
+        )
+      );
     });
 
     page.addEventListener("click", (ev) => {
@@ -1439,6 +1472,195 @@
     { name: "PAGRTT", kind: "select", options: ["0", "90", "180", "270"], hint: "Degrees of page rotation." },
     { name: "HIGHLIGHT", kind: "flag", hint: "Highlighted printing. Ignored if CDEFNT or FNTCHRSET is also coded on this record." },
   ];
+
+  // Batch E (docs/TASKS.md) — the three simple keywords in this batch's
+  // scope that fit appendKeywordRows' single-value shape directly:
+  // STRPAGGRP's group-name (a quoted character value, or a bare &field),
+  // ENDPAGGRP (no params at all), and DTASTMCMD's text (also a quoted
+  // character value). OVERLAY/PAGSEG/AFPRSC/DOCIDXTAG each have 2+
+  // positional params and get bespoke rows below instead, same split this
+  // codebase already uses for COLOR/MSGCON/EDTCDE vs. the simpler
+  // Batch A/F/G keywords.
+  const BATCH_E_SIMPLE_KEYWORDS = [
+    { name: "STRPAGGRP", kind: "quotedText", placeholder: "group name, or &field", hint: "Begins a named logical grouping of pages (for AFP document indexing / PDF bookmarks). Must be matched by an ENDPAGGRP later in the file — groups can't nest or overlap." },
+    { name: "ENDPAGGRP", kind: "flag", hint: "Ends the page group most recently started by STRPAGGRP. Ignored if no group is active." },
+    { name: "DTASTMCMD", kind: "quotedText", placeholder: "raw AFP data-stream command text, or &field", hint: "Embeds a raw AFP data-stream structured-field command — an escape hatch, not something this tool interprets." },
+  ];
+
+  /** Bespoke OVERLAY row (Batch E) — OVERLAY([library/]overlay-name position-down position-across [extra]), name unquoted (object name, not a literal). */
+  function appendOverlayRow(container, record, onSet, onRemove) {
+    const existing = PrtfEngine.findKeyword(record.keywords, "OVERLAY");
+    const f = existing ? PrtfEngine.parseOverlay(existing, 10, 6, state.uom) : { name: "", posDown: "", posAcross: "", extra: "" };
+
+    const rowWrap = el("div", { class: "prop-row" });
+    const cbId = "pg-" + record.name + "-OVERLAY";
+    const cb = el("input", { type: "checkbox", id: cbId });
+    if (existing) cb.setAttribute("checked", "checked");
+    rowWrap.appendChild(el("label", { class: "ind-label", for: cbId, title: "Names an AFP overlay resource (e.g. a preprinted form image) placed at a fixed offset on every page of this record format." }, [cb, " OVERLAY"]));
+    container.appendChild(rowWrap);
+
+    const nameInp = el("input", { type: "text", placeholder: "[library/]overlay-name, or &field", value: f.name || "" });
+    const downInp = el("input", { type: "text", placeholder: "position-down", value: f.posDown || "" });
+    const acrossInp = el("input", { type: "text", placeholder: "position-across", value: f.posAcross || "" });
+    const extraInp = el("input", { type: "text", placeholder: "extra, e.g. (*ROTATION 90)", value: f.extra || "" });
+    [nameInp, downInp, acrossInp, extraInp].forEach((i) => container.appendChild(i));
+
+    const sendUpdate = () => {
+      if (!cb.checked) {
+        onRemove("OVERLAY");
+        return;
+      }
+      const params = PrtfEngine.buildOverlayParams({ name: nameInp.value, posDown: downInp.value, posAcross: acrossInp.value, extra: extraInp.value });
+      if (!params) return;
+      onSet("OVERLAY", params);
+    };
+    cb.addEventListener("change", sendUpdate);
+    [nameInp, downInp, acrossInp, extraInp].forEach((i) => i.addEventListener("change", sendUpdate));
+  }
+
+  /** Bespoke PAGSEG row (Batch E) — PAGSEG(page-segment-name [vertical-offset horizontal-offset] [extra]), offsets optional as a pair. */
+  function appendPagsegRow(container, record, onSet, onRemove) {
+    const existing = PrtfEngine.findKeyword(record.keywords, "PAGSEG");
+    const f = existing ? PrtfEngine.parsePagseg(existing, 10, 6, state.uom) : { name: "", posDown: "", posAcross: "", extra: "" };
+
+    const rowWrap = el("div", { class: "prop-row" });
+    const cbId = "pg-" + record.name + "-PAGSEG";
+    const cb = el("input", { type: "checkbox", id: cbId });
+    if (existing) cb.setAttribute("checked", "checked");
+    rowWrap.appendChild(el("label", { class: "ind-label", for: cbId, title: "Places an AFP page segment (a scanned image resource, e.g. a logo) at a fixed offset on every page of this record format." }, [cb, " PAGSEG"]));
+    container.appendChild(rowWrap);
+
+    const nameInp = el("input", { type: "text", placeholder: "[library/]page-segment-name, or &field", value: f.name || "" });
+    const downInp = el("input", { type: "text", placeholder: "vertical offset (optional)", value: f.posDown || "" });
+    const acrossInp = el("input", { type: "text", placeholder: "horizontal offset (optional)", value: f.posAcross || "" });
+    const extraInp = el("input", { type: "text", placeholder: "extra, e.g. (*ROTATION 90)", value: f.extra || "" });
+    [nameInp, downInp, acrossInp, extraInp].forEach((i) => container.appendChild(i));
+
+    const sendUpdate = () => {
+      if (!cb.checked) {
+        onRemove("PAGSEG");
+        return;
+      }
+      const params = PrtfEngine.buildPagsegParams({ name: nameInp.value, posDown: downInp.value, posAcross: acrossInp.value, extra: extraInp.value });
+      if (!params) return;
+      onSet("PAGSEG", params);
+    };
+    cb.addEventListener("change", sendUpdate);
+    [nameInp, downInp, acrossInp, extraInp].forEach((i) => i.addEventListener("change", sendUpdate));
+  }
+
+  /** Bespoke AFPRSC row (Batch E) — AFPRSC('resource-name' object-type position-down position-across [extra]). resource-name IS a quoted character value (unlike OVERLAY/PAGSEG's object names). */
+  function appendAfprscRow(container, record, onSet, onRemove) {
+    const existing = PrtfEngine.findKeyword(record.keywords, "AFPRSC");
+    const f = existing ? PrtfEngine.parseAfprsc(existing, 10, 6, state.uom) : { name: "", objectType: "", posDown: "", posAcross: "", extra: "" };
+
+    const rowWrap = el("div", { class: "prop-row" });
+    const cbId = "pg-" + record.name + "-AFPRSC";
+    const cb = el("input", { type: "checkbox", id: cbId });
+    if (existing) cb.setAttribute("checked", "checked");
+    rowWrap.appendChild(el("label", { class: "ind-label", for: cbId, title: "Names an arbitrary AFP or non-AFP resource by IFS path. Cannot be used for fonts, overlays, page segments, or form/page definitions — those go through their own keywords." }, [cb, " AFPRSC"]));
+    container.appendChild(rowWrap);
+
+    const nameInp = el("input", { type: "text", placeholder: "resource name, or &field", value: f.name || "" });
+    const typeInp = el("input", { type: "text", placeholder: "object type (e.g. *PAGSEG), or &field", value: f.objectType || "" });
+    const downInp = el("input", { type: "text", placeholder: "position-down", value: f.posDown || "" });
+    const acrossInp = el("input", { type: "text", placeholder: "position-across", value: f.posAcross || "" });
+    const extraInp = el("input", { type: "text", placeholder: "extra, e.g. (*SIZE 2 1)", value: f.extra || "" });
+    [nameInp, typeInp, downInp, acrossInp, extraInp].forEach((i) => container.appendChild(i));
+
+    const sendUpdate = () => {
+      if (!cb.checked) {
+        onRemove("AFPRSC");
+        return;
+      }
+      const params = PrtfEngine.buildAfprscParams({ name: nameInp.value, objectType: typeInp.value, posDown: downInp.value, posAcross: acrossInp.value, extra: extraInp.value });
+      if (!params) return;
+      onSet("AFPRSC", params);
+    };
+    cb.addEventListener("change", sendUpdate);
+    [nameInp, typeInp, downInp, acrossInp, extraInp].forEach((i) => i.addEventListener("change", sendUpdate));
+  }
+
+  /** Bespoke DOCIDXTAG row (Batch E) — DOCIDXTAG(attribute-name attribute-value tag-level), tag-level is GROUP or PAGE (unquoted special value). */
+  function appendDocidxtagRow(container, record, onSet, onRemove) {
+    const existing = PrtfEngine.findKeyword(record.keywords, "DOCIDXTAG");
+    const f = existing ? PrtfEngine.parseDocidxtag(existing) : { attributeName: "", attributeValue: "", tagLevel: "" };
+
+    const rowWrap = el("div", { class: "prop-row" });
+    const cbId = "pg-" + record.name + "-DOCIDXTAG";
+    const cb = el("input", { type: "checkbox", id: cbId });
+    if (existing) cb.setAttribute("checked", "checked");
+    rowWrap.appendChild(el("label", { class: "ind-label", for: cbId, title: "Attaches a document index tag (name/value pair) to the page group currently active — used by PSF's AFP document indexing for viewers like PDF bookmarks." }, [cb, " DOCIDXTAG"]));
+    container.appendChild(rowWrap);
+
+    const nameInp = el("input", { type: "text", placeholder: "attribute name, or &field", value: f.attributeName || "" });
+    const valueInp = el("input", { type: "text", placeholder: "attribute value, or &field", value: f.attributeValue || "" });
+    const levelSel = el("select", {});
+    ["GROUP", "PAGE"].forEach((opt) => {
+      const o = el("option", { value: opt }, [opt]);
+      if (opt === f.tagLevel) o.setAttribute("selected", "selected");
+      levelSel.appendChild(o);
+    });
+    [nameInp, valueInp, levelSel].forEach((i) => container.appendChild(i));
+
+    const sendUpdate = () => {
+      if (!cb.checked) {
+        onRemove("DOCIDXTAG");
+        return;
+      }
+      const params = PrtfEngine.buildDocidxtagParams({ attributeName: nameInp.value, attributeValue: valueInp.value, tagLevel: levelSel.value });
+      if (!params) return;
+      onSet("DOCIDXTAG", params);
+    };
+    cb.addEventListener("change", sendUpdate);
+    [nameInp, valueInp, levelSel].forEach((i) => i.addEventListener("change", sendUpdate));
+  }
+
+  /**
+   * Batch E (docs/TASKS.md) — AFP page-group / resource keyword panel:
+   * OVERLAY, PAGSEG, AFPRSC (rendered as placeholder boxes on the page —
+   * see renderPage's `layout.resources` loop), plus STRPAGGRP/ENDPAGGRP/
+   * DOCIDXTAG/DTASTMCMD (no page position — summarized as badges instead,
+   * from `layout.pageGroupKeywords`).
+   *
+   * Like every other record-keyword panel in this file, editing here
+   * targets the keyword by NAME via setRecordKeyword/removeRecordKeyword
+   * (the same generic edit kinds Batch F established) — for a record that
+   * codes the same one of these keywords more than once (e.g. two OVERLAYs
+   * for front/back), only the first occurrence is reachable from this
+   * panel; every occurrence still renders correctly on the page (see
+   * prtfLayout.js's resolveResourcePlaceholders, which uses
+   * findAllKeywords, not findKeyword) and round-trips correctly whether or
+   * not it's ever touched here.
+   */
+  function renderPageGroupPanel(record, layout) {
+    const panel = el("div", { class: "props" });
+    panel.appendChild(el("h4", {}, ["AFP page-group / resource keywords — " + record.name]));
+    panel.appendChild(
+      el("div", { class: "hint" }, [
+        "These name external AFP resources (overlays, page segments) or page-grouping metadata — I-RLU can't show their real pixel content without the resource files themselves, so OVERLAY/PAGSEG/AFPRSC render as a labeled placeholder box on the page instead.",
+      ])
+    );
+
+    const onSet = (name, params) => vscode.postMessage({ type: "edit", edit: { kind: "setRecordKeyword", recordName: record.name, name, params } });
+    const onRemove = (name) => vscode.postMessage({ type: "edit", edit: { kind: "removeRecordKeyword", recordName: record.name, name } });
+
+    appendOverlayRow(panel, record, onSet, onRemove);
+    appendPagsegRow(panel, record, onSet, onRemove);
+    appendAfprscRow(panel, record, onSet, onRemove);
+    appendDocidxtagRow(panel, record, onSet, onRemove);
+    appendKeywordRows(panel, BATCH_E_SIMPLE_KEYWORDS, record.keywords, "pgs-" + record.name, onSet, onRemove);
+
+    const badges = (layout && layout.pageGroupKeywords) || [];
+    if (badges.length) {
+      const badgeList = el("div", { class: "badge-list" });
+      badges.forEach((b) => badgeList.appendChild(el("span", { class: "badge", title: b.summary }, [b.keyword])));
+      panel.appendChild(el("div", { class: "hint" }, ["On this record now: "]));
+      panel.appendChild(badgeList);
+    }
+
+    return panel;
+  }
 
   function renderGeneralRecordKeywordsPanel(record) {
     const panel = el("div", { class: "props" });
