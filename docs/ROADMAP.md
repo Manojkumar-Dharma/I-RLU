@@ -137,6 +137,21 @@ full detail, acceptance criteria, and file-level ownership per batch):
       a field is edited. Rendering is still the existing placeholder box
       — real symbol rendering is Batch D. 10 new tests
       (`test/prtfBatchC.test.ts`).
+- [x] **Batch N — `BARCODE` mutual-exclusion validation — done.** Confirmed
+      the exact excluded-keyword list against IBM's DDS reference for
+      BARCODE — "Do not specify BARCODE in the same field with the
+      CHRSIZ, CHRID, CVTDTA, DATE, EDTCDE, EDTWRD, FONT, HIGHLIGHT,
+      PAGNBR, TIME, or UNDERLINE keywords" — a superset of README's own
+      shorthand list, which was missing CHRSIZ/CHRID/CVTDTA/HIGHLIGHT/
+      UNDERLINE. New `validateBarcodeExclusions` in
+      `src/prtfBarcodeParams.js` surfaces one live-editor hint per
+      conflicting keyword found, rendered directly in BARCODE's own
+      properties-panel section (not the conflicting keyword's own panel —
+      unlike `HIGHLIGHT`+`CDEFNT`/`FNTCHRSET`, this batch's own task
+      description called for attaching it to BARCODE's form specifically).
+      17 new tests (`test/prtfBatchN.test.ts`), including a parametrized
+      check over the full eleven-keyword list, not just the subset README
+      originally named.
 - [ ] **Batch D — Real `BARCODE` symbol rendering:** actual bars via a
       barcode-generation library, once Batch C's parameters are wired up to
       read from.

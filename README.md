@@ -129,10 +129,11 @@ dependencies and status; don't let this list and that mapping drift apart.
   rendering library and is out of v1 scope. Height in whole print lines
   (the common case) is resolved exactly; a height given in inches/cm, or no
   height at all, falls back to a flagged default estimate. *(Batch D, depends
-  on Batch C)* The tool doesn't currently validate DDS's rule that `BARCODE`
-  can't be combined with `FONT`/`EDTCDE`/`EDTWRD`/`DATE`/`TIME`/`PAGNBR`/etc.
-  on the same field — that's a compile-time check `CRTPRTF` will still
-  catch. *(Batch N, depends on Batch C)*
+  on Batch C)* The properties panel now flags BARCODE's mutual-exclusion
+  rule — it can't be combined with `CHRSIZ`/`CHRID`/`CVTDTA`/`DATE`/
+  `EDTCDE`/`EDTWRD`/`FONT`/`HIGHLIGHT`/`PAGNBR`/`TIME`/`UNDERLINE` on the
+  same field — as a live-editor hint; `CRTPRTF` remains the actual
+  enforcement point. *(Batch N, depends on Batch C — done)*
 - Page segments, overlays, and other external AFP resource objects render
   as nothing (not yet stubbed as placeholder boxes) — see
   `docs/REQUIREMENTS.md` §8 for why this is a hard limit regardless of

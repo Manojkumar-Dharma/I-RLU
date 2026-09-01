@@ -89,7 +89,7 @@ vice versa.
 | K | Packaging (`.vsix`) | n/a (tooling) | **Done** | ideally after A–I land, but can be prepped early |
 | L | Real AFP font metrics | n/a (data) | Mostly done — FGID identification resolved; proportional widths now use real published Adobe AFM data (metric-compatible substitute fonts, not verified IBM FGID resource extraction); CDEFNT/FNTCHRSET/FONTNAME still unresolved, see REQUIREMENTS.md §9 | none |
 | M | ~~**Bug fix:** writer emits wrong continuation character when wrapping mid-token~~ | n/a (parser/writer correctness) | **Done** | none |
-| N | `BARCODE` mutual-exclusion validation | `BARCODE` (validation vs. `FONT`, `EDTCDE`, `EDTWRD`, `DATE`, `TIME`, `PAGNBR`, etc.) | In progress | **C** |
+| N | ~~`BARCODE` mutual-exclusion validation~~ | `BARCODE` (validation vs. `FONT`, `EDTCDE`, `EDTWRD`, `DATE`, `TIME`, `PAGNBR`, etc.) | **Done** | **C** |
 | O | Real AFP resource rendering (actual pixel content for page segments/overlays) | `PAGSEG`, `OVERLAY` (record-level) | Blocked — needs external resource files, see REQUIREMENTS.md §8 | **E** |
 | P | Add/rename/delete/reorder record formats from the designer | n/a (tooling/UI, not a keyword) | Not started | none |
 | Q | Copy/duplicate a field or constant | n/a (tooling/UI, not a keyword) | Not started | none |
@@ -614,7 +614,7 @@ different bug from Batch M (no continuation-character choice is involved
 since there's no token boundary to wrap at); flag as a new batch if a
 real-world source member surfaces this.
 
-### Batch N — BARCODE mutual-exclusion validation
+### Batch N — BARCODE mutual-exclusion validation [DONE]
 **Source:** README.md's "Known limitations" section — `BARCODE` can't be
 combined with `FONT`/`EDTCDE`/`EDTWRD`/`DATE`/`TIME`/`PAGNBR`/etc. on the
 same field per IBM's DDS reference; today the tool doesn't check this at
@@ -636,6 +636,53 @@ necessarily exhaustive).
 - Tests: a field with `BARCODE` + `FONT` (or another excluded keyword)
   triggers the validation hint; a field with `BARCODE` alone, or with
   non-conflicting keywords, doesn't.
+
+**[DONE] — Fixed as follows:**
+- Confirmed the exact excluded-keyword list against IBM's DDS reference for
+  BARCODE (https://www.ibm.com/docs/en/i/7.3.0?topic=b-barcode), which
+  states verbatim: "Do not specify BARCODE in the same field with the
+  CHRSIZ, CHRID, CVTDTA, DATE, EDTCDE, EDTWRD, FONT, HIGHLIGHT, PAGNBR,
+  TIME, or UNDERLINE keywords." README's own list
+  (FONT/EDTCDE/EDTWRD/DATE/TIME/PAGNBR/etc.) was indeed not exhaustive, as
+  warned above — missing CHRSIZ, CHRID, CVTDTA, HIGHLIGHT, and UNDERLINE.
+  README.md's own "Known limitations" entry updated to reflect the full
+  list and that this is now done.
+- Added `BARCODE_EXCLUDED_KEYWORDS` and `validateBarcodeExclusions(keywords)`
+  to `src/prtfBarcodeParams.js` (BARCODE's own module, alongside the
+  existing `validateBarcodeParams` range-hint function from Batch C) rather
+  than to `prtfKeywordValidation.js`'s generic `validateFieldKeywords` —
+  operates on a plain keyword array so it works for both fields and
+  constants (BARCODE is valid on both per Batch C), and DATE/TIME/PAGNBR are
+  checked even though they're conventionally constant-only in this tool's
+  own Batch A panel, since this operates on whatever's actually in the
+  parsed model (e.g. hand-edited raw DDS source), not just what this UI can
+  currently create. Returns `[]` (no hints) when BARCODE isn't present at
+  all, or when it's present with no conflicting keyword. Re-exported from
+  `prtfEngine.js`'s `mod` alongside Batch C's other BARCODE functions.
+- **Placement decision**: unlike `HIGHLIGHT`+`CDEFNT`/`FNTCHRSET` (which
+  surfaces its hint in the FONT panel — the "cause" — rather than next to
+  HIGHLIGHT's own checkbox), this batch's own instructions above explicitly
+  say to attach the check to BARCODE's own form (Batch C), not to whichever
+  of the up to eleven possible conflicting keywords' panels happens to be
+  the other side of a given conflict. Implemented in
+  `renderBarcodeSection` (`media/webviewClient.js`), rendered first inside
+  the form (before the bar-code-ID input), so it's the most prominent thing
+  a person sees when a conflict exists.
+- `test/prtfBatchN.test.ts`: BARCODE alone produces no hints; an excluded
+  keyword present without BARCODE produces no hints; BARCODE+FONT produces
+  exactly one hint naming FONT; a parametrized test over the full
+  eleven-keyword list (not just README's originally-named subset) confirms
+  each one individually triggers its own correctly-named hint;
+  non-conflicting keywords (COLOR, DFT) alongside BARCODE produce no hints;
+  multiple simultaneous conflicts each produce their own hint; confirmed
+  re-exported correctly from `PrtfEngine`'s public shape.
+- Verified end-to-end in the assembled webview script (see Batch R-adjacent
+  `test/webviewAssembly.test.ts` infrastructure) that
+  `window.PrtfEngine.validateBarcodeExclusions` resolves and works
+  correctly through the real inlined-module dependency chain, not just in
+  Node via `require()`.
+- Full suite: 212 tests, all passing (195 prior + 17 new); `tsc --noEmit`
+  clean.
 
 ### Batch O — Real AFP resource rendering (page segments/overlays as actual images)
 **Source:** `docs/REQUIREMENTS.md` §8's documented hard limit — page
