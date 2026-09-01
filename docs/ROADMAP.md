@@ -323,12 +323,15 @@ full detail, acceptance criteria, and file-level ownership per batch):
       metric/resource data behind them is Batch L's remaining blocker). A
       promising direction raised for closing this gap: extracting real
       font data from a connected IBM i (TrueType files under
-      `/QIBM/UserData/OS400/Fonts/TTF/`, or FOCA font character-set
-      metrics via host APIs) — worth pursuing, but the specific paths/API
-      names haven't been independently verified yet, so nothing's been
-      built against them. See `src/afpFontMetrics.js` for the full tables
-      and sourcing notes, and `docs/TASKS.md` Batch L for the canonical
-      status (update that file too if you pick this back up).
+      `/QIBM/ProdData/OS400/Fonts/TTFonts` for IBM-supplied fonts, or
+      `/QIBM/UserData/OS400/Fonts/TTFonts` for user-installed ones — now
+      verified against IBM's own documentation, correcting an earlier
+      version of this note that had the wrong path entirely; or FOCA font
+      character-set metrics via host APIs, whose specific API names still
+      haven't been independently verified) — worth pursuing; nothing's
+      been built against either yet. See `src/afpFontMetrics.js` for the
+      full tables and sourcing notes, and `docs/TASKS.md` Batch L for the
+      canonical status (update that file too if you pick this back up).
 - [ ] **Batch Q — Copy/duplicate a field or constant:** add/update/delete
       already exist for fields and constants, but not copy — cloning one
       with its keywords intact currently means re-entering everything by

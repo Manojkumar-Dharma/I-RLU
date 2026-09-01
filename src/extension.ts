@@ -425,6 +425,25 @@ async function compilePrtf(): Promise<void> {
     // Delegates to Code for i's "runCommand" API if that extension is
     // installed and the workspace has an active IBM i connection — same
     // integration point I-SDA uses for its "Compile Menu (CRTMNU)" command.
+    //
+    // Calls it the same documented way fetchReferencedFieldAttributes and
+    // fetchDatabaseFileFields above already do —
+    // `vscode.commands.executeCommand("code-for-ibmi.runCommand", {...})`
+    // — rather than `codeForI.exports.runCommand(...)` (a bare method call
+    // on the extension's raw exports object), which this function used to
+    // do. Code for i's own docs document the VS Code command as the stable
+    // public API for a third-party extension to run an arbitrary command
+    // string; the direct-call form on `exports` isn't the documented
+    // shape (the docs' own direct-call example goes through
+    // `instance.getConnection().runCommand(...)`, not a bare
+    // `exports.runCommand`), and having two different call patterns for
+    // the exact same operation in the same file was itself a sign
+    // something was off here specifically, not intentional variation.
+    //
+    // Also now checks instance.getConnection() up front, matching those
+    // same two functions, so an unconnected workspace gets the same clear
+    // "Not connected to an IBM i" message instead of whatever raw error
+    // an unconnected runCommand call happened to throw.
     const codeForI = vscode.extensions.getExtension("halcyontechltd.code-for-ibmi");
     if (!codeForI) {
       vscode.window.showErrorMessage(
@@ -433,11 +452,16 @@ async function compilePrtf(): Promise<void> {
       return;
     }
     if (!codeForI.isActive) await codeForI.activate();
-    const api = codeForI.exports;
+    const instance: any = codeForI.exports && codeForI.exports.instance;
+    const connection = instance && typeof instance.getConnection === "function" ? instance.getConnection() : undefined;
+    if (!connection) {
+      vscode.window.showErrorMessage("I-RLU: not connected to an IBM i - connect via the Code for IBM i panel first.");
+      return;
+    }
     const fileName = uri.path.split("/").pop() || "";
     const memberName = fileName.replace(/\.[^.]+$/, "").toUpperCase();
     const command = `CRTPRTF FILE(&CURLIB/${memberName}) SRCFILE(&CURLIB/QDDSSRC) SRCMBR(${memberName})`;
-    await api.runCommand({ command, environment: "ile" });
+    await vscode.commands.executeCommand("code-for-ibmi.runCommand", { command, environment: "ile" });
     vscode.window.showInformationMessage(`I-RLU: submitted CRTPRTF for ${memberName}. Check the Code for IBM i output panel for results.`);
   } catch (err: any) {
     vscode.window.showErrorMessage(`I-RLU: compile failed - ${err?.message || err}`);

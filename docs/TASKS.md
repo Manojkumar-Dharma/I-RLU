@@ -688,10 +688,23 @@ and `FONTNAME` (TrueType/OpenType by name) — none of these three are
 parsed for font resolution at all yet; they reference host/IFS font
 objects this tool has no access to. One direction raised for closing this
 gap: extracting real font data from a connected IBM i (TrueType files
-under `/QIBM/UserData/OS400/Fonts/TTF/`, or FOCA font character-set
-metrics via host APIs) — worth pursuing, but those specific paths/API
-names haven't been independently verified, so don't build against them
-without checking first (same discipline that caught the FGID 416 error).
+under `/QIBM/ProdData/OS400/Fonts/TTFonts` for IBM-supplied fonts, or
+`/QIBM/UserData/OS400/Fonts/TTFonts` for user-installed ones, accessible
+via Code for i's IFS browsing/file-read API; or FOCA font character-set
+metrics via host APIs) — worth pursuing. The TrueType path above is now
+independently verified (IBM's own documentation, corroborated by a
+working `FONTNAME` example from a real IBM i shop), correcting an earlier
+version of this note that had the wrong base directory and directory name
+(`/QIBM/UserData/OS400/Fonts/TTF/` — both wrong: missing the `ProdData`
+half entirely, and `TTF` rather than `TTFonts`). One nuance to keep in
+mind when actually implementing this: `FONTNAME` references a TrueType
+font by its full font name, not its filename, so resolving it to real
+glyph metrics means fetching the matching `.ttf` file's bytes and parsing
+its own `name` table to find the right one — filename matching alone
+won't reliably work. FOCA's own API names/paths still haven't been
+independently verified, so don't build against those specifically without
+checking first (same discipline that caught the FGID 416 error, and that
+caught this TTF path error too).
 
 Batch B's `FONT`/`CDEFNT`/`FNTCHRSET`/`FONTNAME` properties-panel editing
 work is unaffected by this and can proceed independently — it's about

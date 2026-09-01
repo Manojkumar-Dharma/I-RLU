@@ -136,9 +136,11 @@ byte-for-byte extraction of IBM's own FGID resource data (which this tool
 has no access to), so don't treat this as guaranteed pixel-identical to
 what a specific target printer actually renders. Extracting real metrics
 from a live IBM i (TrueType files under
-`/QIBM/UserData/OS400/Fonts/TTF/`, or FOCA font objects via host APIs) is a
-promising direction for later, but the specific paths/API names haven't
-been independently verified yet, so it's not implemented against unverified
+`/QIBM/ProdData/OS400/Fonts/TTFonts` for IBM-supplied fonts, or
+`/QIBM/UserData/OS400/Fonts/TTFonts` for user-installed ones — verified
+against IBM's own documentation — or FOCA font objects via host APIs) is a
+promising direction for later; FOCA's specific API names haven't been
+independently verified yet, so it's not implemented against unverified
 specifics — see `docs/ROADMAP.md`.
 
 ## Building and testing
