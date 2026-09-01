@@ -25,6 +25,10 @@ tested (see Features below for what's covered). Packaged as a `.vsix`
 - **Click-to-place and drag-to-reposition** for fields and constants, plus
   a properties panel for name, length, data type, decimals, usage, and
   line/position.
+- **Copy/duplicate a field or constant** — keywords included, not just
+  position/type — with a suggested non-colliding name for fields.
+  Same-record only for now; picks a position via the same click-to-place
+  flow as adding new.
 - **Record format management** — switch, add, rename, delete, and reorder
   record formats from the designer itself.
 - **Indicator-based conditioning** — toggle indicators to preview
@@ -188,9 +192,6 @@ kept here.
   one). Opening one and compiling shows a clear error rather than guessing
   a library/source-file target for it. **Permanent by design**, a real IBM
   i command limitation, not a gap in I-RLU.
-- No copy/duplicate for a field or constant in the properties panel —
-  cloning one with its keywords intact requires re-entering every
-  attribute by hand. *(Batch Q)*
 - Numeric edit-code/edit-word formatting is approximate-width only, with
   no live-system verification against a real `CRTPRTF` compile. **Explicit
   non-goal**, not a task — see Batch A's detail in `docs/TASKS.md`.

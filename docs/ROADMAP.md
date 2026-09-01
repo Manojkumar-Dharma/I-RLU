@@ -353,11 +353,25 @@ full detail, acceptance criteria, and file-level ownership per batch):
       built against them. See `src/afpFontMetrics.js` for the full tables
       and sourcing notes, and `docs/TASKS.md` Batch L for the canonical
       status (update that file too if you pick this back up).
-- [ ] **Batch Q — Copy/duplicate a field or constant:** add/update/delete
-      already exist for fields and constants, but not copy — cloning one
-      with its keywords intact currently means re-entering everything by
-      hand. No dependency — sits next to the existing Delete button and
-      reuses the add-field edit-kind shape. See `docs/TASKS.md` Batch Q.
+- [x] **Batch Q — Copy/duplicate a field or constant — done.** New "Copy"
+      button next to "Delete" (`renderEditPanel`) arms the same
+      click-to-place flow `+ Field`/`+ Constant` already use, landing on a
+      pre-filled `pendingNew` form (values AND keywords carried over —
+      `addField`/`addConstant` gained one new optional field,
+      `sourceKeywords`, rather than a whole new edit kind) so nothing is
+      written to the model until the person confirms a position. Fields get
+      a suggested non-colliding name (source name + lowest available
+      numeric suffix, truncated to DDS's 10-char limit) rather than
+      defaulting to the exact source name. Same-record copy only for v1;
+      cross-record copy flagged as a follow-up, not built (see
+      `docs/TASKS.md` Batch Q for why). Decision logic
+      (`suggestCopyName`/`buildCopyPendingNew`) lives in
+      `src/prtfWebviewLogic.js`, unit-testable without a DOM, alongside
+      this codebase's other pure webview helpers. 16 new tests
+      (`test/prtfBatchQ.test.ts`), including an explicit check that copying
+      never mutates the source entry (the "copy silently moves instead of
+      duplicates" failure mode this batch's own task description called
+      out to guard against).
 
 Each batch's keyword list, current model/parser/engine status
 (modeled/rendered/UI), and IBM-documented gotchas are detailed in

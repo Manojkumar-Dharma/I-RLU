@@ -92,7 +92,7 @@ vice versa.
 | N | ~~`BARCODE` mutual-exclusion validation~~ | `BARCODE` (validation vs. `FONT`, `EDTCDE`, `EDTWRD`, `DATE`, `TIME`, `PAGNBR`, etc.) | **Done** | **C** |
 | O | Real AFP resource rendering (actual pixel content for page segments/overlays) | `PAGSEG`, `OVERLAY` (record-level) | Blocked — needs external resource files, see REQUIREMENTS.md §8 | **E** |
 | P | ~~Add/rename/delete/reorder record formats from the designer~~ | n/a (tooling/UI, not a keyword) | **Done** | none |
-| Q | Copy/duplicate a field or constant | n/a (tooling/UI, not a keyword) | Not started | none |
+| Q | ~~Copy/duplicate a field or constant~~ | n/a (tooling/UI, not a keyword) | **Done** | none |
 | R | ~~**Bug fix:** `emitWithKeywords` collapses multiple consecutive internal spaces inside any quoted keyword literal~~ | n/a (parser/writer correctness) | **Done** | none |
 
 ## Batch detail
@@ -1073,7 +1073,7 @@ re-doing the field/constant properties panel.
 - Full suite: 263 tests, all passing (238 prior + 25 new in
   `test/prtfBatchP.test.ts`); `tsc --noEmit` clean.
 
-### Batch Q — Copy/duplicate a field or constant
+### Batch Q — Copy/duplicate a field or constant [DONE]
 **Source:** raised directly, same as Batch P — not from README/REQUIREMENTS'
 existing Known limitations lists. Add/update/delete already exist for
 fields and constants (`addField`, `addConstant`, `updateField`,
@@ -1085,45 +1085,64 @@ right-justified numeric columns all sharing the same `EDTCDE`/`COLOR`/
 re-adding every keyword by hand for each one, when 90% of it is identical to
 a field that already exists.
 
-**No dependency**: the natural home for this is right next to the existing
-"Delete" button in `renderEditPanel` (`media/webviewClient.js`), and the
-edit it sends can reuse `addField`'s/`addConstant`'s existing shape almost
-exactly — this doesn't need any other batch to land first.
-
-**Goal:**
-1. Add a "Copy" button next to "Delete" in the field/constant properties
-   panel (`renderEditPanel`). Clicking it should **not** immediately mutate
-   the model — route it through the same "pending new entry" flow
-   `state.pendingNew` already uses for add (see `renderPropsPanel`/
-   `renderNewEntryPanel`), pre-filled with the source entry's values
-   (length, data type, decimals, usage, literal text) so the user picks a
-   new line/position (and, for fields, confirms/changes the name, since DDS
-   field names must be unique per record) rather than the copy landing
-   silently on top of the original.
-2. **Keywords must come along with the copy** — this is the actual point
-   of the feature, not just duplicating position/type. A copy that drops
-   the source field's `EDTCDE`/`COLOR`/`FONT`/etc. keywords isn't saving
-   any real work over "+ Field". Extend the `addField`/`addConstant` edit
-   payload (or add a `copyField`/`copyConstant` edit kind, if that proves
-   cleaner than overloading `addField` with an optional source-keywords
-   array — decide based on how invasive the plain-`addField` payload change
-   would be) to carry the source entry's `keywords` array through.
-3. **Name collision**: for fields specifically, since DDS requires unique
-   field names within a record, the pre-filled name in the pending-new form
-   should not be the exact source name — default to something like the
-   source name with a numeric suffix (truncated to fit the 10-char DDS name
-   limit) and let the user override it, rather than silently failing or
-   silently renaming without telling them.
-4. **Scope for v1**: same-record copy only (copy `CUSTNBR` from `DETAIL`
-   to a new field also in `DETAIL`). Cross-record copy (copy a field from
-   `HEADER` into `DETAIL`) is a reasonable stretch goal once same-record
-   copy works, but don't block v1 on it — flag it as a follow-up note in
-   whichever commit lands this, rather than scope-creeping this batch.
-- Tests: round-trip a copied field/constant through the model/writer and
-  confirm its keywords match the source; confirm the pre-filled name
-  suggestion avoids colliding with the source name; confirm copying doesn't
-  mutate the source entry itself (a bug where copy silently *moves* instead
-  of duplicates is the obvious failure mode to guard against explicitly).
+**Delivered exactly per the goal below:**
+1. A "Copy" button sits next to "Delete" in the field/constant properties
+   panel (`renderEditPanel`, `media/webviewClient.js`). Clicking it does
+   **not** mutate the model — it arms the SAME `state.placing`/click-to-place
+   flow `+ Field`/`+ Constant` already use (via a new `state.copySource`,
+   consumed once the person clicks a spot on the page), landing on the
+   existing `state.pendingNew` form pre-filled with the source's values —
+   length/data-type/decimals/usage for fields, literal text for constants —
+   so the person picks a new line/position (and confirms/edits the
+   suggested name) before anything is written, exactly as specified.
+2. **Keywords come along with the copy.** Rather than a new `copyField`/
+   `copyConstant` edit kind, `addField`/`addConstant` gained one new
+   optional field, `sourceKeywords` (name/params pairs) — a minimally
+   invasive change to the existing payload shape, per the goal's own
+   "decide based on how invasive the plain-`addField` payload change would
+   be" instruction. `prtfEdits.ts`'s `addField`/`addConstant` case rebuilds
+   each pair into a full `Keyword` (`raw`/`sourceLineIndex` reconstructed
+   the same way `setRecordKeyword`/`setFieldKeyword` already do for a
+   freshly-set keyword) and gives the new entry that keywords array instead
+   of always starting from `[]`. A plain `+ Field`/`+ Constant` add (no
+   `sourceKeywords`) is completely unaffected — still gets `[]`.
+3. **Name collision, exactly as specified:** the pre-filled name for a
+   copied field is never the source's exact name — `suggestCopyName`
+   appends the lowest available numeric suffix (2, 3, 4, ...), truncating
+   the base name as needed to stay within DDS's 10-character limit, scoped
+   to field names already present in the CURRENT record (matching the v1
+   same-record-only scope in point 4). The person can freely edit the
+   suggestion before saving; it only has to avoid a silent collision, not
+   guess what they actually want to call it.
+4. **Scope, exactly as specified:** same-record copy only for v1.
+   Cross-record copy (copy a field from `HEADER` into `DETAIL`) is a
+   reasonable stretch goal once same-record copy works — flagged here as a
+   follow-up note, not built: it would need the target record to be
+   selectable as part of the copy flow (today's `state.pendingNew`/
+   `state.recordName` coupling assumes the new entry always lands in
+   whichever record is currently selected), and a field-name-collision
+   check against a DIFFERENT record's existing fields rather than the
+   current record's.
+- **Implementation split**, matching this codebase's established "pure
+  logic vs. DOM/vscode glue" pattern: `suggestCopyName` and
+  `buildCopyPendingNew` (the actual decision logic — what name to suggest,
+  which keywords transfer, building the pre-filled form shape) live in
+  `src/prtfWebviewLogic.js` (unit-testable without a DOM, alongside
+  `pixelToLineCol`/`paramsToText`/etc.), not inline in
+  `media/webviewClient.js`. `webviewClient.js` itself only wires up the
+  "Copy" button, the `state.copySource` arm/consume around the existing
+  click-to-place flow, and the pending-new form's pre-fill/labeling
+  ("Copy of field" vs. "New field", a "Keywords carried over from the
+  source: ..." hint line).
+- Tests: `test/prtfBatchQ.test.ts`, 16 tests — `suggestCopyName`'s numeric
+  suffixing and 10-char truncation, `buildCopyPendingNew` for both fields
+  and constants (including an explicit check that it never mutates the
+  source object passed in), and `applyEditToModel`'s `addField`/
+  `addConstant` handling of `sourceKeywords` — covering all three items
+  this batch's own task description called out as required: round-tripping
+  a copy's keywords through the model/writer, confirming the suggested
+  name avoids colliding with the source, and confirming copy never *moves*
+  (removes/renames) the source entry, only duplicates it.
 
 ### Batch R — Fix emitWithKeywords collapsing internal whitespace in quoted literals [DONE]
 **Found by:** `test/prtfBatchA.test.ts`, while adding a round-trip test for
