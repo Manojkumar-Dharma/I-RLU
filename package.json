@@ -3,7 +3,7 @@
   "displayName": "I-RLU — Interactive Report Layout Utility",
   "description": "Interactive, WYSIWYG designer for IBM i printer file DDS (RLU replacement), with live SCS/AFPDS page preview.",
   "version": "0.0.1",
-  "publisher": "Manojkumar-Dharma",
+  "publisher": "Manojkumar-IBMi",
   "icon": "images/icon.png",
   "license": "MIT",
   "repository": {
