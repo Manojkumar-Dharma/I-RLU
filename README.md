@@ -10,9 +10,58 @@ and architecture write-up this project is being built against, and
 
 ## Status
 
-Early skeleton — parser, writer, layout engine, and a working (if basic)
-webview designer are in place and tested. Not yet packaged or published;
-see the roadmap for what's next.
+Parser, writer, layout engine, and webview designer are all in place and
+tested (see Features below for what's covered). Packaged as a `.vsix`
+(Batch K); see the roadmap for what's still open.
+
+## Features
+
+- **Live, bidirectional page-grid designer** for `*PRTF` DDS source — a
+  webview renders each record format as a real page grid (derived from
+  `PAGSIZE`/CPI/LPI), stays in sync as the source changes, and writes every
+  edit straight back through the real parser/writer as a normal VS Code
+  `WorkspaceEdit` (undo/redo works normally; the DDS source stays the
+  single source of truth).
+- **Click-to-place and drag-to-reposition** for fields and constants, plus
+  a properties panel for name, length, data type, decimals, usage, and
+  line/position.
+- **Record format management** — switch, add, rename, delete, and reorder
+  record formats from the designer itself.
+- **Indicator-based conditioning** — toggle indicators to preview
+  conditioned fields/constants showing or hiding, with `INDTXT`
+  descriptions surfaced in the toggle panel.
+- **Keyword editing** via properties panels (not just raw text) across:
+  - General field/record keywords: `EDTCDE`, `EDTWRD`, `DATE`, `DATFMT`,
+    `DATSEP`, `TIME`, `TIMFMT`, `TIMSEP`, `DFT`, `MSGCON`, `COLOR`,
+    `HIGHLIGHT`, `UNDERLINE`, `PAGNBR`, `PRTQLTY`, `DRAWER`, `PAGRTT`.
+  - Font/sizing: `FONT` (FGID), `CDEFNT`, `FNTCHRSET`, `FONTNAME`,
+    `CHRSIZ`, `CHRID`, `CCSID` — including program-to-system-field
+    (`&NAME`) indirection via a shared toggle component.
+  - `BARCODE` — every documented parameter (symbology, height, bar format,
+    HRI position, asterisk, modifier, narrow bar width, ratio, 2D params),
+    real rendered bars (not a placeholder) for 13 linear symbologies, and
+    live mutual-exclusion validation hints.
+  - Print/finishing device keywords: `DUPLEX`, `FORCE`, `OUTBIN`, `ZFOLD`,
+    `STAPLE`, `INVMMAP`.
+  - Field-level data/edit keywords: `ALIAS`, `BLKFOLD`, `CVTDTA`, `DLTEDT`,
+    `FLTFIXDEC`, `FLTPCN`, `TRNSPY`, `TXTRTT`.
+  - AFP page-group/resource keywords: `OVERLAY`, `PAGSEG`, `AFPRSC`,
+    `STRPAGGRP`/`ENDPAGGRP`, `DOCIDXTAG`, `DTASTMCMD` — rendered as labeled
+    placeholders (see Known limitations) with full keyword editing.
+  - `REF`/`REFFLD` — "Reference a field" / "Use referenced values" toggle
+    pair, a "Browse fields…" picker over Code for i (record-format/field
+    list), and one-click "Resolve Referenced Field" to pull real
+    length/type/decimals from the referenced file.
+- **`LINE`/`BOX` geometry** (AFPDS-only, record-level) rendered to scale
+  from physical units via CPI/LPI and a configurable unit-of-measure
+  setting.
+- **Live validation hints**, non-blocking, for documented DDS restrictions
+  (e.g. `BARCODE` mutual exclusion, `ZFOLD`/`STAPLE` PSF-only, file-level
+  `SKIPA`/`SKIPB` on `*AFPDS`) — `CRTPRTF` remains the real enforcement
+  point.
+- **`CRTPRTF` compile command** via the Code for IBM i extension's
+  `runCommand` API.
+- **Packaged as a `.vsix`** — installable like any other VS Code extension.
 
 ## Project layout
 
@@ -105,48 +154,40 @@ npm run compile # compile + build webview template without running tests
 Each bullet below is tracked as a batch (or explicitly marked permanent) in
 `docs/TASKS.md`'s "Known limitations → task mapping" section — see there for
 dependencies and status; don't let this list and that mapping drift apart.
+Anything already resolved (keyword editing coverage, `BARCODE` symbol
+rendering, packaging, etc.) has been moved to Features above rather than
+kept here.
 
-- Editing through the webview covers move (drag), add, update, and delete
-  for fields and constants (via the properties panel), but not yet editing
-  arbitrary keywords directly (`LINE`/`BOX` params, etc.) — the
-  writer/engine already support arbitrary model edits, only the UI for
-  triggering keyword-level edits is missing for whatever isn't yet covered
-  by a landed batch. *(Batches A, B, C, E, F, G all done; remaining gaps
-  are keyword-specific — see docs/TASKS.md)*
-- `LINE`/`BOX`/`BARCODE` physical measurements are converted to the
-  preview's character grid via CPI/LPI and a unit-of-measure assumption.
-  **Important correction:** there is no `UOM` keyword in DDS source — unit
-  of measure is a parameter on the `CRTPRTF` command that compiles the
-  file, so I-RLU has no way to detect it by parsing source alone. It
-  defaults to inches (CRTPRTF's own default); set the
-  `i-rlu.unitOfMeasure` VS Code setting to `cm` if your shop's CRTPRTF
-  actually specifies `UOM(*CM)`. Getting this wrong scales every LINE/BOX/
-  BARCODE measurement by 2.54x in the wrong direction, so it's worth
-  checking if your printer files use those keywords. *(Done)* Separately,
-  LINE/BOX parameters given as program-to-system fields (`&NAME`) can't be
-  resolved without a live compile/run and are shown at a default position,
-  flagged in the preview. *(Permanent by design — not a task; see TASKS.md)*
-- `BARCODE` renders as a labeled placeholder box (symbology id + direction),
-  not the actual bar symbol — real symbol rendering needs a barcode
-  rendering library and is out of v1 scope. Height in whole print lines
-  (the common case) is resolved exactly; a height given in inches/cm, or no
-  height at all, falls back to a flagged default estimate. *(Batch D, depends
-  on Batch C)* The properties panel now flags BARCODE's mutual-exclusion
-  rule — it can't be combined with `CHRSIZ`/`CHRID`/`CVTDTA`/`DATE`/
-  `EDTCDE`/`EDTWRD`/`FONT`/`HIGHLIGHT`/`PAGNBR`/`TIME`/`UNDERLINE` on the
-  same field — as a live-editor hint; `CRTPRTF` remains the actual
-  enforcement point. *(Batch N, depends on Batch C — done)*
-- Page segments (`PAGSEG`), overlays (`OVERLAY`), and AFP resources
-  (`AFPRSC`) render as labeled placeholder boxes (resource name + keyword),
-  not their real pixel content — see `docs/REQUIREMENTS.md` §8 for why
-  that's a hard limit regardless of priority. `STRPAGGRP`/`ENDPAGGRP`/
-  `DOCIDXTAG`/`DTASTMCMD` (no page position of their own) are editable via
-  the same panel, summarized as a badge list. *(Batch E, done)* Real pixel
-  content is Batch O, blocked pending resource-file access.
+- `LINE`/`BOX`/`BARCODE` parameters given as a program-to-system field
+  (`&NAME`) can't be resolved to a real position/value without a live
+  compile/run — shown at a default position, flagged in the preview.
+  **Permanent by design**, not a task.
+- AFP font metrics remain an approximation for the proportional families
+  (Helvetica/Times New Roman): real, published Adobe AFM data for the
+  metric-compatible *substitute* fonts, not a verified byte-for-byte
+  extraction of IBM's own FGID resource data. `CDEFNT`, `FNTCHRSET`, and
+  `FONTNAME` (host/IFS font references) aren't resolved at all — see "AFPDS
+  font metrics" above. *(Batch L, mostly done)*
+- Real pixel content for page segments (`PAGSEG`), overlays (`OVERLAY`),
+  and other AFP resources isn't rendered — these show as labeled
+  placeholder boxes (resource name + keyword), since the actual
+  scanned-logo/form content lives in external IFS/host AFP objects this
+  tool has no access to. *(Batch O, blocked — needs external resource file
+  access; see `docs/REQUIREMENTS.md` §8)*
+- `REF`/`REFFLD` live resolution over Code for i (both the single-field
+  "Resolve Referenced Field" and the "Browse fields…" picker) is written
+  and unit-tested wherever the logic is pure, but the actual DSPFFD/SQL
+  network round-trip has not been exercised against a real connected IBM
+  i. *(Batch H, part 2)*
 - The `CRTPRTF` compile command assumes `*CURLIB/QDDSSRC` and derives the
-  member name from the file name; it doesn't yet let you pick
-  library/source-file/member explicitly. *(Batch J)*
-- No packaging/publishing (`.vsix`) yet. *(Batch K)*
+  member name from the file name — no library/source-file/member picker
+  yet. *(Batch J)*
+- No copy/duplicate for a field or constant in the properties panel —
+  cloning one with its keywords intact requires re-entering every
+  attribute by hand. *(Batch Q)*
+- Numeric edit-code/edit-word formatting is approximate-width only, with
+  no live-system verification against a real `CRTPRTF` compile. **Explicit
+  non-goal**, not a task — see Batch A's detail in `docs/TASKS.md`.
 
 ## License
 
