@@ -2,7 +2,7 @@
   "name": "i-rlu",
   "displayName": "I-RLU — Interactive Report Layout Utility",
   "description": "Interactive, WYSIWYG designer for IBM i printer file DDS (RLU replacement), with live SCS/AFPDS page preview.",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "publisher": "Manojkumar-IBMi",
   "icon": "images/icon.png",
   "license": "MIT",
@@ -47,6 +47,35 @@
         "title": "I-RLU: Set Compile Target (Library/Source File/Member)"
       }
     ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "i-rlu.openDesigner",
+          "when": "resourceExtname == .pf || resourceExtname == .prtf || resourceExtname == .rlu",
+          "group": "navigation@1"
+        }
+      ],
+      "editor/title/context": [
+        {
+          "command": "i-rlu.openDesigner",
+          "when": "resourceExtname == .pf || resourceExtname == .prtf || resourceExtname == .rlu",
+          "group": "navigation@1"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "i-rlu.openDesigner",
+          "when": "resourceExtname == .pf || resourceExtname == .prtf || resourceExtname == .rlu",
+          "group": "navigation@1"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "i-rlu.openDesigner",
+          "when": "resourceExtname == .pf || resourceExtname == .prtf || resourceExtname == .rlu"
+        }
+      ]
+    },
     "configuration": {
       "title": "I-RLU",
       "properties": {

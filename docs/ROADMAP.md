@@ -109,6 +109,24 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       the full writeup. No existing test depended on the old DOM shape;
       full suite still 272 tests, all passing.
 
+- [x] **Batch T — Fixed missing right-click "open designer" for
+      `.pf`/`.prtf`/`.rlu` files.** Two compounding gaps: `package.json`
+      had no `contributes.menus` entry at all for `i-rlu.openDesigner`
+      (so it was only ever reachable via the Command Palette), and the
+      command handler ignored any URI argument, reading only
+      `vscode.window.activeTextEditor` — so it would've done nothing on
+      an unfocused file even after adding a menu entry. Added
+      `explorer/context`/`editor/title/context`/`editor/title` menu
+      contributions scoped to the same three extensions the existing
+      `customEditors` selector already covers, and updated the handler to
+      use the passed-in URI when present. `activationEvents: []` was
+      checked and ruled out — implicit activation from `contributes` has
+      applied automatically since VS Code 1.74, well before this
+      project's `^1.85.0` minimum. See `docs/TASKS.md` Batch T for the
+      full root-cause writeup. No automated test coverage (this project
+      has no `vscode`-module mock); full suite still 300 tests, all
+      passing.
+
 ## Next up
 
 As of the RLU screen-capture review (`docs/KEYWORD-INVENTORY.md`), the

@@ -95,6 +95,7 @@ vice versa.
 | Q | ~~Copy/duplicate a field or constant~~ | n/a (tooling/UI, not a keyword) | **Done** | none |
 | R | ~~**Bug fix:** `emitWithKeywords` collapses multiple consecutive internal spaces inside any quoted keyword literal~~ | n/a (parser/writer correctness) | **Done** | none |
 | S | ~~**Bug fix:** wide record formats (e.g. 130/132-position) pushed the properties/keywords panels below the fold instead of alongside the report~~ | n/a (webview UI/CSS, `media/webviewClient.js` + `src/buildWebviewTemplate.js`) | **Done** | none |
+| T | ~~**Bug fix:** no right-click "open designer" option for `.pf`/`.prtf`/`.rlu` files~~ | n/a (packaging/activation, `package.json` + `src/extension.ts`) | **Done** | none |
 
 ## Batch detail
 
@@ -1318,6 +1319,71 @@ since it has no separate left-hand palette to show):
 - Full suite: 272 tests, all passing, no changes needed to any existing
   test — this batch only touched webview rendering/CSS, not any
   model/parser/writer/engine logic any existing test exercises.
+
+### Batch T — Fix missing right-click "open designer" for .prtf files [DONE]
+**Reported symptom:** no right-click option to launch the designer for a
+`.pf`/`.prtf`/`.rlu` file — the command existed in code but wasn't
+reachable that way.
+
+**Root cause, confirmed by reading `package.json` + `src/extension.ts`
+rather than assumed — two separate, compounding gaps:**
+1. `package.json`'s `contributes` had a `commands` entry for
+   `i-rlu.openDesigner` (so it *was* reachable via the Command Palette),
+   but **no `contributes.menus` entry at all** — nothing wired that
+   command into the Explorer right-click menu, the editor tab's
+   right-click menu, or the editor title-bar icon row. A command with no
+   menu contribution simply never appears outside the Command Palette;
+   this alone fully explains the reported symptom.
+2. Independently, `activate()`'s handler for `i-rlu.openDesigner` ignored
+   any argument passed to it and only ever read
+   `vscode.window.activeTextEditor` — so even after adding a menu entry,
+   right-clicking a `.prtf` file in the Explorer that ISN'T the currently
+   focused editor (the common case — that's exactly when someone reaches
+   for a right-click launcher instead of first opening the file) would
+   silently do nothing, since VS Code passes the right-clicked resource's
+   URI as the command's first argument, not as the active editor.
+
+**Ruled out:** `activationEvents: []` was NOT the cause — this project's
+`engines.vscode` is `^1.85.0`, well past the `^1.74.0` threshold where VS
+Code auto-generates implicit activation events (`onCommand:*`,
+`onCustomEditor:*`, etc.) straight from `contributes`, so an explicit
+empty array here is already correct, not a bug.
+
+**Fix:**
+- `package.json` gained a `contributes.menus` block adding
+  `i-rlu.openDesigner` to `explorer/context`, `editor/title/context`, and
+  `editor/title` (so it's reachable by right-clicking a `.pf`/`.prtf`/
+  `.rlu` file in the Explorer, right-clicking its editor tab, OR via a
+  title-bar icon on an already-open one), each scoped with
+  `"when": "resourceExtname == .pf || resourceExtname == .prtf ||
+  resourceExtname == .rlu"` — the same three extensions the existing
+  `customEditors` selector already covers (that selector's `member:/**`/
+  `streamfile:/**` scheme-prefixed patterns don't need a separate
+  `when` — `resourceExtname` matches on the path's extension regardless
+  of URI scheme). Also added a matching `commandPalette` entry with the
+  same `when`, so the Command Palette doesn't offer the command for
+  files it can't act on.
+- `src/extension.ts`'s `i-rlu.openDesigner` handler now takes an optional
+  `uri?: vscode.Uri` argument and uses it when present
+  (`uri ?? vscode.window.activeTextEditor?.document.uri`), falling back
+  to the active editor only when invoked with no argument (i.e. from the
+  Command Palette) — so both the new right-click paths and the
+  pre-existing Command Palette path work correctly.
+- **Not changed:** the `customEditors` contribution itself (already
+  correctly scoped, `"priority": "option"` so it doesn't force-override
+  a person's default `.pf`/`.prtf`/`.rlu` editor) and `i-rlu.compilePrtf`/
+  `i-rlu.setCompileTarget` (out of scope for this reported symptom — both
+  already work from the Command Palette against the active editor, which
+  is how they're meant to be invoked).
+- **No automated test coverage** — this project has no `vscode`-module
+  mock (unlike I-SDA's `src/test/vscode-mock.js`), and `extension.ts`'s
+  `activate()`/command-registration logic isn't exercised by
+  `node --test` for that reason; verified instead by re-running
+  `npm run compile` (clean) and packaging + manually confirming the
+  right-click entry appears and opens the designer for an unfocused
+  `.prtf` file in a real VS Code Extension Development Host. Full
+  existing suite (300 tests) still passes unchanged, since this batch
+  touched no code any existing test exercises.
 
 ## Adding a new batch
 

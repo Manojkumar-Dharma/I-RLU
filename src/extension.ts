@@ -596,12 +596,24 @@ async function setCompileTarget(context: vscode.ExtensionContext): Promise<void>
 export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(PrtfDesignerProvider.register(context));
   context.subscriptions.push(
-    vscode.commands.registerCommand("i-rlu.openDesigner", async () => {
-      const editor = vscode.window.activeTextEditor;
-      if (!editor) return;
+    // Accepts an optional `uri` — VS Code passes the right-clicked
+    // resource's URI as the first argument when this command is invoked
+    // from a context/title menu (see package.json's "menus" contribution
+    // below), which is NOT necessarily the active text editor's document
+    // (e.g. right-clicking an unopened .prtf file in the Explorer). Falls
+    // back to the active editor only when invoked with no argument at all
+    // (Command Palette). Previously this always read
+    // vscode.window.activeTextEditor and ignored any argument, so it did
+    // nothing when the target file wasn't already the focused editor —
+    // and there was no menu contribution wiring it into a right-click
+    // menu in the first place (see package.json), so in practice it was
+    // reachable only via the Command Palette.
+    vscode.commands.registerCommand("i-rlu.openDesigner", async (uri?: vscode.Uri) => {
+      const target = uri ?? vscode.window.activeTextEditor?.document.uri;
+      if (!target) return;
       await vscode.commands.executeCommand(
         "vscode.openWith",
-        editor.document.uri,
+        target,
         PrtfDesignerProvider.viewType
       );
     })
