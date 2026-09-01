@@ -55,6 +55,11 @@
     pendingNewRecord: false, // true: showing the inline "new record format" form
     renamingRecord: false, // true: showing the inline rename form for state.recordName
     confirmDeleteRecord: false, // true: showing the delete-confirmation row for state.recordName
+    // Batch Q — the source cell (a layout.cells entry) being copied, set
+    // by renderEditPanel's "Copy" button, armed together with `placing`
+    // (reusing the same "click to place" flow add already uses) and
+    // consumed by the page click handler once a placement is picked.
+    copySource: null,
   };
 
   let CELL_W = 8; // px per character column — recomputed per record from CPI via layout.grid (96/CPI); see render()
@@ -76,6 +81,26 @@
     return PrtfEngine.resolveLayout(state.model, state.recordName, state.indicators, state.uom);
   }
 
+  /**
+   * Layout shell: a full-width toolbar on top, then a two-column
+   * "workspace" row below it — a left .canvas-col holding the ruler+page
+   * report preview (independently HORIZONTALLY scrollable, since a wide
+   * record format — e.g. 130-position — can be much wider than the
+   * viewport) and a right, fixed-width .side-col holding every
+   * properties/keywords panel stacked one after another (independently
+   * VERTICALLY scrollable), same split I-SDA uses for its own
+   * aside/main/.props-panel three-column shell (see that project's
+   * src/buildWebviewTemplate.js) — just two columns here rather than
+   * three, since I-RLU has no separate left-hand palette to show. Before
+   * this, every panel below the toolbar (report preview AND every
+   * props/keywords panel) was appended to #root as one long vertical
+   * stack in normal block flow, so a wide report pushed the properties
+   * panels far below the fold instead of leaving them reachable
+   * alongside it. See the accompanying CSS in src/buildWebviewTemplate.js
+   * (.workspace/.canvas-col/.side-col) for the actual scroll containment —
+   * same "constrain the column's height, THEN overflow-y:auto on it
+   * actually works" fix I-SDA's own buildWebviewTemplate.js documents.
+   */
   function render() {
     const root = document.getElementById("root");
     root.innerHTML = "";
@@ -87,8 +112,12 @@
 
     root.appendChild(renderToolbar());
 
+    const workspace = el("div", { class: "workspace" });
+    const canvasCol = el("div", { class: "canvas-col" });
+    const sideCol = el("div", { class: "side-col" });
+
     const recordMgmtPanel = renderRecordManagementPanel();
-    if (recordMgmtPanel) root.appendChild(recordMgmtPanel);
+    if (recordMgmtPanel) canvasCol.appendChild(recordMgmtPanel);
 
     const layout = currentLayout();
     if (layout.grid) {
@@ -98,17 +127,37 @@
     const main = el("div", { class: "main" });
     main.appendChild(renderRuler(layout));
     main.appendChild(renderPage(layout));
-    root.appendChild(main);
+    canvasCol.appendChild(main);
+
+    if (layout.skippedByIndicator && layout.skippedByIndicator.length) {
+      canvasCol.appendChild(
+        el("div", { class: "note" }, ["Hidden by indicator state: " + layout.skippedByIndicator.join(", ")])
+      );
+    }
+    if ((layout.draws || []).some((d) => d.approximate)) {
+      canvasCol.appendChild(
+        el("div", { class: "note" }, [
+          "One or more LINE/BOX positions depend on a program-to-system field and are shown at their default position — actual placement is set at print time.",
+        ])
+      );
+    }
+    if ((layout.resources || []).some((r) => r.approximate)) {
+      canvasCol.appendChild(
+        el("div", { class: "note" }, [
+          "One or more OVERLAY/PAGSEG/AFPRSC positions depend on a program-to-system field and are shown at their default position — actual placement is set at print time.",
+        ])
+      );
+    }
 
     const panel = renderPropsPanel(layout);
-    if (panel) root.appendChild(panel);
+    if (panel) sideCol.appendChild(panel);
 
     const record = state.model.records.find((r) => r.name === state.recordName);
-    root.appendChild(renderRecordKeywordsPanel(record));
-    root.appendChild(renderGeneralRecordKeywordsPanel(record));
+    sideCol.appendChild(renderRecordKeywordsPanel(record));
+    sideCol.appendChild(renderGeneralRecordKeywordsPanel(record));
     const indTextPanel = renderIndicatorTextPanel(record);
-    if (indTextPanel) root.appendChild(indTextPanel);
-    root.appendChild(
+    if (indTextPanel) sideCol.appendChild(indTextPanel);
+    sideCol.appendChild(
       renderFontSizingPanel(
         record.keywords,
         (name, params) => vscode.postMessage({ type: "edit", edit: { kind: "setRecordKeyword", recordName: record.name, name, params } }),
@@ -116,27 +165,11 @@
         record.name + " (record)"
       )
     );
-    root.appendChild(renderPageGroupPanel(record, layout));
+    sideCol.appendChild(renderPageGroupPanel(record, layout));
 
-    if (layout.skippedByIndicator && layout.skippedByIndicator.length) {
-      root.appendChild(
-        el("div", { class: "note" }, ["Hidden by indicator state: " + layout.skippedByIndicator.join(", ")])
-      );
-    }
-    if ((layout.draws || []).some((d) => d.approximate)) {
-      root.appendChild(
-        el("div", { class: "note" }, [
-          "One or more LINE/BOX positions depend on a program-to-system field and are shown at their default position — actual placement is set at print time.",
-        ])
-      );
-    }
-    if ((layout.resources || []).some((r) => r.approximate)) {
-      root.appendChild(
-        el("div", { class: "note" }, [
-          "One or more OVERLAY/PAGSEG/AFPRSC positions depend on a program-to-system field and are shown at their default position — actual placement is set at print time.",
-        ])
-      );
-    }
+    workspace.appendChild(canvasCol);
+    workspace.appendChild(sideCol);
+    root.appendChild(workspace);
   }
 
   /**
@@ -153,6 +186,13 @@
     state.pendingNewRecord = false;
     state.renamingRecord = false;
     state.confirmDeleteRecord = false;
+    // Batch Q (docs/TASKS.md) — the field/constant being copied, set by
+    // renderEditPanel's "Copy" button and consumed by the page click
+    // handler once the person picks where to place the copy (see
+    // renderPage). Cleared here alongside `placing`/`pendingNew` so
+    // switching to any other toolbar action (or reselecting a cell)
+    // cancels a copy-in-progress the same way it cancels a plain add.
+    state.copySource = null;
   }
 
   function renderToolbar() {
@@ -240,7 +280,8 @@
     toolbar.appendChild(addFieldBtn);
     toolbar.appendChild(addConstBtn);
     if (state.placing) {
-      toolbar.appendChild(el("span", { class: "hint" }, ["Click on the page to place the new " + state.placing + "."]));
+      const what = state.copySource ? "the copy" : "the new " + state.placing;
+      toolbar.appendChild(el("span", { class: "hint" }, ["Click on the page to place " + what + "."]));
     }
 
     const indicators = PrtfEngine.collectIndicators(record);
@@ -485,8 +526,11 @@
     page.addEventListener("click", (ev) => {
       if (state.placing) {
         const { line, position } = lineColFromEvent(ev, page);
-        state.pendingNew = { kind: state.placing, line, position };
+        state.pendingNew = state.copySource
+          ? buildCopyPendingNew(state.placing, line, position, state.copySource, layout)
+          : { kind: state.placing, line, position };
         state.placing = null;
+        state.copySource = null;
         state.selectedId = null;
         render();
       } else {
@@ -764,7 +808,7 @@
     if (state.pendingNew) return renderNewEntryPanel(state.pendingNew);
     if (state.selectedId) {
       const cell = layout.cells.find((c) => c.id === state.selectedId);
-      if (cell) return renderEditPanel(cell);
+      if (cell) return renderEditPanel(cell, layout);
     }
     return null;
   }
@@ -873,40 +917,66 @@
     return panel;
   }
 
+  /**
+   * Batch Q (docs/TASKS.md) — the pure decision logic (name suggestion,
+   * which keywords carry over, defaulting to same-record scope) lives in
+   * PrtfWebviewLogic (src/prtfWebviewLogic.js) so it's unit testable
+   * without a DOM, same split as pixelToLineCol/paramsToText/etc. above.
+   */
+  function suggestCopyName(sourceName, existingNames) {
+    return PrtfWebviewLogic.suggestCopyName(sourceName, existingNames);
+  }
+  function buildCopyPendingNew(kind, line, position, source, layout) {
+    const existingFieldNames = new Set(layout.cells.filter((c) => c.kind === "field").map((c) => c.name));
+    return PrtfWebviewLogic.buildCopyPendingNew(kind, line, position, source, existingFieldNames);
+  }
+
   function renderNewEntryPanel(pending) {
     const panel = el("div", { class: "props" });
-    panel.appendChild(el("h4", {}, ["New " + pending.kind + " at line " + pending.line + ", position " + pending.position]));
+    const isCopy = !!(pending.sourceKeywords && pending.sourceKeywords.length) || pending.name !== undefined || pending.literal !== undefined;
+    panel.appendChild(
+      el("h4", {}, [
+        (isCopy ? "Copy of " + pending.kind : "New " + pending.kind) + " at line " + pending.line + ", position " + pending.position,
+      ])
+    );
+    if (pending.sourceKeywords && pending.sourceKeywords.length) {
+      panel.appendChild(
+        el("div", { class: "hint" }, [
+          "Keywords carried over from the source: " + pending.sourceKeywords.map((k) => k.name).join(", ") + ".",
+        ])
+      );
+    }
 
     let nameInput, litInput, lenInput, typeSelect, decInput, usageSelect;
 
     if (pending.kind === "field") {
-      const nameRow = labeledInput("Name", { type: "text", maxlength: "10" });
+      const nameRow = labeledInput("Name", { type: "text", maxlength: "10", value: pending.name || "" });
       nameInput = nameRow.input;
       panel.appendChild(nameRow.row);
 
-      const lenRow = labeledInput("Length", { type: "number", min: "1", value: "10" });
+      const lenRow = labeledInput("Length", { type: "number", min: "1", value: String(pending.length || 10) });
       lenInput = lenRow.input;
       panel.appendChild(lenRow.row);
 
-      const typeRow = labeledSelect("Data type", ["A", "S", "P", "B"], "A");
+      const typeRow = labeledSelect("Data type", ["A", "S", "P", "B"], pending.dataType || "A");
       typeSelect = typeRow.input;
       panel.appendChild(typeRow.row);
 
-      const decRow = labeledInput("Decimals", { type: "number", min: "0", value: "0" });
+      const decRow = labeledInput("Decimals", { type: "number", min: "0", value: String(pending.decimalPositions || 0) });
       decInput = decRow.input;
       panel.appendChild(decRow.row);
 
-      const usageRow = labeledSelect("Usage", ["O", "I", "B", "H"], "O");
+      const usageRow = labeledSelect("Usage", ["O", "I", "B", "H"], pending.usage || "O");
       usageSelect = usageRow.input;
       panel.appendChild(usageRow.row);
     } else {
-      const litRow = labeledInput("Text", { type: "text" });
+      const litRow = labeledInput("Text", { type: "text", value: pending.literal || "" });
       litInput = litRow.input;
       panel.appendChild(litRow.row);
     }
 
     const btnRow = el("div", { class: "prop-buttons" });
-    const saveBtn = el("button", { class: "btn primary" }, ["Add"]);
+    const saveBtn = el("button", { class: "btn primary" }, [isCopy ? "Add copy" : "Add"]);
     saveBtn.addEventListener("click", () => {
       if (pending.kind === "field") {
         vscode.postMessage({
@@ -921,6 +991,7 @@
             dataType: typeSelect.value,
             decimalPositions: typeSelect.value === "A" ? undefined : Number(decInput.value) || 0,
             usage: usageSelect.value,
+            sourceKeywords: pending.sourceKeywords,
           },
         });
       } else {
@@ -932,6 +1003,7 @@
             line: pending.line,
             position: pending.position,
             literal: litInput.value || "",
+            sourceKeywords: pending.sourceKeywords,
           },
         });
       }
@@ -1443,7 +1515,7 @@
     return section;
   }
 
-  function renderEditPanel(cell) {
+  function renderEditPanel(cell, layout) {
     const panel = el("div", { class: "props" });
     panel.appendChild(el("h4", {}, [cell.kind === "field" ? "Field: " + cell.name : "Constant"]));
 
@@ -1588,6 +1660,23 @@
       vscode.postMessage({ type: "edit", edit: { kind: "delete", id: cell.id } });
       state.selectedId = null;
     });
+    // Batch Q (docs/TASKS.md) — copies this field/constant, keywords
+    // included, to a new position the person picks by clicking the page
+    // (reuses the same "click to place" flow `+ Field`/`+ Constant`
+    // already use — see the page click handler in renderPage and
+    // buildCopyPendingNew above). Deliberately does NOT touch the model
+    // yet: routes through state.pendingNew the same as a plain add, so
+    // the person confirms/edits the suggested name (and everything else)
+    // before anything is actually written — this is why clicking Copy
+    // alone can never mutate or duplicate the source entry by itself.
+    const copyBtn = el("button", { class: "btn" }, ["Copy"]);
+    copyBtn.addEventListener("click", () => {
+      const source = cell;
+      clearPendingUiState();
+      state.copySource = source;
+      state.placing = source.kind;
+      render();
+    });
     const cancelBtn = el("button", { class: "btn" }, ["Close"]);
     cancelBtn.addEventListener("click", () => {
       state.selectedId = null;
@@ -1595,6 +1684,7 @@
     });
     btnRow.appendChild(saveBtn);
     btnRow.appendChild(deleteBtn);
+    btnRow.appendChild(copyBtn);
     btnRow.appendChild(cancelBtn);
     panel.appendChild(btnRow);
     return panel;

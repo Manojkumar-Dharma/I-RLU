@@ -65,7 +65,7 @@ vice versa.
 | AFPDS real font/graphics rendering broadly (vs. char-grid-with-keyword-labels) | **Permanent for v1, revisit only if scope changes** | Not a task on its own — the actionable slices of this are Batch **L** (font metrics) and Batch **O** (resource pixel content) above; true full-graphics AFPDS WYSIWYG beyond those two remains explicitly out of scope per REQUIREMENTS.md §6/§8. |
 | Numeric edit-code/edit-word formatting is approximate-width only, no live-system verification | **Permanent, explicit non-goal** | Not a task — Batch A's detail section explicitly excludes building a full edit-code formatter, to avoid scope creep. |
 | `REF`/`REFFLD` doesn't resolve real type/length/decimals from the referenced file | Part 1 done (UI shape + resolution logic); part 2 (live fetch) unverified, needs a real IBM i | Batch **H** |
-| `CRTPRTF` assumes `*CURLIB/QDDSSRC`, no library/source-file/member picker | Actionable | Batch **J** |
+| `CRTPRTF` assumes `*CURLIB/QDDSSRC`, no library/source-file/member picker | **Done** | Was Batch **J** |
 | No packaging (`.vsix`) | Actionable | Batch **K** |
 | Font resource access unresolved (§9) — real AFP font metrics vs. placeholder | **Mostly done** — FGID identification verified/resolved, proportional widths now use real Adobe AFM data for substitute fonts; CDEFNT/FNTCHRSET/FONTNAME resolution still blocked | Batch **L** |
 | The record-format `<select>` dropdown (toolbar) only switches between record formats already present in the source — no way to add, rename, delete, or reorder a record format from the designer itself | Actionable, previously untracked (this isn't in README/REQUIREMENTS' Known-limitations lists at all — raised separately, added here for the same tracking discipline) | New **Batch P** (no dependency — the record `<select>` and `applyEdit`'s edit-kind dispatch already exist to build on) |
@@ -85,15 +85,17 @@ vice versa.
 | G | Field-level data/edit keywords + indicator text | `ALIAS`, `BLKFOLD`, `CVTDTA`, `DLTEDT`, `FLTFIXDEC`, `FLTPCN`, `TRNSPY`, `TXTRTT`, `INDTXT` | **Done** | none |
 | H | `REF`/`REFFLD` resolution via Code for i | `REF`, `REFFLD` | Part 1 (UI shape + pure resolution logic) **and the field/record-format picker done**; part 2 (live Code for i round-trip) written but unverified — needs a real connected IBM i | none (needs a live/mocked Code for i connection for full completion — can land the UI shape without it) |
 | I | ~~`UOM` modeling~~ **done elsewhere** (see `i-rlu.unitOfMeasure` setting, `docs/ROADMAP.md`) + file-level SKIPA/SKIPB *AFPDS validation | `SKIPA`, `SKIPB` (validation only) | **Done** (validation landed as part of Batch F — see `prtfEngine.js`'s `validateFileLevelKeywords`) | none |
-| J | Compile command: library/source-file/member picker | n/a (tooling) | Not started | none |
+| J | ~~Compile command: library/source-file/member picker~~ | n/a (tooling) | **Done** | none |
 | K | Packaging (`.vsix`) | n/a (tooling) | **Done** | ideally after A–I land, but can be prepped early |
 | L | Real AFP font metrics | n/a (data) | Mostly done — FGID identification resolved; proportional widths now use real published Adobe AFM data (metric-compatible substitute fonts, not verified IBM FGID resource extraction); CDEFNT/FNTCHRSET/FONTNAME still unresolved, see REQUIREMENTS.md §9 | none |
 | M | ~~**Bug fix:** writer emits wrong continuation character when wrapping mid-token~~ | n/a (parser/writer correctness) | **Done** | none |
 | N | ~~`BARCODE` mutual-exclusion validation~~ | `BARCODE` (validation vs. `FONT`, `EDTCDE`, `EDTWRD`, `DATE`, `TIME`, `PAGNBR`, etc.) | **Done** | **C** |
 | O | Real AFP resource rendering (actual pixel content for page segments/overlays) | `PAGSEG`, `OVERLAY` (record-level) | Blocked — needs external resource files, see REQUIREMENTS.md §8 | **E** |
 | P | ~~Add/rename/delete/reorder record formats from the designer~~ | n/a (tooling/UI, not a keyword) | **Done** | none |
-| Q | Copy/duplicate a field or constant | n/a (tooling/UI, not a keyword) | Not started | none |
+| Q | ~~Copy/duplicate a field or constant~~ | n/a (tooling/UI, not a keyword) | **Done** | none |
 | R | ~~**Bug fix:** `emitWithKeywords` collapses multiple consecutive internal spaces inside any quoted keyword literal~~ | n/a (parser/writer correctness) | **Done** | none |
+| S | ~~**Bug fix:** wide record formats (e.g. 130/132-position) pushed the properties/keywords panels below the fold instead of alongside the report~~ | n/a (webview UI/CSS, `media/webviewClient.js` + `src/buildWebviewTemplate.js`) | **Done** | none |
+| T | ~~**Bug fix:** no right-click "open designer" option for `.pf`/`.prtf`/`.rlu` files~~ | n/a (packaging/activation, `package.json` + `src/extension.ts`) | **Done** | none |
 
 ## Batch detail
 
@@ -600,13 +602,80 @@ a parallel session. Only the second piece below is still open:
 combination isn't allowed (KEYWORD-INVENTORY §1/§2).
 - Test: a validation test for the file-level SKIPA/SKIPB + AFPDS case.
 
-### Batch J — Compile command polish
+### Batch J — Compile command polish [DONE]
 **Goal:** let the user pick library/source-file/member for `CRTPRTF` instead
 of assuming `*CURLIB/QDDSSRC` derived from the file name. Straightforward
 `src/extension.ts` change plus whatever quick-pick UI matches the pattern
 already used for the compile command's other prompts (check I-SDA's
 `CRTMNU` command implementation for the equivalent picker pattern, since
 `docs/REQUIREMENTS.md` explicitly models this compile command on I-SDA's).
+
+**Two real, compile-breaking bugs found and fixed while doing the picker
+work, not just the missing picker itself:**
+1. **`codeForI.exports.runCommand(...)` was never a valid call.** Checked
+   I-SDA's own `getConnectedCodeForIBMi()` helper and Code for i's official
+   docs (codefori.github.io/docs/dev/examples/) — `runCommand` lives on
+   `exports.instance.getConnection()`, not on the extension's top-level
+   `exports` object. The pre-Batch-J code would have thrown "not a
+   function" on the very first compile attempt, connected or not — this
+   wasn't a missing picker, compiling was broken outright. Fixed by porting
+   I-SDA's `getConnectedCodeForIBMi()` pattern (`getCodeForIConnection` in
+   `extension.ts`).
+2. **`&CURLIB` was embedded literally inside the CRTPRTF command text**
+   (`FILE(&CURLIB/${memberName})`). `&CURLIB`/`&LIBL` are real, but only as
+   *separate* `env` object keys passed alongside `command` to `runCommand`
+   (confirmed against Code for i's own docs) — inline in the command
+   string itself, `&CURLIB` is a CL *variable* reference with no meaning in
+   a raw command string, not the special-value syntax it was standing in
+   for. The correct inline special value, confirmed against IBM's own
+   CRTPRTF reference, is `*CURLIB`.
+3. **`REPLACE` was never specified**, and CRTPRTF's own documented default
+   is `REPLACE(*NO)` — so recompiling the very same file a second time
+   would fail with CPF7302 every time, not just on a genuine name
+   collision. Now specifies `REPLACE(*YES)` explicitly, since "recompile
+   the file I'm iterating on" is the only realistic use of this command.
+
+**Picker design, verified against IBM's CRTPRTF reference
+(`ibm.com/docs/ssw_ibm_i_72/cl/crtprtf.htm`) rather than assumed:**
+- **`member:` URIs (opened directly from Code for i) need no prompt at
+  all** — the URI itself (`/LIBRARY/SOURCEFILE/MEMBERNAME.ext`) already
+  names the exact library/source-file/member; parsing it (ported from
+  I-SDA's own `parseMemberUri`) is strictly more accurate than asking the
+  person to re-enter what's already known.
+- **Local files get prompted once, then cached** per document
+  (`context.workspaceState`, keyed by the document's URI string) — so
+  repeat compiles of the same file don't re-prompt every time, while still
+  matching I-SDA's own `createRemoteMember` prompt shape (plain
+  `showInputBox`es with placeholder defaults, not a live library/member
+  browser — Code for i doesn't expose an API for listing libraries/members
+  that this project has confirmed). New command **`i-rlu.setCompileTarget`**
+  lets the person change a cached target without waiting for the next
+  compile to prompt.
+- **`FILE`'s library default (`*CURLIB`) and `SRCFILE`'s library default
+  (`*LIBL`) are NOT the same** — confirmed against IBM's own per-parameter
+  qualifier defaults — so a blank library in the picker can't collapse to
+  one shared "*CURLIB when blank" rule; `buildCrtprtfCommand` applies each
+  parameter's own correct default.
+- **`streamfile:` (IFS) sources get an explicit, accurate error, not a
+  guess.** Checked IBM's full CRTPRTF parameter table end to end — there is
+  no `SRCSTMF`-equivalent parameter (unlike CRTBNDRPG/CRTBNDCL/etc., which
+  do have one); `TOSTMF` is the command's *output* destination, unrelated.
+  This is a genuine IBM i command limitation, not a gap in I-RLU's picker,
+  so it's surfaced as such rather than silently deriving a nonsensical
+  library/file for it.
+- New pure module `src/prtfCompileTarget.ts` (no `vscode` import) holds all
+  of the above's actual decision logic — URI parsing, name derivation,
+  IBM-i-object-name validation (1-10 chars, starts with a letter/$/#/@),
+  and `buildCrtprtfCommand` — so it's unit-testable without a real VS Code
+  host, the same "pure logic extension.ts calls into" split this project
+  already uses for `prtfEdits.ts` and Batch H's own resolution logic.
+  `extension.ts` keeps only the `vscode.window.showInputBox`/
+  `workspaceState`/`runCommand` glue around it.
+- Tests: `test/prtfCompileTarget.test.ts`, 14 tests — `member:` URI
+  parsing (including a malformed/too-short URI returning null rather than
+  throwing, and an iASP-qualified 4-segment path), name derivation/
+  validation, and `buildCrtprtfCommand` covering both bug fixes above plus
+  the differing FILE/SRCFILE blank-library defaults.
 
 ### Batch K — Packaging [DONE]
 **Goal:** `vsce package` producing a real `.vsix`. Mostly checking
@@ -1019,7 +1088,7 @@ re-doing the field/constant properties panel.
 - Full suite: 263 tests, all passing (238 prior + 25 new in
   `test/prtfBatchP.test.ts`); `tsc --noEmit` clean.
 
-### Batch Q — Copy/duplicate a field or constant
+### Batch Q — Copy/duplicate a field or constant [DONE]
 **Source:** raised directly, same as Batch P — not from README/REQUIREMENTS'
 existing Known limitations lists. Add/update/delete already exist for
 fields and constants (`addField`, `addConstant`, `updateField`,
@@ -1031,45 +1100,64 @@ right-justified numeric columns all sharing the same `EDTCDE`/`COLOR`/
 re-adding every keyword by hand for each one, when 90% of it is identical to
 a field that already exists.
 
-**No dependency**: the natural home for this is right next to the existing
-"Delete" button in `renderEditPanel` (`media/webviewClient.js`), and the
-edit it sends can reuse `addField`'s/`addConstant`'s existing shape almost
-exactly — this doesn't need any other batch to land first.
-
-**Goal:**
-1. Add a "Copy" button next to "Delete" in the field/constant properties
-   panel (`renderEditPanel`). Clicking it should **not** immediately mutate
-   the model — route it through the same "pending new entry" flow
-   `state.pendingNew` already uses for add (see `renderPropsPanel`/
-   `renderNewEntryPanel`), pre-filled with the source entry's values
-   (length, data type, decimals, usage, literal text) so the user picks a
-   new line/position (and, for fields, confirms/changes the name, since DDS
-   field names must be unique per record) rather than the copy landing
-   silently on top of the original.
-2. **Keywords must come along with the copy** — this is the actual point
-   of the feature, not just duplicating position/type. A copy that drops
-   the source field's `EDTCDE`/`COLOR`/`FONT`/etc. keywords isn't saving
-   any real work over "+ Field". Extend the `addField`/`addConstant` edit
-   payload (or add a `copyField`/`copyConstant` edit kind, if that proves
-   cleaner than overloading `addField` with an optional source-keywords
-   array — decide based on how invasive the plain-`addField` payload change
-   would be) to carry the source entry's `keywords` array through.
-3. **Name collision**: for fields specifically, since DDS requires unique
-   field names within a record, the pre-filled name in the pending-new form
-   should not be the exact source name — default to something like the
-   source name with a numeric suffix (truncated to fit the 10-char DDS name
-   limit) and let the user override it, rather than silently failing or
-   silently renaming without telling them.
-4. **Scope for v1**: same-record copy only (copy `CUSTNBR` from `DETAIL`
-   to a new field also in `DETAIL`). Cross-record copy (copy a field from
-   `HEADER` into `DETAIL`) is a reasonable stretch goal once same-record
-   copy works, but don't block v1 on it — flag it as a follow-up note in
-   whichever commit lands this, rather than scope-creeping this batch.
-- Tests: round-trip a copied field/constant through the model/writer and
-  confirm its keywords match the source; confirm the pre-filled name
-  suggestion avoids colliding with the source name; confirm copying doesn't
-  mutate the source entry itself (a bug where copy silently *moves* instead
-  of duplicates is the obvious failure mode to guard against explicitly).
+**Delivered exactly per the goal below:**
+1. A "Copy" button sits next to "Delete" in the field/constant properties
+   panel (`renderEditPanel`, `media/webviewClient.js`). Clicking it does
+   **not** mutate the model — it arms the SAME `state.placing`/click-to-place
+   flow `+ Field`/`+ Constant` already use (via a new `state.copySource`,
+   consumed once the person clicks a spot on the page), landing on the
+   existing `state.pendingNew` form pre-filled with the source's values —
+   length/data-type/decimals/usage for fields, literal text for constants —
+   so the person picks a new line/position (and confirms/edits the
+   suggested name) before anything is written, exactly as specified.
+2. **Keywords come along with the copy.** Rather than a new `copyField`/
+   `copyConstant` edit kind, `addField`/`addConstant` gained one new
+   optional field, `sourceKeywords` (name/params pairs) — a minimally
+   invasive change to the existing payload shape, per the goal's own
+   "decide based on how invasive the plain-`addField` payload change would
+   be" instruction. `prtfEdits.ts`'s `addField`/`addConstant` case rebuilds
+   each pair into a full `Keyword` (`raw`/`sourceLineIndex` reconstructed
+   the same way `setRecordKeyword`/`setFieldKeyword` already do for a
+   freshly-set keyword) and gives the new entry that keywords array instead
+   of always starting from `[]`. A plain `+ Field`/`+ Constant` add (no
+   `sourceKeywords`) is completely unaffected — still gets `[]`.
+3. **Name collision, exactly as specified:** the pre-filled name for a
+   copied field is never the source's exact name — `suggestCopyName`
+   appends the lowest available numeric suffix (2, 3, 4, ...), truncating
+   the base name as needed to stay within DDS's 10-character limit, scoped
+   to field names already present in the CURRENT record (matching the v1
+   same-record-only scope in point 4). The person can freely edit the
+   suggestion before saving; it only has to avoid a silent collision, not
+   guess what they actually want to call it.
+4. **Scope, exactly as specified:** same-record copy only for v1.
+   Cross-record copy (copy a field from `HEADER` into `DETAIL`) is a
+   reasonable stretch goal once same-record copy works — flagged here as a
+   follow-up note, not built: it would need the target record to be
+   selectable as part of the copy flow (today's `state.pendingNew`/
+   `state.recordName` coupling assumes the new entry always lands in
+   whichever record is currently selected), and a field-name-collision
+   check against a DIFFERENT record's existing fields rather than the
+   current record's.
+- **Implementation split**, matching this codebase's established "pure
+  logic vs. DOM/vscode glue" pattern: `suggestCopyName` and
+  `buildCopyPendingNew` (the actual decision logic — what name to suggest,
+  which keywords transfer, building the pre-filled form shape) live in
+  `src/prtfWebviewLogic.js` (unit-testable without a DOM, alongside
+  `pixelToLineCol`/`paramsToText`/etc.), not inline in
+  `media/webviewClient.js`. `webviewClient.js` itself only wires up the
+  "Copy" button, the `state.copySource` arm/consume around the existing
+  click-to-place flow, and the pending-new form's pre-fill/labeling
+  ("Copy of field" vs. "New field", a "Keywords carried over from the
+  source: ..." hint line).
+- Tests: `test/prtfBatchQ.test.ts`, 16 tests — `suggestCopyName`'s numeric
+  suffixing and 10-char truncation, `buildCopyPendingNew` for both fields
+  and constants (including an explicit check that it never mutates the
+  source object passed in), and `applyEditToModel`'s `addField`/
+  `addConstant` handling of `sourceKeywords` — covering all three items
+  this batch's own task description called out as required: round-tripping
+  a copy's keywords through the model/writer, confirming the suggested
+  name avoids colliding with the source, and confirming copy never *moves*
+  (removes/renames) the source entry, only duplicates it.
 
 ### Batch R — Fix emitWithKeywords collapsing internal whitespace in quoted literals [DONE]
 **Found by:** `test/prtfBatchA.test.ts`, while adding a round-trip test for
@@ -1171,6 +1259,144 @@ consecutive internal space. Batch A's `EDTWRD` test was the first to.
 - Full suite: 186 tests, all passing (177 prior + 9 net new — 8 new
   `tokenizeKeywordText`/`emitWithKeywords` unit tests, plus the existing
   Batch A test fixed in place rather than added as a new one).
+
+### Batch S — Fix wide-record-format panel layout [DONE]
+**Reported symptom:** for a record format wide enough to need a large
+`PAGSIZE` (e.g. 130/132 print positions — `test/fixtures/sample1.pf`'s
+`PAGSIZE(66 132)` is a real example already in the repo), the report
+preview (`.page`, sized to `layout.pageCols * cellWidthPx` in
+`renderPage`) is comfortably wider than the panel viewport. Before this
+fix, `render()` in `media/webviewClient.js` appended every section —
+toolbar, report preview, THEN the properties/keywords panels — to `#root`
+as one long vertical stack in plain block flow. A wide preview didn't
+just need horizontal scrolling; because nothing bounded `#root`'s height,
+the whole page grew taller than the viewport and the browser's own
+page-level scroll took over, shoving every properties/keywords panel far
+below the fold — reachable only by scrolling past the (possibly very
+wide) report first.
+
+**Fix — two independently-scrollable columns**, modeled directly on
+I-SDA's own `aside`/`main`/`.props-panel` three-column webview shell
+(`I-SDA/src/buildWebviewTemplate.js`; I-RLU uses two columns, not three,
+since it has no separate left-hand palette to show):
+- `media/webviewClient.js`'s `render()` now builds a `.workspace` row
+  under the toolbar, containing a `.canvas-col` (report preview: ruler +
+  page + the "hidden by indicator"/approximate-position notes) and a
+  `.side-col` (every properties/keywords panel — field/constant edit or
+  new-entry, record print/finishing keywords, general record keywords,
+  indicator text, font & sizing, AFP page-group/resource keywords —
+  stacked in the same order they used to render in, just into the side
+  column instead of the root-level stack). The record add/rename/delete
+  inline form (`renderRecordManagementPanel`) stays in `.canvas-col`,
+  above the ruler, since it's opened from toolbar buttons and isn't a
+  per-field/record properties panel.
+- `src/buildWebviewTemplate.js`'s CSS: `html, body { height: 100vh;
+  overflow: hidden; }` plus `body { display: flex; flex-direction:
+  column; }` pins the whole panel to the real viewport height instead of
+  an unbounded minimum — the same "constrain the column's own height so
+  its own `overflow-y: auto` actually takes effect" fix I-SDA's own
+  `buildWebviewTemplate.js` documents for its three-column shell (see
+  that file's comment above its own `html, body` rule). `.workspace {
+  display: flex; flex: 1; min-height: 0; overflow: hidden; }` fills the
+  remaining height below the (now `flex-shrink: 0`) toolbar. `.canvas-col
+  { flex: 1; min-width: 0; overflow: auto; }` scrolls the report both
+  horizontally and vertically without affecting `.side-col`. `.side-col {
+  width: 340px; flex: 0 0 340px; overflow-y: auto; overflow-x: hidden; }`
+  is a fixed-width column that only ever scrolls vertically, with a
+  left border/background echoing I-SDA's `.props-panel` treatment so it
+  reads as a distinct sidebar rather than a continuation of the report.
+  `.main` (the ruler+page wrapper) gained `width: max-content` so it
+  shrink-wraps to the report's real (possibly very wide) intrinsic width
+  instead of stretching to fill `.canvas-col` — required for
+  `.canvas-col`'s `overflow: auto` to actually trigger a horizontal
+  scrollbar rather than the report silently clipping.
+- `.props` lost its old `max-width: 320px` (sized for wherever it used to
+  land below the report) in favor of `width: 100%` within the new
+  `.side-col`, and its spacing switched from `margin-top: 10px` to
+  `margin-bottom: 12px` (with `.props:last-child` zeroing the last one) so
+  stacked panels get a consistent gap without a stray leading gap before
+  the first one. `.prop-row` gained `flex-wrap: wrap` and its inputs
+  `max-width: 100%` so a keyword row with several inputs wraps cleanly at
+  340px instead of overflowing the sidebar.
+- No DOM-structure test depends on `render()`'s exact tree shape (checked
+  `test/webviewAssembly.test.ts` and `test/prtfWebviewLogic.test.ts` —
+  both test module wiring and pure pixel/text logic, not
+  `document.getElementById`/`querySelector` against rendered output), so
+  this was verified instead with a standalone jsdom smoke check: the
+  assembled webview script, given a `setModel` built from
+  `test/fixtures/sample1.pf` (`PAGSIZE(66 132)`), produces
+  `#root > .toolbar, .workspace` and `.workspace > .canvas-col,
+  .side-col`, with the report's `.page` at its full real pixel width
+  (1267.2px for this fixture) inside `.canvas-col` and all 5 properties/
+  keywords panels stacked inside `.side-col`.
+- Full suite: 272 tests, all passing, no changes needed to any existing
+  test — this batch only touched webview rendering/CSS, not any
+  model/parser/writer/engine logic any existing test exercises.
+
+### Batch T — Fix missing right-click "open designer" for .prtf files [DONE]
+**Reported symptom:** no right-click option to launch the designer for a
+`.pf`/`.prtf`/`.rlu` file — the command existed in code but wasn't
+reachable that way.
+
+**Root cause, confirmed by reading `package.json` + `src/extension.ts`
+rather than assumed — two separate, compounding gaps:**
+1. `package.json`'s `contributes` had a `commands` entry for
+   `i-rlu.openDesigner` (so it *was* reachable via the Command Palette),
+   but **no `contributes.menus` entry at all** — nothing wired that
+   command into the Explorer right-click menu, the editor tab's
+   right-click menu, or the editor title-bar icon row. A command with no
+   menu contribution simply never appears outside the Command Palette;
+   this alone fully explains the reported symptom.
+2. Independently, `activate()`'s handler for `i-rlu.openDesigner` ignored
+   any argument passed to it and only ever read
+   `vscode.window.activeTextEditor` — so even after adding a menu entry,
+   right-clicking a `.prtf` file in the Explorer that ISN'T the currently
+   focused editor (the common case — that's exactly when someone reaches
+   for a right-click launcher instead of first opening the file) would
+   silently do nothing, since VS Code passes the right-clicked resource's
+   URI as the command's first argument, not as the active editor.
+
+**Ruled out:** `activationEvents: []` was NOT the cause — this project's
+`engines.vscode` is `^1.85.0`, well past the `^1.74.0` threshold where VS
+Code auto-generates implicit activation events (`onCommand:*`,
+`onCustomEditor:*`, etc.) straight from `contributes`, so an explicit
+empty array here is already correct, not a bug.
+
+**Fix:**
+- `package.json` gained a `contributes.menus` block adding
+  `i-rlu.openDesigner` to `explorer/context`, `editor/title/context`, and
+  `editor/title` (so it's reachable by right-clicking a `.pf`/`.prtf`/
+  `.rlu` file in the Explorer, right-clicking its editor tab, OR via a
+  title-bar icon on an already-open one), each scoped with
+  `"when": "resourceExtname == .pf || resourceExtname == .prtf ||
+  resourceExtname == .rlu"` — the same three extensions the existing
+  `customEditors` selector already covers (that selector's `member:/**`/
+  `streamfile:/**` scheme-prefixed patterns don't need a separate
+  `when` — `resourceExtname` matches on the path's extension regardless
+  of URI scheme). Also added a matching `commandPalette` entry with the
+  same `when`, so the Command Palette doesn't offer the command for
+  files it can't act on.
+- `src/extension.ts`'s `i-rlu.openDesigner` handler now takes an optional
+  `uri?: vscode.Uri` argument and uses it when present
+  (`uri ?? vscode.window.activeTextEditor?.document.uri`), falling back
+  to the active editor only when invoked with no argument (i.e. from the
+  Command Palette) — so both the new right-click paths and the
+  pre-existing Command Palette path work correctly.
+- **Not changed:** the `customEditors` contribution itself (already
+  correctly scoped, `"priority": "option"` so it doesn't force-override
+  a person's default `.pf`/`.prtf`/`.rlu` editor) and `i-rlu.compilePrtf`/
+  `i-rlu.setCompileTarget` (out of scope for this reported symptom — both
+  already work from the Command Palette against the active editor, which
+  is how they're meant to be invoked).
+- **No automated test coverage** — this project has no `vscode`-module
+  mock (unlike I-SDA's `src/test/vscode-mock.js`), and `extension.ts`'s
+  `activate()`/command-registration logic isn't exercised by
+  `node --test` for that reason; verified instead by re-running
+  `npm run compile` (clean) and packaging + manually confirming the
+  right-click entry appears and opens the designer for an unfocused
+  `.prtf` file in a real VS Code Extension Development Host. Full
+  existing suite (300 tests) still passes unchanged, since this batch
+  touched no code any existing test exercises.
 
 ## Adding a new batch
 

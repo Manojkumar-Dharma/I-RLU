@@ -88,17 +88,37 @@ const inlinedModulesJs = WEBVIEW_MODULE_FILES.map(([dir, file]) =>
 const clientJs = fs.readFileSync(path.join(root, "media", "webviewClient.js"), "utf8");
 
 const css = `
-body { font-family: var(--vscode-editor-font-family, monospace); color: var(--vscode-editor-foreground); background: var(--vscode-editor-background); margin: 0; padding: 8px; }
-.toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12px; flex-wrap: wrap; }
+/* Bug fix: the report preview (.page) is sized to the record format's
+   real width (layout.pageCols * cell width — see renderPage in
+   media/webviewClient.js), which for a wide format (e.g. 130 print
+   positions) is comfortably wider than the panel viewport. Everything
+   below the toolbar used to be appended to #root as one long vertical
+   stack in plain block flow, so that overflow pushed the properties /
+   keywords panels far below the fold instead of leaving them reachable
+   next to the report. html/body pinned to the real viewport height (not
+   just a minimum) and clipped, plus .workspace/.canvas-col/.side-col
+   below, split the panel into a fixed-height two-column shell instead —
+   same "constrain the column's own height so its own overflow-y:auto
+   actually takes effect" fix I-SDA's buildWebviewTemplate.js documents
+   for its own aside/main/.props-panel three-column shell. */
+html, body { height: 100vh; overflow: hidden; }
+body { font-family: var(--vscode-editor-font-family, monospace); color: var(--vscode-editor-foreground); background: var(--vscode-editor-background); margin: 0; padding: 0; display: flex; flex-direction: column; }
+.toolbar { display: flex; align-items: center; gap: 8px; padding: 8px; font-size: 12px; flex-wrap: wrap; flex-shrink: 0; border-bottom: 1px solid var(--vscode-panel-border); }
 .indicators { display: inline-flex; gap: 8px; flex-wrap: wrap; }
 .indicators-wrap { display: inline-flex; align-items: center; gap: 4px; }
 .ind-label { display: inline-flex; align-items: center; gap: 2px; font-size: 11px; }
 .ind-text { color: var(--vscode-descriptionForeground); font-style: italic; }
 .hint { font-size: 11px; color: var(--vscode-descriptionForeground); font-style: italic; }
 .hint.warning { color: var(--vscode-inputValidation-warningForeground, #b89500); font-style: normal; margin: 4px 0; }
-.main { display: flex; flex-direction: column; }
+/* Two-column workspace: report preview (left, grows/shrinks, scrolls
+   both ways) + properties/keywords stack (right, fixed width, scrolls
+   vertically only) — see the header comment above for why. */
+.workspace { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+.canvas-col { flex: 1; min-width: 0; overflow: auto; padding: 8px; }
+.side-col { width: 340px; flex: 0 0 340px; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 8px; box-sizing: border-box; border-left: 1px solid var(--vscode-panel-border); background: var(--vscode-sideBar-background, var(--vscode-editorWidget-background)); }
+.main { display: flex; flex-direction: column; width: max-content; }
 .ruler { position: relative; height: 14px; font-size: 9px; color: var(--vscode-descriptionForeground); border-bottom: 1px solid var(--vscode-panel-border); margin-bottom: 2px; }
-.page { border: 1px solid var(--vscode-panel-border); background: var(--vscode-editorWidget-background, #fff); overflow: auto; }
+.page { border: 1px solid var(--vscode-panel-border); background: var(--vscode-editorWidget-background, #fff); }
 .cell { font-family: monospace; font-size: 12px; line-height: 18px; white-space: pre; overflow: hidden; border: 1px dashed transparent; cursor: grab; box-sizing: border-box; }
 .cell.field { color: var(--vscode-charts-blue, #4daafc); border-color: rgba(77,170,252,0.4); }
 .cell.constant { color: var(--vscode-editor-foreground); }
@@ -121,10 +141,16 @@ body { font-family: var(--vscode-editor-font-family, monospace); color: var(--vs
 .btn.active { background: var(--vscode-button-background, #0e639c); color: var(--vscode-button-foreground, #fff); }
 .btn.primary { background: var(--vscode-button-background, #0e639c); color: var(--vscode-button-foreground, #fff); }
 .btn.danger { background: var(--vscode-inputValidation-errorBackground, #a1260d); color: #fff; }
-.props { margin-top: 10px; padding: 8px 10px; border: 1px solid var(--vscode-panel-border); border-radius: 3px; max-width: 320px; background: var(--vscode-editorWidget-background); }
+/* Side-col panels stack vertically (see .side-col above), so .props is
+   full-width within its column (no more max-width: 320px, which was
+   sized for the old "wherever it lands below the report" flow) with
+   margin-bottom instead of margin-top so consecutive panels get a
+   consistent gap without a stray leading gap before the first one. */
+.props { margin-bottom: 12px; padding: 8px 10px; border: 1px solid var(--vscode-panel-border); border-radius: 3px; width: 100%; box-sizing: border-box; background: var(--vscode-editorWidget-background); }
+.props:last-child { margin-bottom: 0; }
 .props h4 { margin: 0 0 8px 0; font-size: 12px; }
-.prop-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 11px; margin-bottom: 6px; }
-.prop-row input, .prop-row select { width: 140px; font-size: 11px; }
+.prop-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 11px; margin-bottom: 6px; flex-wrap: wrap; }
+.prop-row input, .prop-row select { width: 140px; max-width: 100%; font-size: 11px; }
 .pfield-row { flex-wrap: wrap; }
 .pfield-label { flex: 1 1 auto; min-width: 90px; }
 .pfield-row input { width: 100px; }
