@@ -137,9 +137,23 @@ full detail, acceptance criteria, and file-level ownership per batch):
       a field is edited. Rendering is still the existing placeholder box
       — real symbol rendering is Batch D. 10 new tests
       (`test/prtfBatchC.test.ts`).
-- [ ] **Batch D — Real `BARCODE` symbol rendering:** actual bars via a
-      barcode-generation library, once Batch C's parameters are wired up to
-      read from.
+- [x] **Batch D — Real `BARCODE` symbol rendering — done.** Real bars via
+      the vendored JsBarcode (MIT, `media/vendor/jsbarcode/`) for the 13
+      linear symbologies it implements and IBM's DDS BARCODE keyword
+      documents (MSI, UPCA, UPCE, UPC2, UPC5, EAN8, EAN13, EAN2, EAN5,
+      CODEABAR, CODE128, CODE3OF9, INTERL2OF5), reading from Batch C's
+      parameters. The remaining documented bar-code-IDs JsBarcode doesn't
+      implement (INDUST2OF5, MATRIX2OF5, POSTNET, RM4SCC, AP4SCC,
+      DUTCHKIX, JPBC, PDF417, MAXICODE, DATAMATRIX, QRCODE) keep the
+      existing placeholder box — a deliberate "don't over-build" scope
+      decision (see `docs/TASKS.md`), not a gap. Since I-RLU has no live
+      compile/run, rendering uses deterministic, symbology-appropriate
+      design-time sample data rather than real field values. New
+      `src/prtfBarcodeRender.js` plus a jsdom-backed integration test
+      (`test/prtfBatchD.test.ts`) that actually exercises the vendored
+      library end to end — which is how a UPCE sample-length mismatch
+      against IBM's own documented field length was caught and fixed
+      before it shipped.
 - [ ] **Batch E — AFP page-group / resource keyword support:** `OVERLAY`
       (record-level), `PAGSEG`, `STRPAGGRP`/`ENDPAGGRP`, `DOCIDXTAG`,
       `AFPRSC`, `DTASTMCMD` — render as labeled placeholder boxes per

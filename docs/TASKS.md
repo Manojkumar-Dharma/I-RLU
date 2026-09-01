@@ -79,7 +79,7 @@ vice versa.
 | A | ~~Properties-panel editing: general field/record keywords~~ | `EDTCDE`, `EDTWRD`, `DATE`, `DATFMT`, `DATSEP`, `TIME`, `TIMFMT`, `TIMSEP`, `DFT`, `MSGCON`, `COLOR`, `HIGHLIGHT`, `UNDERLINE`, `PAGNBR`, `PRTQLTY`, `DRAWER`, `PAGRTT` | **Done** | none |
 | B | Font/sizing keyword editing + shared P-field toggle component | `FONT`, `CDEFNT`, `FNTCHRSET`, `FONTNAME`, `CHRSIZ`, `CHRID`, `CCSID` | **Done** | none (but A and C benefit from B's P-field component if B lands first) |
 | C | `BARCODE` full parameter surface (still placeholder render) | `BARCODE` | **Done** | none |
-| D | `BARCODE` real symbol rendering | `BARCODE` | Not started | **C** |
+| D | `BARCODE` real symbol rendering | `BARCODE` | **Done** | **C** |
 | E | AFP page-group / resource keyword placeholders | `OVERLAY` (record), `PAGSEG`, `STRPAGGRP`, `ENDPAGGRP`, `DOCIDXTAG`, `AFPRSC`, `DTASTMCMD` | Not started | none |
 | F | Print/finishing keywords, validation-only | `DUPLEX`, `FORCE`, `OUTBIN`, `ZFOLD`, `STAPLE`, `INVMMAP` | **Done** | none |
 | G | Field-level data/edit keywords + indicator text | `ALIAS`, `BLKFOLD`, `CVTDTA`, `DLTEDT`, `FLTFIXDEC`, `FLTPCN`, `TRNSPY`, `TXTRTT`, `INDTXT` | **Done** | none |
@@ -306,7 +306,7 @@ labeled placeholder box; this batch is UI/model/parsing, not rendering.
   and validation-hint tests for in- and out-of-range values.
 
 
-### Batch D — BARCODE real rendering
+### Batch D — BARCODE real rendering [DONE]
 **Goal:** replace the placeholder box with an actual rendered symbol, reading
 from the parameters Batch C exposes. Needs a barcode-generation library
 (check what's available/bundleable for a webview context — likely a small
@@ -314,6 +314,82 @@ pure-JS symbology library rather than anything with native deps, since this
 runs inside a VS Code webview). Scope to the symbologies IBM's DDS BARCODE
 keyword actually supports; don't over-build.
 - **Depends on Batch C** landing first (needs its parameter surface).
+
+**Implementation notes:**
+- Library chosen: **JsBarcode 3.12.3** (MIT, zero runtime dependencies,
+  pure JS, renders directly into a caller-supplied SVG or canvas element —
+  a good fit for "small pure-JS symbology library" and this project's
+  existing DOM-manipulation style). Vendored (not `npm`-`require()`d) as
+  `media/vendor/jsbarcode/JsBarcode.all.min.js` — see that directory's
+  README.md for exactly why (has to run inside the webview's sandboxed
+  browser context, not the extension host's Node process) and how to
+  update it later. Still recorded as a `devDependency` in `package.json`
+  purely for version provenance.
+- **Scope decision** (the "don't over-build" instruction above): IBM's DDS
+  reference defines specific bar-code-ID special values, split three ways
+  in `src/prtfBarcodeRender.js`'s header —
+  1. **Rendered for real**: MSI, UPCA, UPCE, UPC2, UPC5, EAN8, EAN13, EAN2,
+     EAN5, CODEABAR, CODE128, CODE3OF9, INTERL2OF5 — linear symbologies
+     JsBarcode already implements with a deterministic bar-width encoding.
+  2. **Valid DDS bar-code-IDs JsBarcode doesn't implement**: INDUST2OF5,
+     MATRIX2OF5, POSTNET, RM4SCC, AP4SCC, DUTCHKIX, JPBC, and the four 2D
+     symbologies (PDF417, MAXICODE, DATAMATRIX, QRCODE) — these need their
+     own, much more involved encoders (Reed-Solomon error correction, 2D
+     symbol placement, ...); implementing any of them was judged
+     over-building for this batch. They keep the existing labeled
+     placeholder box, unchanged.
+  3. Anything not a recognized bar-code-ID at all — same existing
+     placeholder-box fallback, also unchanged.
+- **UPC2/UPC5 mapped onto JsBarcode's EAN2/EAN5 formats**: IBM's Table 2
+  lists these as their own bar-code-IDs, but they're the same shared
+  "supplemental/add-on" symbol structure historically used by both the UPC
+  and EAN systems (same bar pattern either way), and JsBarcode only
+  implements one pair of formats for that structure. This is a *rendering*
+  equivalence only — `prtfBarcodeParams.js` (Batch C) still stores/
+  round-trips whichever bar-code-ID the source actually says.
+- **UPCE sample-data bug found and fixed during this batch**: IBM's Table 2
+  documents UPCE's field length as 10 digits, and the first implementation
+  generated a 10-digit sample accordingly — but JsBarcode's own UPCE
+  validator only accepts a plain 6-digit "middle digits" form or an
+  8-digit form starting with 0/1 (it derives the full UPC-A + check digit
+  itself), and silently reported the 10-digit sample invalid rather than
+  throwing. Caught by the jsdom integration test (see below) actually
+  calling JsBarcode rather than just checking the sample data's shape;
+  fixed by hard-coding UPCE's *rendering* sample length to 6, documented
+  in `prtfBarcodeRender.js` as a rendering-only exception (Batch C's
+  stored parameters/field-length are untouched).
+- **Design-time sample data**: I-RLU has no live compile/run, so there's no
+  runtime field value to encode (same limitation REF/REFFLD already have).
+  `sampleBarcodeData` invents a deterministic, symbology-appropriate
+  placeholder value (repeating digits for numeric symbologies, a
+  start/end-letter-bracketed value for CODEABAR per IBM's documented field
+  rule, a short readable string for CODE128/CODE3OF9) sized to the field's
+  documented length range, or the field's actual DDS length when the
+  symbology's length is itself variable (MSI/INTERL2OF5/CODEABAR/CODE128/
+  CODE3OF9). Surfaced in the cell's title tooltip so it's clear the bars
+  are a preview, not real data.
+- **Vertical direction**: JsBarcode has no native vertical-orientation
+  option. Renders normally at the "natural" (un-swapped) orientation, then
+  rotates that wrapper 90° about its own center inside the existing
+  swapped-dimension box (`isVerticalBarcode`'s `w`/`h` swap, unchanged from
+  before this batch) — the math for why a 90°-rotated (h × w) box's
+  bounding box is exactly (w × h) is in `renderBarcodeSymbol`'s comment.
+- `narrowBarWidth` (inches, Batch C) maps onto JsBarcode's `width` (px per
+  narrow bar) via a 96dpi approximation; `hriPosition` (Batch C) maps onto
+  JsBarcode's `displayValue`/`textPosition`.
+- Tests: `test/prtfBatchD.test.ts` — pure-logic coverage for the
+  RENDERABLE/not-RENDERABLE split, sample-data shape per symbology
+  (including the INTERL2OF5 even-length and CODEABAR start/end-letter
+  rules), and the options-mapping logic, **plus** a jsdom-backed
+  integration test that actually loads the vendored JsBarcode and confirms
+  it renders real SVG bars (not just "doesn't throw") for every RENDERABLE
+  symbology using this module's own sample data — the layer that actually
+  caught the UPCE bug above. `jsdom` added as a devDependency for that one
+  test file (not used elsewhere in the suite, which otherwise avoids DOM
+  dependencies — see that test file's own header for why `displayValue` is
+  forced `false` there specifically, a jsdom-only limitation around
+  canvas-based text measurement, not a real-webview one).
+
 
 ### Batch E — AFP page-group / resource placeholders
 **Goal:** per `docs/REQUIREMENTS.md` §8's documented hard limit, these can

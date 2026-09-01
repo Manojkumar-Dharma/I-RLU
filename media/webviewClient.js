@@ -229,6 +229,59 @@
     return PrtfWebviewLogic.pixelToLineCol(x, y, CELL_W, CELL_H);
   }
 
+  /**
+   * Batch D (docs/TASKS.md) — actual rendered symbol via the vendored
+   * JsBarcode (window.JsBarcode, media/vendor/jsbarcode/), for the
+   * symbologies src/prtfBarcodeRender.js's RENDERABLE table covers.
+   * Returns a DOM node to use as the cell's content, or null if this
+   * bar-code-ID isn't one of them (caller falls back to the existing
+   * labeled placeholder box unchanged).
+   *
+   * `w`/`h` are the cell's final on-page box dimensions in px (already
+   * swapped for vertical barcodes by the caller — see isVerticalBarcode
+   * above). JsBarcode has no native vertical-orientation option, so for
+   * vertical fields this renders normally into a (h × w) wrapper (i.e.
+   * un-swapped — natural horizontal orientation) and rotates that wrapper
+   * 90° about its own center inside the (w × h) box, which is exactly
+   * what a 90°-rotated (h × w) box's bounding box works out to.
+   */
+  function renderBarcodeSymbol(cell, w, h, isVertical) {
+    if (typeof window.JsBarcode !== "function" || !PrtfBarcodeRender.isBarcodeRenderable(cell.barcode.barCodeId)) return null;
+
+    const params = cell.barcodeParams || { barCodeId: cell.barcode.barCodeId, hriPosition: cell.barcode.hriPosition };
+    const naturalW = isVertical ? h : w;
+    const naturalH = isVertical ? w : h;
+    const data = PrtfBarcodeRender.sampleBarcodeData(params.barCodeId, cell.length);
+    const options = PrtfBarcodeRender.renderBarcodeOptions(params, naturalH);
+
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    let ok = true;
+    options.valid = (v) => {
+      ok = ok && v;
+    };
+    try {
+      window.JsBarcode(svg, data, options);
+    } catch (e) {
+      ok = false;
+    }
+    if (!ok) return null;
+
+    svg.setAttribute("width", "100%");
+    svg.setAttribute("height", "100%");
+    svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+
+    if (!isVertical) {
+      svg.style.display = "block";
+      return svg;
+    }
+
+    const wrap = el("div", {
+      style: `position:absolute;top:50%;left:50%;width:${naturalW}px;height:${naturalH}px;transform:translate(-50%,-50%) rotate(90deg);`,
+    });
+    wrap.appendChild(svg);
+    return wrap;
+  }
+
   function renderPage(layout) {
     const page = el("div", {
       class: "page",
@@ -239,6 +292,7 @@
       const isVerticalBarcode = cell.barcode && cell.barcode.direction === "vertical";
       const w = (isVerticalBarcode ? cell.barcode.heightLines : cell.length) * CELL_W;
       const h = (isVerticalBarcode ? cell.length : cell.barcode ? cell.barcode.heightLines : 1) * CELL_H;
+      const barcodeSymbol = cell.barcode ? renderBarcodeSymbol(cell, w, h, isVerticalBarcode) : null;
       const fontCss = cell.font
         ? `font-family:${cell.font.family};` +
           (cell.font.weight ? `font-weight:${cell.font.weight};` : "") +
@@ -262,21 +316,25 @@
           class:
             "cell" +
             (cell.kind === "constant" ? " constant" : " field") +
-            (cell.barcode ? " barcode" : "") +
+            (cell.barcode ? (barcodeSymbol ? " barcode rendered" : " barcode") : "") +
             (cell.id === state.selectedId ? " selected" : ""),
           style: `position:absolute;left:${(cell.position - 1) * CELL_W}px;top:${(cell.line - 1) * CELL_H}px;width:${w}px;height:${h}px;${fontCss}`,
           title: cell.barcode
-            ? "Barcode placeholder — " +
-              cell.barcode.barCodeId +
-              " (" +
-              cell.barcode.direction +
-              "). Actual bar symbol not rendered." +
+            ? (barcodeSymbol
+                ? "Barcode preview — " + cell.barcode.barCodeId + " (" + cell.barcode.direction + "). Rendered with placeholder sample data; actual bars depend on the field's runtime value, which I-RLU can't know at design time."
+                : "Barcode placeholder — " +
+                  cell.barcode.barCodeId +
+                  " (" +
+                  cell.barcode.direction +
+                  "). Actual bar symbol not rendered — this bar-code-ID isn't one of the symbologies I-RLU can preview (see src/prtfBarcodeRender.js).") +
               (cell.barcode.approximateHeight ? " Height shown is a default estimate." : "")
             : fontTitle,
           draggable: "true",
         },
         cell.barcode
-          ? [el("span", { class: "barcode-label" }, [cell.barcode.barCodeId || "BARCODE"])]
+          ? barcodeSymbol
+            ? [barcodeSymbol]
+            : [el("span", { class: "barcode-label" }, [cell.barcode.barCodeId || "BARCODE"])]
           : [cell.kind === "constant" ? cell.text : "{" + cell.name + "}"]
       );
       div.addEventListener("click", (ev) => {

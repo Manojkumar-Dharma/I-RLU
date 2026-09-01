@@ -49,6 +49,18 @@ const WEBVIEW_MODULE_FILES = [
   // (review comment #6) so they're unit testable — see prtfWebviewLogic.js's
   // own header for why. Only depends on prtfKeywordHelpers.js (isFieldRef).
   ["src", "prtfWebviewLogic.js"],
+  // Batch D — real BARCODE symbol rendering. Third-party, vendored rather
+  // than require()'d — see media/vendor/jsbarcode/README.md for why (needs
+  // to run inside the webview's sandboxed browser context, not the
+  // extension host's Node process) and provenance/update instructions. Sets
+  // window.JsBarcode; must land before prtfBarcodeRender.js and
+  // webviewClient.js, both of which call it.
+  ["media/vendor/jsbarcode", "JsBarcode.all.min.js"],
+  // Batch D — symbology support table, design-time sample-data generation
+  // (see that file's header for why sample data at all), and the pure
+  // options-building logic webviewClient.js hands to JsBarcode. Only
+  // depends on window.JsBarcode being set already.
+  ["src", "prtfBarcodeRender.js"],
 ];
 
 function wrapInIife(source) {
@@ -88,6 +100,7 @@ body { font-family: var(--vscode-editor-font-family, monospace); color: var(--vs
 .draw-box { border: 1px solid var(--vscode-charts-orange, orange); box-sizing: border-box; }
 .draw-line.approximate, .draw-box.approximate { opacity: 0.5; border-style: dashed; }
 .cell.barcode { background: repeating-linear-gradient(90deg, var(--vscode-charts-purple, #b180d7) 0 2px, transparent 2px 5px); border: 1px solid var(--vscode-charts-purple, #b180d7); display: flex; align-items: flex-end; justify-content: center; }
+.cell.barcode.rendered { background: var(--vscode-editor-background); display: block; }
 .barcode-label { background: var(--vscode-editor-background); font-size: 9px; padding: 0 2px; }
 .empty, .note { font-size: 12px; color: var(--vscode-descriptionForeground); margin-top: 8px; }
 .btn { font-size: 11px; padding: 3px 8px; background: var(--vscode-button-secondaryBackground, #3a3d41); color: var(--vscode-button-secondaryForeground, #fff); border: none; border-radius: 2px; cursor: pointer; }
