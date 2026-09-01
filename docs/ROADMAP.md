@@ -193,20 +193,33 @@ full detail, acceptance criteria, and file-level ownership per batch):
       — I-SDA turned out not to have a directly portable INDTXT UX to copy
       (see `docs/TASKS.md` Batch G's own note), so this was built fresh
       against IBM's DDS reference instead.
-- [x]/[ ] **Batch H — `REF`/`REFFLD` resolution via Code for i — part 1
-      done, part 2 blocked without a live IBM i.** Part 1 (UI shape, fully
-      testable): `PrtfEngine.resolveReferenceTarget` works out which
-      field/library/file a reference field (position 29 'R') resolves
-      against, following REFFLD-overrides-REF/`*SRC`-is-unresolvable
-      precedence from IBM's DDS reference; the properties panel now has the
-      "Reference a field" / "Use referenced values" toggle pair from
-      KEYWORD-INVENTORY §3, wired to a REFFLD keyword upsert
-      (`PrtfWriter.upsertReffldKeyword`). Part 2 (the actual DSPFFD + SQL
-      round-trip over Code for i, in `extension.ts`'s
+- [x]/[ ] **Batch H — `REF`/`REFFLD` resolution via Code for i — part 1 and
+      the field/record-format picker done, part 2 (live DSPFFD round-trip)
+      blocked without a live IBM i.** Part 1 (UI shape, fully testable):
+      `PrtfEngine.resolveReferenceTarget` works out which field/library/
+      file a reference field (position 29 'R') resolves against, following
+      REFFLD-overrides-REF/`*SRC`-is-unresolvable precedence from IBM's DDS
+      reference; the properties panel has the "Reference a field" / "Use
+      referenced values" toggle pair from KEYWORD-INVENTORY §3, wired to a
+      REFFLD keyword upsert (`PrtfWriter.upsertReffldKeyword`). The
+      **picker** (previously left open — "not done, left for a future
+      batch/session"): a "Browse fields… (Code for i)" button that lists a
+      referenced file's actual fields (and, if it has more than one,
+      prompts to pick a record format first) via a native VS Code
+      QuickPick rather than typing a field name blind, following I-SDA's
+      own Task L14 (`fetchDatabaseFileFields`) as the closest existing
+      pattern — same DSPFFD OUTFILE approach, same field mapping, with the
+      format-disambiguation step pulled into its own pure, unit-tested
+      function (`groupDatabaseFileFieldRows`) unlike I-SDA's inline
+      version. Library/file are still typed manually, same as part 2
+      already requires — only the record format and field itself are
+      picked from a live list. Part 2 (the actual DSPFFD + SQL round-trip
+      resolving one already-named field's attributes, in `extension.ts`'s
       `fetchReferencedFieldAttributes`/`handleResolveReferencedField`) is
       written following I-SDA's own integration pattern but — like I-SDA's
-      equivalent — can only be exercised against a real connected IBM i, not
-      in this environment.
+      equivalent, and like the picker's own DSPFFD/SQL/QuickPick I/O —
+      can only be exercised against a real connected IBM i, not in this
+      environment.
 - [x] ~~Batch I — `UOM` (unit of measure) modeling~~ — **done**: see
       `i-rlu.unitOfMeasure` setting above. The remaining piece — validating
       that file-level `SKIPA`/`SKIPB` isn't allowed on `*AFPDS` files

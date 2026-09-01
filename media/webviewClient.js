@@ -33,7 +33,10 @@
  * length/type/decimals from a connected IBM i via Code for i and apply them
  * directly — this one is NOT applied locally first the way "edit" messages
  * are, since it needs a network round-trip before there's anything to
- * apply.
+ * apply. "browseReferencedField" (Batch H "remaining" piece) is the same
+ * kind of host round-trip, but for picking the REFFLD field/record-format
+ * itself via Code for i rather than resolving an already-named field's
+ * attributes.
  */
 (function () {
   const vscode = acquireVsCodeApi();
@@ -1283,6 +1286,19 @@
       const refFieldRow = labeledInput("Ref. field name", { type: "text", maxlength: "10", value: target.fieldName || cell.name || "" });
       refFieldInput = refFieldRow.input;
       refFieldsRow.appendChild(refFieldRow.row);
+      // Batch H "remaining" piece — picks the field (and, if the file has
+      // more than one, the record format) from a live list via Code for i
+      // instead of typing it blind. Reads the SAME already-saved
+      // library/file the "Resolve Referenced Field" button below does
+      // (see extension.ts's handleBrowseReferencedField) — save library/
+      // file first if they were just typed. Applies immediately on pick,
+      // same as "Resolve Referenced Field" — no separate Save click
+      // needed for the field name itself.
+      const browseBtn = el("button", { class: "btn", style: "width:100%;margin-bottom:8px;" }, ["Browse fields… (Code for i)"]);
+      browseBtn.addEventListener("click", () => {
+        vscode.postMessage({ type: "browseReferencedField", id: cell.id });
+      });
+      refFieldsRow.appendChild(browseBtn);
       const refLibRow = labeledInput("Ref. library", { type: "text", maxlength: "10", value: target.library || "" });
       refLibInput = refLibRow.input;
       refFieldsRow.appendChild(refLibRow.row);

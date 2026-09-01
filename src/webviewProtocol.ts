@@ -56,5 +56,13 @@ export type WebviewMessage =
   | { type: "ready" }
   | { type: "select"; id?: string }
   | { type: "edit"; edit: WebviewEdit }
-  | { type: "resolveReferencedField"; id: string; useReferencedValues?: boolean };
+  | { type: "resolveReferencedField"; id: string; useReferencedValues?: boolean }
+  // Batch H (docs/TASKS.md) "remaining" piece — the field/record-format
+  // picker. library/file aren't included here: unlike resolveReferencedField
+  // (which needs a field name to already be known), this is how the field
+  // name gets *found* in the first place, so it deliberately reuses
+  // PrtfEngine.resolveReferenceTarget's already-saved library/file (same
+  // source resolveReferencedField itself reads) rather than trusting
+  // whatever's currently typed into the (possibly unsaved) webview inputs.
+  | { type: "browseReferencedField"; id: string };
 

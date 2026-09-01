@@ -44,6 +44,10 @@ const mod = {
   numericParam: KeywordHelpers.numericParam,
   // Batch H
   resolveReferenceTarget: ReferenceField.resolveReferenceTarget,
+  // Batch H "remaining" piece — see prtfReferenceField.js's own doc
+  // comments for both.
+  mapDspffdRowToAttributes: ReferenceField.mapDspffdRowToAttributes,
+  groupDatabaseFileFieldRows: ReferenceField.groupDatabaseFileFieldRows,
   // Batch F
   VALUELESS_KEYWORDS: KeywordValidation.VALUELESS_KEYWORDS,
   PSF_ONLY_KEYWORDS: KeywordValidation.PSF_ONLY_KEYWORDS,

@@ -83,7 +83,7 @@ vice versa.
 | E | AFP page-group / resource keyword placeholders | `OVERLAY` (record), `PAGSEG`, `STRPAGGRP`, `ENDPAGGRP`, `DOCIDXTAG`, `AFPRSC`, `DTASTMCMD` | Not started | none |
 | F | Print/finishing keywords, validation-only | `DUPLEX`, `FORCE`, `OUTBIN`, `ZFOLD`, `STAPLE`, `INVMMAP` | **Done** | none |
 | G | Field-level data/edit keywords + indicator text | `ALIAS`, `BLKFOLD`, `CVTDTA`, `DLTEDT`, `FLTFIXDEC`, `FLTPCN`, `TRNSPY`, `TXTRTT`, `INDTXT` | **Done** | none |
-| H | `REF`/`REFFLD` resolution via Code for i | `REF`, `REFFLD` | Part 1 (UI shape + pure resolution logic) done; part 2 (live Code for i round-trip) written but unverified — needs a real connected IBM i | none (needs a live/mocked Code for i connection for full completion — can land the UI shape without it) |
+| H | `REF`/`REFFLD` resolution via Code for i | `REF`, `REFFLD` | Part 1 (UI shape + pure resolution logic) **and the field/record-format picker done**; part 2 (live Code for i round-trip) written but unverified — needs a real connected IBM i | none (needs a live/mocked Code for i connection for full completion — can land the UI shape without it) |
 | I | ~~`UOM` modeling~~ **done elsewhere** (see `i-rlu.unitOfMeasure` setting, `docs/ROADMAP.md`) + file-level SKIPA/SKIPB *AFPDS validation | `SKIPA`, `SKIPB` (validation only) | **Done** (validation landed as part of Batch F — see `prtfEngine.js`'s `validateFileLevelKeywords`) | none |
 | J | Compile command: library/source-file/member picker | n/a (tooling) | Not started | none |
 | K | Packaging (`.vsix`) | n/a (tooling) | **Done** | ideally after A–I land, but can be prepped early |
@@ -493,7 +493,7 @@ this from scratch.
   folding INDTXT editing into the field properties panel too, for
   documenting an indicator a specific field's own conditions reference.
 
-### Batch H — REF/REFFLD resolution [PART 1 DONE]
+### Batch H — REF/REFFLD resolution [PART 1 + PICKER DONE; PART 2 WRITTEN, UNVERIFIED]
 **Goal:** two parts, can be split further if needed:
 1. **UI shape** (no Code for i needed) — **done.** `resolveReferenceTarget`
    in `src/prtfEngine.js` works out which field/library/file a position-29
@@ -505,10 +505,7 @@ this from scratch.
    properties panel (`media/webviewClient.js`) now shows the "Reference a
    field" Y/N toggle plus manually-entered field/library/file inputs and a
    "Use referenced values" Y/N toggle, per KEYWORD-INVENTORY §3's confirmed
-   RLU UI shape — no live file/library/record-format/field *picker* yet
-   (that would need Code for i's own browsing API), just direct text entry,
-   which is enough for the toggle pair's own semantics and for round-trip
-   correctness.
+   RLU UI shape.
 2. **Live resolution** (needs Code for i) — **written, unverified.**
    `fetchReferencedFieldAttributes`/`handleResolveReferencedField` in
    `src/extension.ts` query the referenced physical file's field definition
@@ -520,20 +517,67 @@ this from scratch.
    outright or only fills them in where blank. This part is legitimately
    blocked without a connected test environment — compiles and follows
    I-SDA's proven pattern, but has not been exercised against a real IBM i.
-- Tests (`test/prtfReferenceField.test.ts`): part 1 is fully covered —
-  every precedence rule in `resolveReferenceTarget`'s doc comment, the
-  `upsertReffldKeyword` add/replace/remove cases, and a parse → regenerate
-  round trip for a field carrying `REFFLD`. Part 2 has no test — same
-  reasoning as the roadmap entry: it needs either a live IBM i in CI
-  (unlikely available) or a mocked Code for i client, and I-SDA's own test
-  suite doesn't mock its Code for i integration either, so there's no
-  established pattern here to follow.
-- **Not done, left for a future batch/session:** a real file/library/
-  record-format/field *picker* (currently direct text entry) — this needs
-  Code for i's own object-browsing API, a separate integration from the
-  DSPFFD resolution built here, and IS-DA's own Task L14
-  (`fetchDatabaseFileFields`/`listDatabaseFields`) is the closest existing
-  pattern to follow for it.
+- Tests (`test/prtfReferenceField.test.ts`): parts 1 and the picker's pure
+  half are fully covered — every precedence rule in
+  `resolveReferenceTarget`'s doc comment, the `upsertReffldKeyword`
+  add/replace/remove cases, a parse → regenerate round trip for a field
+  carrying `REFFLD`, `mapDspffdRowToAttributes`'s char-vs-numeric mapping,
+  and `groupDatabaseFileFieldRows`'s single-format/multi-format/error
+  cases (see the picker section below). Part 2 (and the picker's own
+  DSPFFD/SQL/QuickPick I/O) has no test — same reasoning as the roadmap
+  entry: it needs either a live IBM i in CI (unlikely available) or a
+  mocked Code for i client, and I-SDA's own test suite doesn't mock its
+  Code for i integration either, so there's no established pattern here to
+  follow.
+
+**Remaining piece — file/library/record-format/field picker — done.** What
+was previously "not done, left for a future batch/session": a real picker
+(currently direct text entry) needing Code for i's own object-browsing
+API, following I-SDA's own Task L14 (`fetchDatabaseFileFields`/
+`listDatabaseFields`) as the closest existing pattern.
+- **Scope, precisely**: library and file are still typed manually (same as
+  part 2 above already requires them known — I-SDA's own Task L14 also
+  requires library/file already specified, it doesn't browse libraries or
+  files themselves, only lists a given file's fields). What's new is the
+  record format (when a file has more than one) and the field itself,
+  which are now picked from a live list via Code for i rather than typed
+  blind.
+- `src/extension.ts`'s `fetchDatabaseFileFields` ports I-SDA's own
+  function of the same name closely — same DSPFFD OUTFILE approach, same
+  activation/connection handling, same `mapDspffdRowToAttributes` field
+  mapping. One structural difference: the "does this file have more than
+  one record format, and if so which fields belong to which" grouping
+  step that I-SDA does inline was pulled out as a pure function,
+  `groupDatabaseFileFieldRows` (`src/prtfReferenceField.js`, re-exported
+  through `prtfEngine.js`), so it's unit-testable without a live
+  connection — the same "pure logic vs. I/O" split
+  `resolveReferenceTarget`/`fetchReferencedFieldAttributes` already follow
+  in this codebase. `mapDspffdRowToAttributes` itself moved from
+  `extension.ts` into `prtfReferenceField.js` at the same time, once this
+  second caller needed the same mapping — one shared copy instead of two.
+- UI: a new "Browse fields… (Code for i)" button next to REFFLD's "Ref.
+  field name" input (`media/webviewClient.js`), reading the SAME
+  already-saved library/file `resolveReferenceTarget` resolves for the
+  "Resolve Referenced Field" button beside it (deliberately not whatever's
+  currently typed into the — possibly unsaved — library/file inputs).
+  Clicking it: fetches the field list; if `fetchDatabaseFileFields` comes
+  back with `{formats: [...]}` (more than one record format), shows a
+  native `vscode.window.showQuickPick` to disambiguate first; then shows a
+  QuickPick of the field list itself (name as the label, the field's DSPFFD
+  text as the description, type/length/decimals as the detail). On a
+  pick, writes straight to the document via `upsertReffldKeyword` and
+  applies immediately — no separate Save click needed, consistent with how
+  "Resolve Referenced Field" itself already applies immediately.
+- New message kind `browseReferencedField` added to `WebviewMessage`
+  (`src/webviewProtocol.ts`) and handled in `extension.ts`'s
+  `handleBrowseReferencedField`, parallel to `resolveReferencedField`'s own
+  handling.
+- Not attempted: browsing libraries or files themselves (there'd be no
+  established pattern to follow for that — I-SDA's own Task L14 doesn't do
+  it either), or letting the picker also disambiguate WHICH `REF` (file-
+  vs. record-level) supplied the library/file being browsed (that's
+  already `resolveReferenceTarget`'s own precedence logic, unchanged and
+  out of scope here).
 
 ### Batch I — UOM modeling + AFPDS SKIPA/SKIPB file-level validation
 **Update:** the UOM half of this batch has already landed on `main`

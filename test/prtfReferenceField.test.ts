@@ -4,7 +4,7 @@ import { parseSource } from "../src/prtfParser";
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { regenerateSource, upsertReffldKeyword } = require("../src/prtfWriter.js");
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { resolveReferenceTarget } = require("../src/prtfEngine.js");
+const { resolveReferenceTarget, mapDspffdRowToAttributes, groupDatabaseFileFieldRows } = require("../src/prtfEngine.js");
 
 /**
  * Batch H (docs/TASKS.md) — REF/REFFLD resolution. Covers part 1 (the pure
@@ -163,4 +163,84 @@ test("round trip: a field carrying REFFLD survives parse -> regenerate unchanged
 
   const regenerated = regenerateSource(model);
   assert.equal(regenerated, text);
+});
+
+/**
+ * Batch H "remaining" piece — the field/record-format picker
+ * (docs/TASKS.md). mapDspffdRowToAttributes and groupDatabaseFileFieldRows
+ * are the pure "given DSPFFD OUTFILE rows, work out what they mean" half
+ * of extension.ts's fetchDatabaseFileFields — the DSPFFD command/SQL
+ * itself, and the two-step "fetch, maybe disambiguate a record format,
+ * fetch again" QuickPick flow around it, need a live Code for i connection
+ * and have no test here, same reasoning docs/ROADMAP.md already gives for
+ * why fetchReferencedFieldAttributes (part 2 of this same batch) has none
+ * either — no established pattern in this codebase (or I-SDA's) for
+ * mocking Code for i.
+ */
+
+test("mapDspffdRowToAttributes: character field uses WHFLDB (byte length), no decimals", () => {
+  const attrs = mapDspffdRowToAttributes({ WHFLDT: "A", WHFLDB: 25, WHFLDD: 0, WHFLDP: 0 });
+  assert.deepEqual(attrs, { length: 25, dataType: "", decimalPositions: null });
+});
+
+test("mapDspffdRowToAttributes: numeric field uses WHFLDD (total digits) and WHFLDP as decimals", () => {
+  const attrs = mapDspffdRowToAttributes({ WHFLDT: "S", WHFLDB: 4, WHFLDD: 9, WHFLDP: 2 });
+  assert.deepEqual(attrs, { length: 9, dataType: "S", decimalPositions: 2 });
+});
+
+test("mapDspffdRowToAttributes: WHFLDP of 0 means no decimals (null, not 0)", () => {
+  const attrs = mapDspffdRowToAttributes({ WHFLDT: "S", WHFLDB: 4, WHFLDD: 7, WHFLDP: 0 });
+  assert.equal(attrs.decimalPositions, null);
+});
+
+test("mapDspffdRowToAttributes: accepts lowercase column names too (some Code for i connection shapes lowercase them)", () => {
+  const attrs = mapDspffdRowToAttributes({ whfldt: "P", whfldb: 4, whfldd: 5, whfldp: 0 });
+  assert.deepEqual(attrs, { length: 5, dataType: "P", decimalPositions: null });
+});
+
+test("groupDatabaseFileFieldRows: a single-format file returns the field list directly, in WHFLDO (row) order", () => {
+  const rows = [
+    { WHNAME: "CUSTREC", WHFLDI: "CUSTNBR", WHFTXT: "Customer number", WHFLDT: "S", WHFLDB: 7, WHFLDD: 7, WHFLDP: 0 },
+    { WHNAME: "CUSTREC", WHFLDI: "CUSTNAME", WHFTXT: "Customer name", WHFLDT: "A", WHFLDB: 30, WHFLDD: 0, WHFLDP: 0 },
+  ];
+  const result = groupDatabaseFileFieldRows(rows, undefined);
+  assert.deepEqual(result, {
+    recordFormat: "CUSTREC",
+    fields: [
+      { name: "CUSTNBR", text: "Customer number", length: 7, dataType: "S", decimalPositions: null },
+      { name: "CUSTNAME", text: "Customer name", length: 30, dataType: "", decimalPositions: null },
+    ],
+  });
+});
+
+test("groupDatabaseFileFieldRows: a multi-format file (no recordFormat given) returns the distinct format names, not a mixed field list", () => {
+  const rows = [
+    { WHNAME: "FORMAT1", WHFLDI: "FLD1", WHFTXT: "", WHFLDT: "A", WHFLDB: 5, WHFLDD: 0, WHFLDP: 0 },
+    { WHNAME: "FORMAT2", WHFLDI: "FLD2", WHFTXT: "", WHFLDT: "A", WHFLDB: 5, WHFLDD: 0, WHFLDP: 0 },
+    { WHNAME: "FORMAT1", WHFLDI: "FLD3", WHFTXT: "", WHFLDT: "A", WHFLDB: 5, WHFLDD: 0, WHFLDP: 0 },
+  ];
+  const result = groupDatabaseFileFieldRows(rows, undefined);
+  assert.deepEqual(result, { formats: ["FORMAT1", "FORMAT2"] });
+});
+
+test("groupDatabaseFileFieldRows: once a recordFormat IS given, returns that format's fields even if the file has others", () => {
+  const rows = [
+    // Caller already filtered the SQL to WHNAME = 'FORMAT1' (extension.ts's
+    // fetchDatabaseFileFields does this via its own SQL WHERE clause when
+    // recordFormat is passed) — this function trusts what it's handed.
+    { WHFLDI: "FLD1", WHFTXT: "", WHFLDT: "A", WHFLDB: 5, WHFLDD: 0, WHFLDP: 0 },
+  ];
+  const result = groupDatabaseFileFieldRows(rows, "FORMAT1");
+  assert.deepEqual(result, { recordFormat: "FORMAT1", fields: [{ name: "FLD1", text: "", length: 5, dataType: "", decimalPositions: null }] });
+});
+
+test("groupDatabaseFileFieldRows: empty rows produce an error, distinguishing 'no such format' from 'no such file/no fields'", () => {
+  assert.deepEqual(groupDatabaseFileFieldRows([], undefined), { error: "No fields found." });
+  assert.deepEqual(groupDatabaseFileFieldRows([], "NOSUCHFMT"), { error: 'Record format "NOSUCHFMT" was not found.' });
+});
+
+test("groupDatabaseFileFieldRows: accepts lowercase column names too", () => {
+  const rows = [{ whname: "CUSTREC", whfldi: "CUSTNBR", whftxt: "", whfldt: "S", whfldb: 7, whfldd: 7, whfldp: 0 }];
+  const result = groupDatabaseFileFieldRows(rows, undefined);
+  assert.deepEqual(result, { recordFormat: "CUSTREC", fields: [{ name: "CUSTNBR", text: "", length: 7, dataType: "S", decimalPositions: null }] });
 });
