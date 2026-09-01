@@ -59,8 +59,11 @@ tested (see Features below for what's covered). Packaged as a `.vsix`
   (e.g. `BARCODE` mutual exclusion, `ZFOLD`/`STAPLE` PSF-only, file-level
   `SKIPA`/`SKIPB` on `*AFPDS`) — `CRTPRTF` remains the real enforcement
   point.
-- **`CRTPRTF` compile command** via the Code for IBM i extension's
-  `runCommand` API.
+- **`CRTPRTF` compile command** via the Code for IBM i extension, with a
+  library/source-file/member picker (prompted once per file and cached —
+  `i-rlu.setCompileTarget` to change it; a file opened directly from a
+  Code for i `member:` URI needs no prompt, its exact target is read from
+  the URI).
 - **Packaged as a `.vsix`** — installable like any other VS Code extension.
 
 ## Project layout
@@ -179,9 +182,12 @@ kept here.
   and unit-tested wherever the logic is pure, but the actual DSPFFD/SQL
   network round-trip has not been exercised against a real connected IBM
   i. *(Batch H, part 2)*
-- The `CRTPRTF` compile command assumes `*CURLIB/QDDSSRC` and derives the
-  member name from the file name — no library/source-file/member picker
-  yet. *(Batch J)*
+- `CRTPRTF` can't compile directly from an IFS stream file — verified
+  against IBM's own CRTPRTF parameter reference, there's no
+  `SRCSTMF`-equivalent parameter (unlike CRTBNDRPG/CRTBNDCL, which have
+  one). Opening one and compiling shows a clear error rather than guessing
+  a library/source-file target for it. **Permanent by design**, a real IBM
+  i command limitation, not a gap in I-RLU.
 - No copy/duplicate for a field or constant in the properties panel —
   cloning one with its keywords intact requires re-entering every
   attribute by hand. *(Batch Q)*

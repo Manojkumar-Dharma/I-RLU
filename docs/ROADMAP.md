@@ -285,9 +285,33 @@ full detail, acceptance criteria, and file-level ownership per batch):
       that file-level `SKIPA`/`SKIPB` isn't allowed on `*AFPDS` files
       (KEYWORD-INVENTORY §1) — is now **also done**, folded into Batch F's
       validation work above rather than kept as its own batch.
-- [ ] **Batch J — Compile command polish:** let the user pick
-      library/source-file/member instead of assuming `*CURLIB/QDDSSRC`.
-- [x] **Batch K — Packaging:** `vsce package` producing a real `.vsix`
+- [x] **Batch J — Compile command polish — done.** Library/source-file/
+      member picker for `CRTPRTF`, replacing the old assumed
+      `*CURLIB/QDDSSRC`. Two real, compile-breaking bugs found and fixed
+      along the way (see `docs/TASKS.md` Batch J for the full writeup):
+      `codeForI.exports.runCommand(...)` was never a valid call — the
+      actual API (confirmed against Code for i's own docs and I-SDA's
+      `getConnectedCodeForIBMi()`) is
+      `exports.instance.getConnection().runCommand(...)`, so compiling was
+      broken outright before this batch, not just missing a picker; and
+      the command embedded `&CURLIB` (a CL variable reference, meaningless
+      in a raw command string) where `*CURLIB` (the real special value)
+      was needed. Also added `REPLACE(*YES)` — its absence meant every
+      *second* compile of the same file would have failed with CPF7302,
+      since CRTPRTF's own default is `REPLACE(*NO)`. A `member:` URI
+      (opened directly from Code for i) needs no prompt — its own path
+      already names the exact library/source-file/member (ported from
+      I-SDA's `parseMemberUri`); a local file is prompted once
+      (`showInputBox`es, matching I-SDA's own `createRemoteMember` shape)
+      and cached per document (`context.workspaceState`) so repeat
+      compiles don't re-prompt, with a new `i-rlu.setCompileTarget`
+      command to change it. `streamfile:` (IFS) sources get an explicit
+      "CRTPRTF has no SRCSTMF-equivalent" error (verified against IBM's
+      full CRTPRTF parameter table) rather than a guessed target. All the
+      actual decision logic lives in a new `vscode`-free module,
+      `src/prtfCompileTarget.ts` — unit-testable without a real VS Code
+      host, the same split this project already uses for `prtfEdits.ts`.
+      14 new tests (`test/prtfCompileTarget.test.ts`).
 - [x] **Batch K — Packaging:** `vsce package` producing a real `.vsix`
       (verified: `i-rlu-0.0.1.vsix`, 427.66 KB, no warnings). Along the
       way, found and fixed a real bug: `package.json`'s `"main"` pointed at

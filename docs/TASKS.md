@@ -65,7 +65,7 @@ vice versa.
 | AFPDS real font/graphics rendering broadly (vs. char-grid-with-keyword-labels) | **Permanent for v1, revisit only if scope changes** | Not a task on its own — the actionable slices of this are Batch **L** (font metrics) and Batch **O** (resource pixel content) above; true full-graphics AFPDS WYSIWYG beyond those two remains explicitly out of scope per REQUIREMENTS.md §6/§8. |
 | Numeric edit-code/edit-word formatting is approximate-width only, no live-system verification | **Permanent, explicit non-goal** | Not a task — Batch A's detail section explicitly excludes building a full edit-code formatter, to avoid scope creep. |
 | `REF`/`REFFLD` doesn't resolve real type/length/decimals from the referenced file | Part 1 done (UI shape + resolution logic); part 2 (live fetch) unverified, needs a real IBM i | Batch **H** |
-| `CRTPRTF` assumes `*CURLIB/QDDSSRC`, no library/source-file/member picker | Actionable | Batch **J** |
+| `CRTPRTF` assumes `*CURLIB/QDDSSRC`, no library/source-file/member picker | **Done** | Was Batch **J** |
 | No packaging (`.vsix`) | Actionable | Batch **K** |
 | Font resource access unresolved (§9) — real AFP font metrics vs. placeholder | **Mostly done** — FGID identification verified/resolved, proportional widths now use real Adobe AFM data for substitute fonts; CDEFNT/FNTCHRSET/FONTNAME resolution still blocked | Batch **L** |
 | The record-format `<select>` dropdown (toolbar) only switches between record formats already present in the source — no way to add, rename, delete, or reorder a record format from the designer itself | Actionable, previously untracked (this isn't in README/REQUIREMENTS' Known-limitations lists at all — raised separately, added here for the same tracking discipline) | New **Batch P** (no dependency — the record `<select>` and `applyEdit`'s edit-kind dispatch already exist to build on) |
@@ -85,7 +85,7 @@ vice versa.
 | G | Field-level data/edit keywords + indicator text | `ALIAS`, `BLKFOLD`, `CVTDTA`, `DLTEDT`, `FLTFIXDEC`, `FLTPCN`, `TRNSPY`, `TXTRTT`, `INDTXT` | **Done** | none |
 | H | `REF`/`REFFLD` resolution via Code for i | `REF`, `REFFLD` | Part 1 (UI shape + pure resolution logic) **and the field/record-format picker done**; part 2 (live Code for i round-trip) written but unverified — needs a real connected IBM i | none (needs a live/mocked Code for i connection for full completion — can land the UI shape without it) |
 | I | ~~`UOM` modeling~~ **done elsewhere** (see `i-rlu.unitOfMeasure` setting, `docs/ROADMAP.md`) + file-level SKIPA/SKIPB *AFPDS validation | `SKIPA`, `SKIPB` (validation only) | **Done** (validation landed as part of Batch F — see `prtfEngine.js`'s `validateFileLevelKeywords`) | none |
-| J | Compile command: library/source-file/member picker | n/a (tooling) | Not started | none |
+| J | ~~Compile command: library/source-file/member picker~~ | n/a (tooling) | **Done** | none |
 | K | Packaging (`.vsix`) | n/a (tooling) | **Done** | ideally after A–I land, but can be prepped early |
 | L | Real AFP font metrics | n/a (data) | Mostly done — FGID identification resolved; proportional widths now use real published Adobe AFM data (metric-compatible substitute fonts, not verified IBM FGID resource extraction); CDEFNT/FNTCHRSET/FONTNAME still unresolved, see REQUIREMENTS.md §9 | none |
 | M | ~~**Bug fix:** writer emits wrong continuation character when wrapping mid-token~~ | n/a (parser/writer correctness) | **Done** | none |
@@ -600,13 +600,80 @@ a parallel session. Only the second piece below is still open:
 combination isn't allowed (KEYWORD-INVENTORY §1/§2).
 - Test: a validation test for the file-level SKIPA/SKIPB + AFPDS case.
 
-### Batch J — Compile command polish
+### Batch J — Compile command polish [DONE]
 **Goal:** let the user pick library/source-file/member for `CRTPRTF` instead
 of assuming `*CURLIB/QDDSSRC` derived from the file name. Straightforward
 `src/extension.ts` change plus whatever quick-pick UI matches the pattern
 already used for the compile command's other prompts (check I-SDA's
 `CRTMNU` command implementation for the equivalent picker pattern, since
 `docs/REQUIREMENTS.md` explicitly models this compile command on I-SDA's).
+
+**Two real, compile-breaking bugs found and fixed while doing the picker
+work, not just the missing picker itself:**
+1. **`codeForI.exports.runCommand(...)` was never a valid call.** Checked
+   I-SDA's own `getConnectedCodeForIBMi()` helper and Code for i's official
+   docs (codefori.github.io/docs/dev/examples/) — `runCommand` lives on
+   `exports.instance.getConnection()`, not on the extension's top-level
+   `exports` object. The pre-Batch-J code would have thrown "not a
+   function" on the very first compile attempt, connected or not — this
+   wasn't a missing picker, compiling was broken outright. Fixed by porting
+   I-SDA's `getConnectedCodeForIBMi()` pattern (`getCodeForIConnection` in
+   `extension.ts`).
+2. **`&CURLIB` was embedded literally inside the CRTPRTF command text**
+   (`FILE(&CURLIB/${memberName})`). `&CURLIB`/`&LIBL` are real, but only as
+   *separate* `env` object keys passed alongside `command` to `runCommand`
+   (confirmed against Code for i's own docs) — inline in the command
+   string itself, `&CURLIB` is a CL *variable* reference with no meaning in
+   a raw command string, not the special-value syntax it was standing in
+   for. The correct inline special value, confirmed against IBM's own
+   CRTPRTF reference, is `*CURLIB`.
+3. **`REPLACE` was never specified**, and CRTPRTF's own documented default
+   is `REPLACE(*NO)` — so recompiling the very same file a second time
+   would fail with CPF7302 every time, not just on a genuine name
+   collision. Now specifies `REPLACE(*YES)` explicitly, since "recompile
+   the file I'm iterating on" is the only realistic use of this command.
+
+**Picker design, verified against IBM's CRTPRTF reference
+(`ibm.com/docs/ssw_ibm_i_72/cl/crtprtf.htm`) rather than assumed:**
+- **`member:` URIs (opened directly from Code for i) need no prompt at
+  all** — the URI itself (`/LIBRARY/SOURCEFILE/MEMBERNAME.ext`) already
+  names the exact library/source-file/member; parsing it (ported from
+  I-SDA's own `parseMemberUri`) is strictly more accurate than asking the
+  person to re-enter what's already known.
+- **Local files get prompted once, then cached** per document
+  (`context.workspaceState`, keyed by the document's URI string) — so
+  repeat compiles of the same file don't re-prompt every time, while still
+  matching I-SDA's own `createRemoteMember` prompt shape (plain
+  `showInputBox`es with placeholder defaults, not a live library/member
+  browser — Code for i doesn't expose an API for listing libraries/members
+  that this project has confirmed). New command **`i-rlu.setCompileTarget`**
+  lets the person change a cached target without waiting for the next
+  compile to prompt.
+- **`FILE`'s library default (`*CURLIB`) and `SRCFILE`'s library default
+  (`*LIBL`) are NOT the same** — confirmed against IBM's own per-parameter
+  qualifier defaults — so a blank library in the picker can't collapse to
+  one shared "*CURLIB when blank" rule; `buildCrtprtfCommand` applies each
+  parameter's own correct default.
+- **`streamfile:` (IFS) sources get an explicit, accurate error, not a
+  guess.** Checked IBM's full CRTPRTF parameter table end to end — there is
+  no `SRCSTMF`-equivalent parameter (unlike CRTBNDRPG/CRTBNDCL/etc., which
+  do have one); `TOSTMF` is the command's *output* destination, unrelated.
+  This is a genuine IBM i command limitation, not a gap in I-RLU's picker,
+  so it's surfaced as such rather than silently deriving a nonsensical
+  library/file for it.
+- New pure module `src/prtfCompileTarget.ts` (no `vscode` import) holds all
+  of the above's actual decision logic — URI parsing, name derivation,
+  IBM-i-object-name validation (1-10 chars, starts with a letter/$/#/@),
+  and `buildCrtprtfCommand` — so it's unit-testable without a real VS Code
+  host, the same "pure logic extension.ts calls into" split this project
+  already uses for `prtfEdits.ts` and Batch H's own resolution logic.
+  `extension.ts` keeps only the `vscode.window.showInputBox`/
+  `workspaceState`/`runCommand` glue around it.
+- Tests: `test/prtfCompileTarget.test.ts`, 14 tests — `member:` URI
+  parsing (including a malformed/too-short URI returning null rather than
+  throwing, and an iASP-qualified 4-segment path), name derivation/
+  validation, and `buildCrtprtfCommand` covering both bug fixes above plus
+  the differing FILE/SRCFILE blank-library defaults.
 
 ### Batch K — Packaging [DONE]
 **Goal:** `vsce package` producing a real `.vsix`. Mostly checking
