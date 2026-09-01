@@ -49,7 +49,14 @@ export type WebviewEdit =
       decimalPositions?: number;
       usage: string;
     }
-  | { kind: "addConstant"; recordName: string; line: number; position: number; literal: string };
+  | { kind: "addConstant"; recordName: string; line: number; position: number; literal: string }
+  // Batch P — record-format container operations. Unlike field/constant
+  // edits, record formats are identified by NAME (there's no stable `id`
+  // for them in prtfModel.ts's RecordFormatEntry — see prtfEdits.ts).
+  | { kind: "addRecord"; name: string; afterRecordName?: string }
+  | { kind: "renameRecord"; oldName: string; newName: string }
+  | { kind: "deleteRecord"; name: string }
+  | { kind: "reorderRecord"; name: string; direction: "up" | "down" };
 
 /** Every message shape media/webviewClient.js posts to the extension host via vscode.postMessage. */
 export type WebviewMessage =

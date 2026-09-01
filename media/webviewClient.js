@@ -46,6 +46,12 @@
     selectedId: null, // id of the currently selected cell, if any
     placing: null, // null | "field" | "constant" — armed "click to place" mode
     pendingNew: null, // { kind, line, position } — set right after a placement click, before Save
+    // Batch P — record-format container operations, mutually exclusive
+    // with each other and with placing/pendingNew/selectedId (see each
+    // toolbar button's click handler).
+    pendingNewRecord: false, // true: showing the inline "new record format" form
+    renamingRecord: false, // true: showing the inline rename form for state.recordName
+    confirmDeleteRecord: false, // true: showing the delete-confirmation row for state.recordName
   };
 
   let CELL_W = 8; // px per character column — recomputed per record from CPI via layout.grid (96/CPI); see render()
@@ -77,6 +83,9 @@
     if (!state.recordName) state.recordName = state.model.records[0].name;
 
     root.appendChild(renderToolbar());
+
+    const recordMgmtPanel = renderRecordManagementPanel();
+    if (recordMgmtPanel) root.appendChild(recordMgmtPanel);
 
     const layout = currentLayout();
     if (layout.grid) {
@@ -127,6 +136,22 @@
     }
   }
 
+  /**
+   * Resets every toolbar "pending action" flag to its closed/off state —
+   * used by every toolbar button's click handler (field/constant placement,
+   * and Batch P's record add/rename/delete) so opening one of these
+   * mutually-exclusive inline forms always closes any other one that might
+   * already be open, rather than stacking several at once.
+   */
+  function clearPendingUiState() {
+    state.placing = null;
+    state.pendingNew = null;
+    state.selectedId = null;
+    state.pendingNewRecord = false;
+    state.renamingRecord = false;
+    state.confirmDeleteRecord = false;
+  }
+
   function renderToolbar() {
     const record = state.model.records.find((r) => r.name === state.recordName);
     const toolbar = el("div", { class: "toolbar" });
@@ -139,11 +164,53 @@
     });
     select.addEventListener("change", (e) => {
       state.recordName = e.target.value;
-      state.selectedId = null;
-      state.pendingNew = null;
+      clearPendingUiState();
       render();
     });
     toolbar.appendChild(el("label", {}, ["Record: ", select]));
+
+    // Batch P — reorder buttons act on the currently-selected record
+    // format; simple up/down (rather than drag-to-reorder) per this
+    // batch's own "enough for v1" scope note, since there's no dedicated
+    // record-list view to drag within (just this single-select dropdown).
+    const recordIdx = state.model.records.findIndex((r) => r.name === state.recordName);
+    const upBtn = el("button", { class: "btn", title: "Move this record format earlier in the source" }, ["\u25b2"]);
+    if (recordIdx <= 0) upBtn.setAttribute("disabled", "disabled");
+    upBtn.addEventListener("click", () => {
+      vscode.postMessage({ type: "edit", edit: { kind: "reorderRecord", name: state.recordName, direction: "up" } });
+    });
+    const downBtn = el("button", { class: "btn", title: "Move this record format later in the source" }, ["\u25bc"]);
+    if (recordIdx === -1 || recordIdx >= state.model.records.length - 1) downBtn.setAttribute("disabled", "disabled");
+    downBtn.addEventListener("click", () => {
+      vscode.postMessage({ type: "edit", edit: { kind: "reorderRecord", name: state.recordName, direction: "down" } });
+    });
+    toolbar.appendChild(upBtn);
+    toolbar.appendChild(downBtn);
+
+    const addRecordBtn = el("button", { class: "btn" + (state.pendingNewRecord ? " active" : "") }, ["+ Record"]);
+    addRecordBtn.addEventListener("click", () => {
+      const opening = !state.pendingNewRecord;
+      clearPendingUiState();
+      state.pendingNewRecord = opening;
+      render();
+    });
+    const renameRecordBtn = el("button", { class: "btn" + (state.renamingRecord ? " active" : "") }, ["Rename"]);
+    renameRecordBtn.addEventListener("click", () => {
+      const opening = !state.renamingRecord;
+      clearPendingUiState();
+      state.renamingRecord = opening;
+      render();
+    });
+    const deleteRecordBtn = el("button", { class: "btn" + (state.confirmDeleteRecord ? " active" : "") }, ["Delete"]);
+    deleteRecordBtn.addEventListener("click", () => {
+      const opening = !state.confirmDeleteRecord;
+      clearPendingUiState();
+      state.confirmDeleteRecord = opening;
+      render();
+    });
+    toolbar.appendChild(addRecordBtn);
+    toolbar.appendChild(renameRecordBtn);
+    toolbar.appendChild(deleteRecordBtn);
 
     const addFieldBtn = el(
       "button",
@@ -151,9 +218,9 @@
       ["+ Field"]
     );
     addFieldBtn.addEventListener("click", () => {
-      state.placing = state.placing === "field" ? null : "field";
-      state.pendingNew = null;
-      state.selectedId = null;
+      const nextPlacing = state.placing === "field" ? null : "field";
+      clearPendingUiState();
+      state.placing = nextPlacing;
       render();
     });
     const addConstBtn = el(
@@ -162,9 +229,9 @@
       ["+ Constant"]
     );
     addConstBtn.addEventListener("click", () => {
-      state.placing = state.placing === "constant" ? null : "constant";
-      state.pendingNew = null;
-      state.selectedId = null;
+      const nextPlacing = state.placing === "constant" ? null : "constant";
+      clearPendingUiState();
+      state.placing = nextPlacing;
       render();
     });
     toolbar.appendChild(addFieldBtn);
@@ -697,6 +764,110 @@
       if (cell) return renderEditPanel(cell);
     }
     return null;
+  }
+
+  /**
+   * Batch P — inline forms for the record-format container operations
+   * (add/rename/delete) armed by renderToolbar's buttons above. Rendered
+   * in the same "props" slot renderPropsPanel uses for field/constant
+   * editing, since only one of these is ever showing at a time
+   * (clearPendingUiState keeps them mutually exclusive) — but as a
+   * SEPARATE call from renderPropsPanel (not folded into it), since this
+   * operates on the record CONTAINER itself, not on a field/constant
+   * within it, and doesn't depend on `layout.cells` the way
+   * renderPropsPanel/renderEditPanel do.
+   *
+   * Matches the existing "no separate Save/confirm round trip needed for
+   * Cancel, but wait for the setModel round trip after a real edit" pattern
+   * already used by renderNewEntryPanel below: a Save/Add/Rename/Delete
+   * button posts the edit and closes the form immediately (optimistic,
+   * without calling render() itself) — the next incoming `setModel`
+   * message (after the extension host applies the edit and re-parses) is
+   * what actually redraws the toolbar/select with the new state; Cancel
+   * buttons close the form AND call render() directly, since there's no
+   * round trip to wait for.
+   */
+  function renderRecordManagementPanel() {
+    if (!state.pendingNewRecord && !state.renamingRecord && !state.confirmDeleteRecord) return null;
+    const panel = el("div", { class: "props" });
+
+    if (state.pendingNewRecord) {
+      panel.appendChild(el("h4", {}, ["New record format"]));
+      panel.appendChild(
+        el("div", { class: "hint" }, ["Inserted right after \"" + state.recordName + "\" in the source."])
+      );
+      const nameRow = labeledInput("Name", { type: "text", maxlength: "10" });
+      panel.appendChild(nameRow.row);
+      const btnRow = el("div", { class: "prop-buttons" });
+      const addBtn = el("button", { class: "btn primary" }, ["Add"]);
+      addBtn.addEventListener("click", () => {
+        const name = nameRow.input.value.trim().toUpperCase().slice(0, 10);
+        if (!name) return;
+        vscode.postMessage({ type: "edit", edit: { kind: "addRecord", name, afterRecordName: state.recordName } });
+        state.pendingNewRecord = false;
+      });
+      const cancelBtn = el("button", { class: "btn" }, ["Cancel"]);
+      cancelBtn.addEventListener("click", () => {
+        state.pendingNewRecord = false;
+        render();
+      });
+      btnRow.appendChild(addBtn);
+      btnRow.appendChild(cancelBtn);
+      panel.appendChild(btnRow);
+    }
+
+    if (state.renamingRecord) {
+      panel.appendChild(el("h4", {}, ["Rename record format \"" + state.recordName + "\""]));
+      const nameRow = labeledInput("New name", { type: "text", maxlength: "10", value: state.recordName || "" });
+      panel.appendChild(nameRow.row);
+      const btnRow = el("div", { class: "prop-buttons" });
+      const saveBtn = el("button", { class: "btn primary" }, ["Rename"]);
+      saveBtn.addEventListener("click", () => {
+        const newName = nameRow.input.value.trim().toUpperCase().slice(0, 10);
+        if (!newName) return;
+        vscode.postMessage({ type: "edit", edit: { kind: "renameRecord", oldName: state.recordName, newName } });
+        // Optimistically track the rename locally so the toolbar <select>
+        // doesn't flash back to the old name before the setModel round
+        // trip completes; the incoming setModel's own fallback (see the
+        // bottom of this file) still corrects this if the edit was
+        // rejected as a no-op (e.g. a duplicate name).
+        state.recordName = newName;
+        state.renamingRecord = false;
+      });
+      const cancelBtn = el("button", { class: "btn" }, ["Cancel"]);
+      cancelBtn.addEventListener("click", () => {
+        state.renamingRecord = false;
+        render();
+      });
+      btnRow.appendChild(saveBtn);
+      btnRow.appendChild(cancelBtn);
+      panel.appendChild(btnRow);
+    }
+
+    if (state.confirmDeleteRecord) {
+      panel.appendChild(el("h4", {}, ["Delete record format \"" + state.recordName + "\"?"]));
+      panel.appendChild(
+        el("div", { class: "hint warning" }, [
+          "This removes the record format and all its fields/constants. Undo with Ctrl+Z in the text editor if needed — this panel has no separate undo of its own.",
+        ])
+      );
+      const btnRow = el("div", { class: "prop-buttons" });
+      const confirmBtn = el("button", { class: "btn danger" }, ["Delete"]);
+      confirmBtn.addEventListener("click", () => {
+        vscode.postMessage({ type: "edit", edit: { kind: "deleteRecord", name: state.recordName } });
+        state.confirmDeleteRecord = false;
+      });
+      const cancelBtn = el("button", { class: "btn" }, ["Cancel"]);
+      cancelBtn.addEventListener("click", () => {
+        state.confirmDeleteRecord = false;
+        render();
+      });
+      btnRow.appendChild(confirmBtn);
+      btnRow.appendChild(cancelBtn);
+      panel.appendChild(btnRow);
+    }
+
+    return panel;
   }
 
   function renderNewEntryPanel(pending) {
@@ -1650,6 +1821,17 @@
     appendAfprscRow(panel, record, onSet, onRemove);
     appendDocidxtagRow(panel, record, onSet, onRemove);
     appendKeywordRows(panel, BATCH_E_SIMPLE_KEYWORDS, record.keywords, "pgs-" + record.name, onSet, onRemove);
+
+    // Batch P: STRPAGGRP/ENDPAGGRP pairing is a property of record ORDER
+    // across the whole file (not just this one record's own keywords),
+    // since reordering record formats (this batch's own reorderRecord
+    // edit) is the most direct way to break it — see
+    // PrtfEngine.validatePageGroupOrder's own header for the exact rules.
+    // Scoped to warnings naming THIS record, so each affected record's own
+    // panel shows only what's relevant to it.
+    (PrtfEngine.validatePageGroupOrder(state.model) || [])
+      .filter((w) => w.recordName === record.name)
+      .forEach((w) => panel.appendChild(el("div", { class: "hint warning" }, [w.message])));
 
     const badges = (layout && layout.pageGroupKeywords) || [];
     if (badges.length) {

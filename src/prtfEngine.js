@@ -85,6 +85,8 @@ const mod = {
   buildAfprscParams: PageGroupKeywords.buildAfprscParams,
   parseDocidxtag: PageGroupKeywords.parseDocidxtag,
   buildDocidxtagParams: PageGroupKeywords.buildDocidxtagParams,
+  // Batch P
+  validatePageGroupOrder: PageGroupKeywords.validatePageGroupOrder,
 };
 if (typeof module !== "undefined" && module.exports) module.exports = mod;
 if (typeof window !== "undefined") window.PrtfEngine = mod;

@@ -233,6 +233,126 @@ export function applyEditToModel(model: ParsedSource, edit: WebviewEdit): boolea
       model.sequence.splice(anchorIndex === -1 ? model.sequence.length : anchorIndex + 1, 0, newEntry);
       return true;
     }
+    // Batch P — record-format container operations. Record formats are
+    // identified by NAME (see webviewProtocol.ts's comment on this batch's
+    // edit kinds), so these look up model.records by name rather than by
+    // the stable `id` findEntryById uses for fields/constants.
+    case "addRecord": {
+      const name = (edit.name || "").trim();
+      if (!name) return false;
+      if (model.records.some((r) => r.name === name)) return false; // record names must be unique
+      const newRecord: RecordFormatEntry = {
+        kind: "record",
+        sourceLineIndex: -1,
+        name,
+        conditions: [],
+        keywords: [],
+        fields: [],
+      };
+      // Inserted right after the currently-selected record (edit.afterRecordName),
+      // not always at the end of the file — more intuitive for building up a
+      // header/detail/footer sequence one record at a time (docs/TASKS.md
+      // Batch P's own instruction to pick one and document the reasoning).
+      // Falls back to appending at the end when afterRecordName is omitted
+      // or doesn't match any existing record (e.g. an empty file with no
+      // "currently selected" record yet).
+      let recordsInsertIndex = model.records.length;
+      let sequenceAnchor: RecordFormatEntry | FieldEntry | ConstantEntry | null = null;
+      if (edit.afterRecordName) {
+        const afterIndex = model.records.findIndex((r) => r.name === edit.afterRecordName);
+        if (afterIndex !== -1) {
+          recordsInsertIndex = afterIndex + 1;
+          const afterRecord = model.records[afterIndex];
+          sequenceAnchor = afterRecord.fields.length > 0 ? afterRecord.fields[afterRecord.fields.length - 1] : afterRecord;
+        }
+      }
+      model.records.splice(recordsInsertIndex, 0, newRecord);
+      const anchorSeqIndex = sequenceAnchor ? model.sequence.indexOf(sequenceAnchor) : -1;
+      model.sequence.splice(anchorSeqIndex === -1 ? model.sequence.length : anchorSeqIndex + 1, 0, newRecord);
+      return true;
+    }
+    case "renameRecord": {
+      const record = model.records.find((r) => r.name === edit.oldName);
+      if (!record) return false;
+      const newName = (edit.newName || "").trim();
+      if (!newName) return false;
+      if (newName !== record.name && model.records.some((r) => r.name === newName)) return false; // must stay unique
+      // NOTE on REF/REFFLD: confirmed against IBM's DDS reference ("When to
+      // specify REF and REFFLD keywords for DDS files") that REFFLD's
+      // parameters are always [field-name, *SRC-or-external-database-file]
+      // — *SRC means "search the whole file being defined" by FIELD NAME,
+      // it is never scoped to a particular RECORD FORMAT name within this
+      // same source. Neither REF nor REFFLD ever names a record format
+      // within the file being compiled, only an external database file (or
+      // that external file's own record format, when it has more than
+      // one) — so there is no in-model reference to a record format's own
+      // name for this rename to dangle. No REF/REFFLD fixup or flagging is
+      // needed here, verified rather than assumed per this batch's own
+      // instruction to check.
+      record.name = newName;
+      return true;
+    }
+    case "deleteRecord": {
+      const idx = model.records.findIndex((r) => r.name === edit.name);
+      if (idx === -1) return false;
+      const record = model.records[idx];
+      // Remove the record's own fields/constants and the record entry
+      // itself from model.sequence (not just clear record.fields), so
+      // regenerateSource doesn't still walk and re-emit them.
+      for (const f of record.fields) {
+        const seqIdx = model.sequence.indexOf(f);
+        if (seqIdx !== -1) model.sequence.splice(seqIdx, 1);
+      }
+      const recordSeqIdx = model.sequence.indexOf(record);
+      if (recordSeqIdx !== -1) model.sequence.splice(recordSeqIdx, 1);
+      model.records.splice(idx, 1);
+      return true;
+    }
+    case "reorderRecord": {
+      const idx = model.records.findIndex((r) => r.name === edit.name);
+      if (idx === -1) return false;
+      const neighborIdx = edit.direction === "up" ? idx - 1 : idx + 1;
+      if (neighborIdx < 0 || neighborIdx >= model.records.length) return false; // already at that edge — no-op
+      const record = model.records[idx];
+      const neighbor = model.records[neighborIdx];
+
+      // Each record's "block" in model.sequence is itself plus everything
+      // up to (but not including) the next record-kind entry — this
+      // deliberately sweeps up any trailing comments/blank lines after a
+      // record's last field along with that record, rather than splitting
+      // them, since there's no way to know whether a comment right before
+      // the next record's `R` line was meant as a trailing note for this
+      // record or a leading one for the next.
+      const blockRange = (r: RecordFormatEntry): [number, number] | null => {
+        const start = model.sequence.indexOf(r);
+        if (start === -1) return null;
+        let end = model.sequence.length;
+        for (let i = start + 1; i < model.sequence.length; i++) {
+          if (model.sequence[i].kind === "record") {
+            end = i;
+            break;
+          }
+        }
+        return [start, end];
+      };
+      const recordRange = blockRange(record);
+      const neighborRange = blockRange(neighbor);
+      if (!recordRange || !neighborRange) return false;
+
+      // model.records and model.sequence are kept in the same relative
+      // order (every addRecord/deleteRecord above preserves that
+      // invariant), so with neighborIdx = idx±1 these two ranges are
+      // adjacent in the sequence — swap their two contiguous slices in
+      // place, whichever one currently comes first.
+      const [firstRange, secondRange] = recordRange[0] < neighborRange[0] ? [recordRange, neighborRange] : [neighborRange, recordRange];
+      const firstBlock = model.sequence.slice(firstRange[0], firstRange[1]);
+      const secondBlock = model.sequence.slice(secondRange[0], secondRange[1]);
+      model.sequence.splice(firstRange[0], secondRange[1] - firstRange[0], ...secondBlock, ...firstBlock);
+
+      model.records[idx] = neighbor;
+      model.records[neighborIdx] = record;
+      return true;
+    }
     default:
       return false;
   }

@@ -77,6 +77,25 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       entire single-quoted span (including its internal spaces, and DDS's
       doubled-`''` escaping) as one indivisible token. Found via Batch A's
       tests; see `docs/TASKS.md` Batch R for the full root-cause writeup.
+- [x] **Batch P — Add/rename/delete/reorder record formats from the
+      designer — done.** Four new `applyEdit` kinds (`addRecord`/
+      `renameRecord`/`deleteRecord`/`reorderRecord`), identified by record
+      name since `RecordFormatEntry` has no stable `id` the way fields/
+      constants do. New records insert right after the currently-selected
+      one (not always at the end), matching the more intuitive
+      header/detail/footer workflow. Investigated (not assumed) whether
+      renaming could dangle a `REF`/`REFFLD` reference elsewhere in the
+      file — confirmed against IBM's DDS reference that it can't, since
+      neither keyword ever names a record format within the file being
+      compiled. Reordering swaps each record's whole contiguous block in
+      the source (sweeping up any trailing comments with it, a documented
+      and tested decision) and added `validatePageGroupOrder` — a
+      whole-model check that flags broken `STRPAGGRP`/`ENDPAGGRP` pairing
+      regardless of what caused it, reordering being the most direct way.
+      New "+ Record"/"Rename"/"Delete"/▲▼ toolbar controls, all via inline
+      forms rather than native browser dialogs, matching this codebase's
+      existing add-field/add-constant UX. 25 new tests
+      (`test/prtfBatchP.test.ts`).
 
 ## Next up
 
@@ -297,12 +316,6 @@ full detail, acceptance criteria, and file-level ownership per batch):
       built against them. See `src/afpFontMetrics.js` for the full tables
       and sourcing notes, and `docs/TASKS.md` Batch L for the canonical
       status (update that file too if you pick this back up).
-- [ ] **Batch P — Add/rename/delete/reorder record formats from the
-      designer:** the toolbar's record-format dropdown only switches
-      between record formats already in the source; there's no way to
-      create, rename, delete, or reorder one without editing raw DDS text.
-      No dependency — builds directly on the existing `<select>` and
-      `applyEdit` edit-kind pattern. See `docs/TASKS.md` Batch P.
 - [ ] **Batch Q — Copy/duplicate a field or constant:** add/update/delete
       already exist for fields and constants, but not copy — cloning one
       with its keywords intact currently means re-entering everything by

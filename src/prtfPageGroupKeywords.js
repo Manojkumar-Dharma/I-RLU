@@ -40,7 +40,7 @@
  */
 
 // eslint-disable-next-line no-undef
-const { isFieldRef, toNumber, toInches } =
+const { isFieldRef, toNumber, toInches, findKeyword } =
   typeof module !== "undefined" && module.exports ? require("./prtfKeywordHelpers.js") : window.PrtfKeywordHelpers;
 // groupTokens (not the plain paramTokens) is used throughout this file:
 // several of these keywords' params carry quoted character values that can
@@ -214,6 +214,66 @@ function buildDocidxtagParams(f) {
   return "(" + quoteOrField(attributeName) + " " + quoteOrField(attributeValue) + " " + tagLevel + ")";
 }
 
+/**
+ * docs/TASKS.md Batch P — validates STRPAGGRP/ENDPAGGRP pairing across the
+ * WHOLE model (not just one record), since the pairing's validity is a
+ * property of the ORDER record formats appear in the file, not of any
+ * single record on its own. Reordering record formats (Batch P's own
+ * reorderRecord edit) is the most direct way to break this, but the check
+ * itself doesn't know or care WHY the ordering ended up wrong — it just
+ * walks model.records in their current order and reports whatever it
+ * finds, same live-editor-hint philosophy every other validation function
+ * in this project follows (CRTPRTF remains the actual enforcement point).
+ * Per media/webviewClient.js's own STRPAGGRP hint text ("groups can't nest
+ * or overlap"), this flags:
+ *  - an ENDPAGGRP with no unclosed STRPAGGRP before it (nothing to end);
+ *  - a STRPAGGRP while a previous one is still unclosed (nesting);
+ *  - a STRPAGGRP that's never closed by the end of the file.
+ * Returns an array of { recordName, keyword, message } warnings in
+ * whatever record order they were found — [] if the file has no page
+ * groups at all, or the ones it has are all correctly paired.
+ */
+function validatePageGroupOrder(model) {
+  const warnings = [];
+  let openRecordName = null;
+  for (const record of (model && model.records) || []) {
+    const hasStart = !!findKeyword(record.keywords, "STRPAGGRP");
+    const hasEnd = !!findKeyword(record.keywords, "ENDPAGGRP");
+    if (hasStart) {
+      if (openRecordName) {
+        warnings.push({
+          recordName: record.name,
+          keyword: "STRPAGGRP",
+          message:
+            "STRPAGGRP on " + record.name + " starts a new page group before the one started on " + openRecordName +
+            " was ended with ENDPAGGRP — page groups can't nest or overlap.",
+        });
+      } else {
+        openRecordName = record.name;
+      }
+    }
+    if (hasEnd) {
+      if (!openRecordName) {
+        warnings.push({
+          recordName: record.name,
+          keyword: "ENDPAGGRP",
+          message: "ENDPAGGRP on " + record.name + " has no matching STRPAGGRP earlier in the file to end.",
+        });
+      } else {
+        openRecordName = null;
+      }
+    }
+  }
+  if (openRecordName) {
+    warnings.push({
+      recordName: openRecordName,
+      keyword: "STRPAGGRP",
+      message: "STRPAGGRP on " + openRecordName + " is never closed by a later ENDPAGGRP.",
+    });
+  }
+  return warnings;
+}
+
 const mod = {
   DEFAULT_RESOURCE_COLS,
   DEFAULT_RESOURCE_ROWS,
@@ -227,6 +287,7 @@ const mod = {
   buildAfprscParams,
   parseDocidxtag,
   buildDocidxtagParams,
+  validatePageGroupOrder,
 };
 if (typeof module !== "undefined" && module.exports) module.exports = mod;
 if (typeof window !== "undefined") window.PrtfPageGroupKeywords = mod;

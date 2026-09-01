@@ -91,7 +91,7 @@ vice versa.
 | M | ~~**Bug fix:** writer emits wrong continuation character when wrapping mid-token~~ | n/a (parser/writer correctness) | **Done** | none |
 | N | ~~`BARCODE` mutual-exclusion validation~~ | `BARCODE` (validation vs. `FONT`, `EDTCDE`, `EDTWRD`, `DATE`, `TIME`, `PAGNBR`, etc.) | **Done** | **C** |
 | O | Real AFP resource rendering (actual pixel content for page segments/overlays) | `PAGSEG`, `OVERLAY` (record-level) | Blocked — needs external resource files, see REQUIREMENTS.md §8 | **E** |
-| P | Add/rename/delete/reorder record formats from the designer | n/a (tooling/UI, not a keyword) | In progress | none |
+| P | ~~Add/rename/delete/reorder record formats from the designer~~ | n/a (tooling/UI, not a keyword) | **Done** | none |
 | Q | Copy/duplicate a field or constant | n/a (tooling/UI, not a keyword) | Not started | none |
 | R | ~~**Bug fix:** `emitWithKeywords` collapses multiple consecutive internal spaces inside any quoted keyword literal~~ | n/a (parser/writer correctness) | **Done** | none |
 
@@ -803,7 +803,7 @@ computes.
 - Tests: will need real (or realistic sample) resource files as fixtures —
   can't be meaningfully tested with synthetic data alone.
 
-### Batch P — Add/rename/delete/reorder record formats from the designer
+### Batch P — Add/rename/delete/reorder record formats from the designer [DONE]
 **Source:** raised directly (not from README/REQUIREMENTS' existing Known
 limitations lists) — the toolbar's record-format `<select>` dropdown
 (`media/webviewClient.js`, present since the very first webview build) only
@@ -874,6 +874,93 @@ re-doing the field/constant properties panel.
   (already handles a record disappearing out from under the current
   selection, per the empty-file guard) still behaves correctly after a
   delete or reorder.
+
+**[DONE] — Implemented as follows:**
+- Four new `WebviewEdit` kinds in `src/webviewProtocol.ts`: `addRecord`,
+  `renameRecord`, `deleteRecord`, `reorderRecord` — all identified by
+  record NAME (not the stable `id` field/constant edits use, since
+  `RecordFormatEntry` has no such id in `prtfModel.ts`).
+- Model mutations added to `src/prtfEdits.ts`'s existing `applyEditToModel`
+  switch, following the file's established pattern exactly (pure, no
+  vscode dependency, unit tested directly):
+  - `addRecord`: rejects an empty or already-used name. Inserted
+    **immediately after the currently-selected record** (`afterRecordName`,
+    sent by the webview as `state.recordName`) rather than always at the
+    end of the file — chosen because it's the more intuitive default for
+    building up a header/detail/footer sequence one record at a time,
+    matching this batch's own stated reasoning; falls back to appending at
+    the end when `afterRecordName` is omitted or doesn't match (e.g. an
+    empty file).
+  - `renameRecord`: rejects an empty new name or one already used by
+    another record; renaming to the record's own current name is treated
+    as a successful no-op, not a false "duplicate" rejection.
+    **REF/REFFLD investigation**: confirmed against IBM's DDS reference
+    ("When to specify REF and REFFLD keywords for DDS files") that
+    REFFLD's parameters are always `[field-name, *SRC-or-external-database-file]`
+    — `*SRC` means "search the whole file being defined" **by field name**,
+    never scoped to a particular record format name, and REF/REFFLD never
+    name a record format within the file being compiled at all (only an
+    external database file, or optionally that external file's OWN record
+    format when it has more than one — a different file's structure, not
+    this one's). So there is no in-model reference to a record format's own
+    name that a rename could dangle — verified with a dedicated regression
+    test rather than left as an assumption, and no fixup/flagging logic was
+    needed for this part of the original goal.
+  - `deleteRecord`: removes the record from `model.records` AND removes
+    its own entry plus every one of its fields/constants from
+    `model.sequence` (not just clearing `record.fields`), so
+    `regenerateSource` doesn't still walk and re-emit them.
+  - `reorderRecord`: computes each record's contiguous "block" in
+    `model.sequence` — from its own entry up to (but not including) the
+    next record-kind entry, or the end of the sequence — and swaps the two
+    adjacent blocks for the target record and its up/down neighbor,
+    relying on the invariant (already preserved by every other mutation in
+    this file) that `model.records` and `model.sequence` stay in the same
+    relative order. **Decision on trailing comments**: a block sweeps up
+    any trailing comments/blank lines after a record's last field, since
+    there's no way to know whether such a comment was meant as a trailing
+    note for that record or a leading one for the next — tested explicitly
+    (a comment placed between two records moves with the earlier one when
+    reordered). No-op (returns `false`) at either edge of the array.
+- **STRPAGGRP/ENDPAGGRP pairing**: decided to **flag, not protect against**
+  — added `validatePageGroupOrder(model)` to `src/prtfPageGroupKeywords.js`
+  (Batch E's own module), which walks `model.records` in their current
+  order and reports any `STRPAGGRP` with no later `ENDPAGGRP`, any
+  `ENDPAGGRP` with no preceding `STRPAGGRP`, or nested `STRPAGGRP`s — a
+  general model-state check (matching this project's existing live-editor-
+  hint philosophy — see `validateFileLevelKeywords`'s cross-record AFPDS
+  heuristic for the same "operates on the whole model, not the deciding
+  factor of why" shape) that doesn't need to know reordering specifically
+  caused the break; it would just as correctly catch one introduced by
+  hand-editing raw DDS text. Rendered in `renderPageGroupPanel`
+  (`media/webviewClient.js`), scoped to warnings naming the currently
+  displayed record. A dedicated test reorders a valid `STRPAGGRP`/
+  `ENDPAGGRP` pair past each other and confirms the check catches it.
+- Webview UI (`media/webviewClient.js`): "+ Record" (inline name-entry
+  form, matching the existing add-field/add-constant panel style rather
+  than a native `prompt()`, which this codebase avoids entirely), "Rename"
+  (inline form, defaults to the current name), "Delete" (inline
+  confirmation row rather than a native `confirm()`, since this is
+  destructive), and ▲/▼ reorder buttons next to the record `<select>`,
+  disabled at whichever edge of the record list is currently at that end.
+  A new `clearPendingUiState()` helper keeps all of these mutually
+  exclusive with each other and with the existing field/constant
+  placement/editing state, reusing the existing "post the edit and let the
+  `setModel` round trip redraw everything" pattern (no direct `render()`
+  call after a real edit; `render()` only for Cancel, which has nothing to
+  wait for).
+- `test/prtfBatchP.test.ts`: 25 new tests covering every edit kind's happy
+  path, empty/duplicate/unknown-name rejections, both reorder edge no-ops,
+  the REF/REFFLD non-issue (regression guard, not just documentation), the
+  trailing-comment block-sweep decision, and `validatePageGroupOrder`'s
+  balanced/unclosed/orphaned-end/nested cases plus the reorder-breaks-a-
+  valid-pairing scenario end to end.
+- Verified end-to-end in the assembled webview script (same `vm`-context
+  technique as `test/webviewAssembly.test.ts`) that
+  `window.PrtfEngine.validatePageGroupOrder` resolves correctly through
+  the real inlined-module dependency chain.
+- Full suite: 263 tests, all passing (238 prior + 25 new in
+  `test/prtfBatchP.test.ts`); `tsc --noEmit` clean.
 
 ### Batch Q — Copy/duplicate a field or constant
 **Source:** raised directly, same as Batch P — not from README/REQUIREMENTS'
