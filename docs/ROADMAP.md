@@ -67,6 +67,16 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       `PAGSEG(COMPLOGO 0.5 0.5)` on round-trip. Caught by the
       `sample-afpds.pf` fixture; see `docs/TASKS.md` Batch M for the full
       root-cause writeup. Test suite now 33 tests, all passing.
+- [x] Fixed a second writer bug (Batch R) in the same function:
+      `emitWithKeywords`'s tokenizer split on ANY whitespace with no concept
+      of quote boundaries, so multiple internal spaces inside a quoted
+      keyword literal (e.g. `EDTWRD('  .  ')`) silently collapsed to a
+      single space on round-trip (`EDTWRD(' . ')`) — a different symptom
+      than Batch M's continuation-character bug, in the same function.
+      Fixed with a new quote-aware `tokenizeKeywordText` that keeps an
+      entire single-quoted span (including its internal spaces, and DDS's
+      doubled-`''` escaping) as one indivisible token. Found via Batch A's
+      tests; see `docs/TASKS.md` Batch R for the full root-cause writeup.
 
 ## Next up
 
@@ -88,10 +98,9 @@ full detail, acceptance criteria, and file-level ownership per batch):
       verified against IBM's reference rather than RLU's own screen
       picklist numbering). New `quotedSelect` kind added for `DATSEP`/
       `TIMSEP`'s quoted-or-bare-`*JOB` shape. See `docs/TASKS.md` Batch A
-      for the full writeup. Found (but didn't fix, out of scope) a
+      for the full writeup. Found (and later fixed as Batch R) a
       pre-existing writer bug — `emitWithKeywords` collapses multiple
-      consecutive internal spaces inside quoted keyword literals — logged
-      as Batch R.
+      consecutive internal spaces inside quoted keyword literals.
 - [x] **Batch B — Font/character-sizing keyword editing incl. P-field
       indirection — done.** Built the generic literal-vs-P-field toggle
       component (`pFieldRow`) once and reused it across `FONT`, `CDEFNT`,
@@ -229,12 +238,6 @@ full detail, acceptance criteria, and file-level ownership per batch):
       with its keywords intact currently means re-entering everything by
       hand. No dependency — sits next to the existing Delete button and
       reuses the add-field edit-kind shape. See `docs/TASKS.md` Batch Q.
-- [ ] **Batch R — Bug fix:** `emitWithKeywords` collapses multiple
-      consecutive internal spaces inside any quoted keyword literal (e.g.
-      `EDTWRD('  .  ')` round-trips as `EDTWRD(' . ')`) — its tokenizer has
-      no concept of quote boundaries. Same function as Batch M's earlier
-      fix, different symptom. Found via Batch A's tests. See
-      `docs/TASKS.md` Batch R for the full root-cause writeup.
 
 Each batch's keyword list, current model/parser/engine status
 (modeled/rendered/UI), and IBM-documented gotchas are detailed in

@@ -93,7 +93,7 @@ vice versa.
 | O | Real AFP resource rendering (actual pixel content for page segments/overlays) | `PAGSEG`, `OVERLAY` (record-level) | Blocked — needs external resource files, see REQUIREMENTS.md §8 | **E** |
 | P | Add/rename/delete/reorder record formats from the designer | n/a (tooling/UI, not a keyword) | Not started | none |
 | Q | Copy/duplicate a field or constant | n/a (tooling/UI, not a keyword) | Not started | none |
-| R | **Bug fix:** `emitWithKeywords` collapses multiple consecutive internal spaces inside any quoted keyword literal | n/a (parser/writer correctness) | Not started — logged below, not yet fixed | none |
+| R | ~~**Bug fix:** `emitWithKeywords` collapses multiple consecutive internal spaces inside any quoted keyword literal~~ | n/a (parser/writer correctness) | **Done** | none |
 
 ## Batch detail
 
@@ -793,7 +793,7 @@ exactly — this doesn't need any other batch to land first.
   mutate the source entry itself (a bug where copy silently *moves* instead
   of duplicates is the obvious failure mode to guard against explicitly).
 
-### Batch R — Fix emitWithKeywords collapsing internal whitespace in quoted literals
+### Batch R — Fix emitWithKeywords collapsing internal whitespace in quoted literals [DONE]
 **Found by:** `test/prtfBatchA.test.ts`, while adding a round-trip test for
 `EDTWRD('  .  ')` (a realistic edit-word mask — multiple internal spaces are
 common in real masks, e.g. for currency column alignment). The test failed:
@@ -841,6 +841,58 @@ consecutive internal space. Batch A's `EDTWRD` test was the first to.
 4. Add a regression test in `test/prtfWriter.test.ts` (unit-level, against
    `emitWithKeywords` directly, matching that file's existing style)
    alongside the fixture-level one, so this doesn't regress silently again.
+
+**[DONE] — Fixed as follows:**
+- `src/prtfWriter.js` gained a new `tokenizeKeywordText(text)` function: a
+  quote-aware tokenizer that walks the text character by character,
+  tracking whether it's inside a single-quoted span. Outside a quote,
+  whitespace splits tokens as before. Inside a quote, everything (including
+  spaces) is appended to the current token; a doubled `''` is recognized as
+  DDS's escaped-literal-quote convention and kept inside the span rather
+  than ending it early; a single `'` not followed by another `'` closes the
+  span. `emitWithKeywords` now calls this instead of
+  `keywordText.trim().split(/\s+/)`. Exported alongside the existing
+  functions in `module.exports` for direct unit testing.
+- **Deliberately NOT changed:** the token-rejoining logic inside
+  `emitWithKeywords` (`current + " " + tok`, and the `KEYWORD_WIDTH`
+  overflow check) — these already only ever operate on whole tokens (now
+  including whole quoted-literal tokens), so no change was needed there;
+  the fix is entirely in how the text gets split into tokens in the first
+  place.
+- **Confirmed no interaction with Batch M's fix**: Batch M's
+  continuation-character logic (`-` vs `+`) depends only on whether a wrap
+  point falls between two tokens — a quoted-literal token is still just one
+  token from that logic's point of view, so `-` remains correct at a wrap
+  point adjacent to a quoted literal (verified by the new
+  "wraps correctly at the NEXT token boundary, not inside the literal"
+  test, which pairs a quoted literal with a following keyword forcing a
+  real wrap).
+- **Same known, separate, out-of-scope limitation as Batch M still
+  applies**: a single quoted literal longer than the ~34-column
+  `KEYWORD_WIDTH` still can't be split (there's no token boundary inside it
+  to wrap at) — it gets truncated by `padRight`, same pre-existing gap
+  Batch M's writeup already flagged. Not addressed here, per the batch's
+  own scope note.
+- Fixtures checked, none needed regenerating (unlike Batch M) — none of
+  `sample1.pf`/`sample-scs.pf`/`sample-afpds.pf` contain a quoted literal
+  with multiple consecutive internal spaces.
+- `test/prtfBatchA.test.ts`'s "KNOWN BUG" test (which pinned the broken
+  behavior) was updated in place to assert the correct, fixed
+  `EDTWRD` params (`"('  .  ')"`, not `"(' . ')"`) and renamed to drop the
+  "KNOWN BUG" framing, per this batch's own instructions above.
+- `test/prtfWriter.test.ts` gained 8 new unit tests directly against
+  `tokenizeKeywordText` (multi-space literal stays one token; normal
+  keyword-to-keyword whitespace still splits; a quoted literal followed by
+  another keyword splits at the right boundary; doubled `''` escaping
+  doesn't end the span early; multiple quoted literals in one keyword text
+  are each kept whole; leading/trailing whitespace doesn't produce empty
+  tokens; empty input) plus 2 end-to-end tests against `emitWithKeywords`
+  itself (the literal survives regeneration intact; a quoted literal next
+  to another keyword still wraps at the correct token boundary, not inside
+  the literal).
+- Full suite: 186 tests, all passing (177 prior + 9 net new — 8 new
+  `tokenizeKeywordText`/`emitWithKeywords` unit tests, plus the existing
+  Batch A test fixed in place rather than added as a new one).
 
 ## Adding a new batch
 

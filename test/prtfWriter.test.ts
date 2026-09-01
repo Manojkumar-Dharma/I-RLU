@@ -14,7 +14,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { emitWithKeywords } = require("../src/prtfWriter.js");
+const { emitWithKeywords, tokenizeKeywordText } = require("../src/prtfWriter.js");
 
 function keywordArea(line: string): string {
   // Columns 45-80 (1-indexed) = 0-indexed slice [44, 80).
@@ -85,4 +85,64 @@ test("empty keyword text produces a single blank-keyword-area line, no continuat
   const positional = " ".repeat(44);
   const lines = emitWithKeywords(positional, "");
   assert.equal(lines.length, 1);
+});
+
+// --- Batch R: tokenizeKeywordText must not split whitespace inside a
+// quoted DDS literal (docs/TASKS.md Batch R). A naive `text.split(/\s+/)`
+// (what this replaced) has no concept of quote boundaries, so a run of
+// spaces *inside* a quoted parameter like EDTWRD('  .  ') gets treated the
+// same as the spaces *between* separate keywords — silently collapsing to
+// a single space once tokens are rejoined for wrapping. Same class of bug
+// as Batch M (wrong continuation character at a wrap point), but corrupting
+// content nowhere near a wrap point at all.
+
+test("tokenizeKeywordText: a single-quoted literal with multiple internal spaces stays one token, spaces intact", () => {
+  assert.deepEqual(tokenizeKeywordText("EDTWRD('  .  ')"), ["EDTWRD('  .  ')"]);
+});
+
+test("tokenizeKeywordText: whitespace between separate keywords still splits normally", () => {
+  assert.deepEqual(tokenizeKeywordText("DATE  TIME"), ["DATE", "TIME"]);
+});
+
+test("tokenizeKeywordText: a quoted literal followed by another keyword splits at the quote boundary, not inside it", () => {
+  assert.deepEqual(tokenizeKeywordText("EDTWRD('  .  ') COLOR(*BLU)"), ["EDTWRD('  .  ')", "COLOR(*BLU)"]);
+});
+
+test("tokenizeKeywordText: a doubled '' inside a quoted literal (DDS's escaped-quote convention) stays inside the token, doesn't end it early", () => {
+  assert.deepEqual(tokenizeKeywordText("MSGCON('It''s  ready')"), ["MSGCON('It''s  ready')"]);
+});
+
+test("tokenizeKeywordText: multiple quoted literals in the same keyword text are each kept whole", () => {
+  assert.deepEqual(tokenizeKeywordText("DFT('  a  ') EDTWRD('  b  ')"), ["DFT('  a  ')", "EDTWRD('  b  ')"]);
+});
+
+test("tokenizeKeywordText: a leading/trailing space around otherwise normal tokens doesn't produce empty tokens", () => {
+  assert.deepEqual(tokenizeKeywordText("  DATE   TIME  "), ["DATE", "TIME"]);
+});
+
+test("tokenizeKeywordText: empty input produces no tokens", () => {
+  assert.deepEqual(tokenizeKeywordText(""), []);
+});
+
+test("Batch R (regression, unit level): emitWithKeywords preserves multiple internal spaces inside a quoted keyword literal end to end", () => {
+  const positional = " ".repeat(44);
+  const lines = emitWithKeywords(positional, "EDTWRD('  .  ')");
+  assert.equal(lines.length, 1);
+  const area = keywordArea(lines[0].padEnd(80, " "));
+  assert.ok(area.startsWith("EDTWRD('  .  ')"), `expected keyword area to start with the untouched literal, got: ${JSON.stringify(area)}`);
+});
+
+test("Batch R: a quoted literal with internal spaces that's part of a longer keyword area still wraps correctly at the NEXT token boundary, not inside the literal", () => {
+  const positional = " ".repeat(44);
+  // "MSGCON('  hello world  ')" is 26 chars — well under the 34-col
+  // KEYWORD_WIDTH on its own, so pairing it with a second keyword forces a
+  // wrap; the wrap must land between the two keywords, never inside the
+  // quoted literal itself (there's no token boundary inside it to split at).
+  const lines = emitWithKeywords(positional, "MSGCON('  hello world  ') COLOR(*BLU)");
+  assert.equal(lines.length, 2);
+  const firstArea = keywordArea(lines[0].padEnd(80, " "));
+  assert.ok(firstArea.includes("MSGCON('  hello world  ')"), `literal should be intact and whole on the first line, got: ${JSON.stringify(firstArea)}`);
+  assert.ok(!firstArea.includes("COLOR"), "COLOR should have wrapped to the next line, not been split into the literal's line");
+  const secondArea = keywordArea(lines[1].padEnd(80, " "));
+  assert.ok(secondArea.trim().startsWith("COLOR(*BLU)"));
 });
