@@ -10,20 +10,56 @@ const fs = require("fs");
 const path = require("path");
 
 const root = path.join(__dirname, "..");
-const fontMetricsJs = fs.readFileSync(path.join(root, "src", "afpFontMetrics.js"), "utf8");
-// prtfEngine.js was split (docs/TASKS.md review comment #5) into
-// prtfKeywordHelpers.js / prtfReferenceField.js / prtfKeywordValidation.js /
-// prtfLayout.js, with prtfEngine.js itself now just re-exporting all four
-// under the same window.PrtfEngine shape. In Node each of those `require()`s
-// the ones it depends on, but the webview inlines everything into one
-// global-scope <script> tag instead of using require() — so each split file
-// must be concatenated here too, in dependency order, before prtfEngine.js
-// runs and reads them off `window`.
-const keywordHelpersJs = fs.readFileSync(path.join(root, "src", "prtfKeywordHelpers.js"), "utf8");
-const referenceFieldJs = fs.readFileSync(path.join(root, "src", "prtfReferenceField.js"), "utf8");
-const keywordValidationJs = fs.readFileSync(path.join(root, "src", "prtfKeywordValidation.js"), "utf8");
-const layoutJs = fs.readFileSync(path.join(root, "src", "prtfLayout.js"), "utf8");
-const engineJs = fs.readFileSync(path.join(root, "src", "prtfEngine.js"), "utf8");
+
+// The webview inlines every one of these files into ONE shared global-scope
+// <script> tag (no <script type="module">, no bundler — see this file's
+// header for why), rather than using Node's require(). Each file below
+// still has its own top-level `const mod = {...}; ... window.X = mod;`
+// export shape written for require()/CommonJS (see e.g. prtfEngine.js's own
+// header) — fine in Node, where each file is its own module scope, but
+// NOT fine simply concatenated: every file declaring `const mod` at top
+// level in the SAME script tag is a `SyntaxError: Identifier 'mod' has
+// already been declared` (this was in fact a latent, never-triggered bug
+// in this project before this comment was added — afpFontMetrics.js and
+// the old monolithic prtfEngine.js both did this, and nothing ever
+// exercised the assembled webview script to catch it; see docs/TASKS.md
+// review comment #6, "webviewClient.js has zero test coverage").
+//
+// Each file is instead wrapped in its own IIFE below (see wrapInIife), so
+// its internal `const mod` is scoped to that IIFE alone; the final
+// `window.X = mod` line still runs and sets the shared global other
+// wrapped files read off `window` (see e.g. prtfLayout.js requiring
+// prtfKeywordHelpers.js via `window.PrtfKeywordHelpers`), same as it does
+// under Node's require(). List order below MUST still respect dependency
+// order (a file can only read a window global that an earlier-listed file
+// has already set) — see each file's own header comment for what it needs.
+const WEBVIEW_MODULE_FILES = [
+  ["src", "afpFontMetrics.js"],
+  ["src", "prtfKeywordHelpers.js"],
+  ["src", "prtfReferenceField.js"],
+  ["src", "prtfKeywordValidation.js"],
+  ["src", "prtfLayout.js"],
+  ["src", "prtfEngine.js"],
+  // Pure keyword-text/pixel-math helpers pulled out of webviewClient.js
+  // (review comment #6) so they're unit testable — see prtfWebviewLogic.js's
+  // own header for why. Only depends on prtfKeywordHelpers.js (isFieldRef).
+  ["src", "prtfWebviewLogic.js"],
+];
+
+function wrapInIife(source) {
+  return "(function () {\n" + source + "\n})();\n";
+}
+
+const inlinedModulesJs = WEBVIEW_MODULE_FILES.map(([dir, file]) =>
+  wrapInIife(fs.readFileSync(path.join(root, dir, file), "utf8"))
+).join("\n");
+
+// webviewClient.js is NOT one of the above — it's already self-wrapped in
+// its own top-level `(function () { ... })();` IIFE (see its own header),
+// and it's the one file that's meant to run its top-level side effects
+// (acquireVsCodeApi(), the initial render()) immediately when the webview
+// loads, so it's kept last and separate rather than folded into the
+// dependency-module list above.
 const clientJs = fs.readFileSync(path.join(root, "media", "webviewClient.js"), "utf8");
 
 const css = `
@@ -73,12 +109,7 @@ fs.mkdirSync(outDir, { recursive: true });
 // would lose the closure over those outer variables).
 const generated =
   "'use strict';\n" +
-  "const fontMetricsJs = " + JSON.stringify(fontMetricsJs) + ";\n" +
-  "const keywordHelpersJs = " + JSON.stringify(keywordHelpersJs) + ";\n" +
-  "const referenceFieldJs = " + JSON.stringify(referenceFieldJs) + ";\n" +
-  "const keywordValidationJs = " + JSON.stringify(keywordValidationJs) + ";\n" +
-  "const layoutJs = " + JSON.stringify(layoutJs) + ";\n" +
-  "const engineJs = " + JSON.stringify(engineJs) + ";\n" +
+  "const inlinedModulesJs = " + JSON.stringify(inlinedModulesJs) + ";\n" +
   "const clientJs = " + JSON.stringify(clientJs) + ";\n" +
   "const css = " + JSON.stringify(css) + ";\n" +
   "function getWebviewHtml(nonce) {\n" +
@@ -92,7 +123,7 @@ const generated =
   "<body>\n" +
   "<div id=\"root\"></div>\n" +
   "<script nonce=\"${nonce}\">\n" +
-  "${fontMetricsJs}\n${keywordHelpersJs}\n${referenceFieldJs}\n${keywordValidationJs}\n${layoutJs}\n${engineJs}\n${clientJs}\n" +
+  "${inlinedModulesJs}\n${clientJs}\n" +
   "</script>\n" +
   "</body>\n" +
   "</html>`;\n" +
