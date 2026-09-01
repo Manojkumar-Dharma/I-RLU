@@ -34,7 +34,7 @@
  */
 
 // eslint-disable-next-line no-undef
-const { paramTokens } = typeof module !== "undefined" && module.exports ? require("./prtfKeywordHelpers.js") : window.PrtfKeywordHelpers;
+const { paramTokens, findKeyword } = typeof module !== "undefined" && module.exports ? require("./prtfKeywordHelpers.js") : window.PrtfKeywordHelpers;
 
 /**
  * Tokenizes a BARCODE keyword's inner "(...)" text on whitespace, EXCEPT
@@ -242,6 +242,45 @@ function validateBarcodeParams(f, uom) {
   return hints;
 }
 
-const mod = { groupTokens, paramTokens, parseBarcodeParams, buildBarcodeParams, validateBarcodeParams };
+/**
+ * docs/TASKS.md Batch N — BARCODE mutual-exclusion validation.
+ *
+ * IBM's DDS reference for the BARCODE keyword states verbatim: "Do not
+ * specify BARCODE in the same field with the CHRSIZ, CHRID, CVTDTA, DATE,
+ * EDTCDE, EDTWRD, FONT, HIGHLIGHT, PAGNBR, TIME, or UNDERLINE keywords."
+ * (https://www.ibm.com/docs/en/i/7.3.0?topic=b-barcode). This is the
+ * verified, full list — README.md's own "Known limitations" section names
+ * only FONT/EDTCDE/EDTWRD/DATE/TIME/PAGNBR/etc as a starting point (per
+ * this batch's own instructions to confirm against IBM's reference before
+ * implementing), and is missing CHRSIZ, CHRID, CVTDTA, HIGHLIGHT, and
+ * UNDERLINE.
+ *
+ * DATE/TIME/PAGNBR are conventionally constant-only in this tool's own
+ * Batch A panel (see BATCH_A_CONSTANT_ONLY_KEYWORDS in webviewClient.js),
+ * but DDS's own grammar doesn't forbid them on a named field, and IBM's
+ * exclusion list explicitly calls them out for BARCODE specifically —
+ * which only makes sense if the combination is otherwise reachable (e.g.
+ * hand-edited raw DDS source, or a future UI change). Checked here
+ * regardless of which panel this tool's own UI currently lets you set them
+ * from, since this operates on whatever's actually in the parsed model.
+ */
+const BARCODE_EXCLUDED_KEYWORDS = ["CHRSIZ", "CHRID", "CVTDTA", "DATE", "EDTCDE", "EDTWRD", "FONT", "HIGHLIGHT", "PAGNBR", "TIME", "UNDERLINE"];
+
+/**
+ * Live-editor hint only (same spirit as validateBarcodeParams above and
+ * every other validation function in this project) — CRTPRTF remains the
+ * actual enforcement point; nothing here blocks an edit. Returns one hint
+ * string per BARCODE_EXCLUDED_KEYWORDS entry found alongside BARCODE on
+ * the same field/constant, or [] if BARCODE isn't present at all (nothing
+ * to check against) or no excluded keyword is present.
+ */
+function validateBarcodeExclusions(keywords) {
+  if (!findKeyword(keywords, "BARCODE")) return [];
+  return BARCODE_EXCLUDED_KEYWORDS.filter((name) => findKeyword(keywords, name)).map(
+    (name) => name + " can't be combined with BARCODE on the same field — CRTPRTF will reject this combination."
+  );
+}
+
+const mod = { groupTokens, paramTokens, parseBarcodeParams, buildBarcodeParams, validateBarcodeParams, validateBarcodeExclusions };
 if (typeof module !== "undefined" && module.exports) module.exports = mod;
 if (typeof window !== "undefined") window.PrtfBarcodeParams = mod;

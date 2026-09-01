@@ -1112,6 +1112,18 @@
     });
     section.appendChild(formWrap);
 
+    // Batch N: mutual-exclusion hint — shown first/most prominently in
+    // this panel per docs/TASKS.md Batch N's own instruction to attach
+    // this validation to BARCODE's form (Batch C) rather than to whichever
+    // OTHER keyword's own panel is the conflicting one (contrast with
+    // HIGHLIGHT+CDEFNT/FNTCHRSET, which is instead shown in the FONT
+    // panel — see renderFontSizingPanel — since here BARCODE itself, not
+    // any one of its several possible conflicting partners, is the
+    // natural single place a person editing this field would look).
+    (PrtfEngine.validateBarcodeExclusions(cell.keywords) || []).forEach((h) => {
+      formWrap.appendChild(el("div", { class: "hint warning" }, [h]));
+    });
+
     const idRow = labeledInput("Bar-code-ID", { type: "text", maxlength: "10", placeholder: "e.g. CODE3OF9, UPCA", value: f.barCodeId });
     idRow.input.addEventListener("change", () => {
       f.barCodeId = idRow.input.value.trim().toUpperCase();

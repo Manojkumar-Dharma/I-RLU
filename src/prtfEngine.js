@@ -69,6 +69,8 @@ const mod = {
   parseBarcodeParams: BarcodeParams.parseBarcodeParams,
   buildBarcodeParams: BarcodeParams.buildBarcodeParams,
   validateBarcodeParams: BarcodeParams.validateBarcodeParams,
+  // Batch N
+  validateBarcodeExclusions: BarcodeParams.validateBarcodeExclusions,
 };
 if (typeof module !== "undefined" && module.exports) module.exports = mod;
 if (typeof window !== "undefined") window.PrtfEngine = mod;
