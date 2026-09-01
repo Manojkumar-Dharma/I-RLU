@@ -1,8 +1,11 @@
 "use strict";
 /**
- * Runs inside the webview. Relies on PrtfEngine and AfpFontMetrics being
- * present as globals (inlined ahead of this script by buildWebviewTemplate.js)
- * and on `vscode` being the value of `acquireVsCodeApi()`.
+ * Runs inside the webview. Relies on PrtfEngine, AfpFontMetrics, and
+ * PrtfWebviewLogic (this file's own pure keyword-text/pixel-math helpers,
+ * pulled out into src/prtfWebviewLogic.js so they're unit testable — see
+ * docs/TASKS.md review comment #6) being present as globals (inlined ahead
+ * of this script by buildWebviewTemplate.js), and on `vscode` being the
+ * value of `acquireVsCodeApi()`.
  *
  * Responsibilities:
  *  - Render the resolved layout for the selected record format as an HTML
@@ -221,10 +224,9 @@
     const rect = containerEl.getBoundingClientRect();
     const x = ev.clientX - rect.left;
     const y = ev.clientY - rect.top;
-    return {
-      position: Math.max(1, Math.round(x / CELL_W) + 1),
-      line: Math.max(1, Math.round(y / CELL_H) + 1),
-    };
+    // Pure pixel->line/col math lives in PrtfWebviewLogic (see
+    // src/prtfWebviewLogic.js) so it's unit testable without a DOM.
+    return PrtfWebviewLogic.pixelToLineCol(x, y, CELL_W, CELL_H);
   }
 
   function renderPage(layout) {
@@ -401,54 +403,21 @@
   }
 
   /** Splits a single already-extracted param token into {isPField, value} — "&NAME" -> {true,"NAME"}, "11" -> {false,"11"}. */
-  function tokenToPField(tok) {
-    if (!tok) return { isPField: false, value: "" };
-    if (PrtfEngine.isFieldRef(tok)) return { isPField: true, value: tok.slice(1) };
-    return { isPField: false, value: tok };
-  }
+  // tokenToPField/parseFontSpecKeyword's pure parsing logic now lives in
+  // PrtfWebviewLogic (src/prtfWebviewLogic.js) so it's unit testable
+  // without a DOM. Kept as thin local aliases here so the many call sites
+  // below don't all need a PrtfWebviewLogic. prefix.
+  const tokenToPField = PrtfWebviewLogic.tokenToPField;
+  const parseFontSpecKeyword = PrtfWebviewLogic.parseFontSpecKeyword;
+  const paramsToText = PrtfWebviewLogic.paramsToText;
+  const paramsInnerText = PrtfWebviewLogic.paramsInnerText;
 
-  /**
-   * Parses an existing FONT/CDEFNT/FNTCHRSET/FONTNAME/CHRID keyword's raw
-   * params into per-param values plus an optional trailing
-   * "(*POINTSIZE height [width])" block, per spec.params' order. IBM's DDS
-   * reference places *POINTSIZE last, after all name/library params, for
-   * every keyword that supports it — this assumes that documented order
-   * rather than trying to parse an arbitrary interleaving.
-   */
-  function parseFontSpecKeyword(spec, existingKw) {
-    const raw = existingKw ? String(existingKw.params || "").replace(/^\(/, "").replace(/\)$/, "").trim() : "";
-    let plainPart = raw;
-    let height = null;
-    let width = null;
-    if (spec.pointSize) {
-      const m = raw.match(/\(\s*\*POINTSIZE\s+(\S+?)(?:\s+(\S+?))?\s*\)\s*$/i);
-      if (m) {
-        height = m[1];
-        width = m[2] || null;
-        plainPart = raw.slice(0, m.index).trim();
-      }
-    }
-    const tokens = plainPart === "" ? [] : plainPart.split(/\s+/);
-    const values = spec.params.map((_p, i) => tokenToPField(tokens[i]));
-    return { values, height: tokenToPField(height), width: tokenToPField(width) };
-  }
-
-  /** Builds a keyword's params text ("(...)") from its param rows and optional pointsize rows. Returns null if the mandatory first param is empty (meaning: don't write this keyword). */
+  /** Builds a keyword's params text ("(...)") from its param rows and optional pointsize rows. Returns null if the mandatory first param is empty (meaning: don't write this keyword). Thin DOM-reading wrapper around PrtfWebviewLogic.buildFontSpecParamsFromValues. */
   function buildFontSpecParams(spec, paramRows, heightRow, widthRow) {
     const vals = paramRows.map((r) => r.getValue());
-    if (!vals[0]) return null;
-    // Trim trailing empty *optional* params so e.g. an omitted library
-    // doesn't leave a stray blank positional slot.
-    while (vals.length > 1 && !vals[vals.length - 1] && spec.params[vals.length - 1] && spec.params[vals.length - 1].optional) {
-      vals.pop();
-    }
-    let inner = vals.join(" ").replace(/\s+$/, "");
-    if (spec.pointSize) {
-      const h = heightRow.getValue();
-      const w = widthRow.getValue();
-      if (h) inner += (inner ? " " : "") + "(*POINTSIZE " + h + (w ? " " + w : "") + ")";
-    }
-    return "(" + inner + ")";
+    const h = spec.pointSize && heightRow ? heightRow.getValue() : null;
+    const w = spec.pointSize && widthRow ? widthRow.getValue() : null;
+    return PrtfWebviewLogic.buildFontSpecParamsFromValues(spec, vals, h, w);
   }
 
   // Batch B keyword shapes, sourced from docs/KEYWORD-INVENTORY.md §1-§3.
@@ -1198,30 +1167,6 @@
     { name: "STAPLE", kind: "flag", hint: "Staple finishing. Requires PSF printing — no effect under Host Print Transform." },
     { name: "INVMMAP", kind: "text", placeholder: "medium map name", hint: "Invokes a new medium map." },
   ];
-
-  function paramsToText(kind, value) {
-    if (kind === "flag") return "";
-    const v = (value || "").trim();
-    if (!v) return "";
-    // Batch A: quotedText always DDS-quotes its value (e.g. EDTWRD, DFT).
-    // quotedSelect quotes everything except a "*"-prefixed special value
-    // (e.g. DATSEP('-') vs. DATSEP(*JOB)) — see KEYWORD-INVENTORY §3 and
-    // IBM's DDS reference, which documents *JOB as a bare special value
-    // distinct from a literal separator character.
-    if (kind === "quotedText") return "('" + v.replace(/'/g, "''") + "')";
-    if (kind === "quotedSelect") return v.startsWith("*") ? "(" + v + ")" : "('" + v.replace(/'/g, "''") + "')";
-    return "(" + v + ")";
-  }
-
-  /** Strips the surrounding parentheses (and, for the Batch A quoted kinds, the DDS quote pair) from a Keyword's raw params (e.g. "(*YES)" -> "*YES"), for populating an edit input from the current model. `kind` defaults to plain/unquoted for call sites that predate the quoted kinds. */
-  function paramsInnerText(kw, kind) {
-    if (!kw) return "";
-    let inner = String(kw.params || "").replace(/^\(/, "").replace(/\)$/, "").trim();
-    if ((kind === "quotedText" || kind === "quotedSelect") && inner.length >= 2 && inner[0] === "'" && inner[inner.length - 1] === "'") {
-      inner = inner.slice(1, -1).replace(/''/g, "'");
-    }
-    return inner;
-  }
 
   function renderRecordKeywordsPanel(record) {
     const panel = el("div", { class: "props" });
