@@ -38,6 +38,11 @@ const WEBVIEW_MODULE_FILES = [
   ["src", "prtfKeywordHelpers.js"],
   ["src", "prtfReferenceField.js"],
   ["src", "prtfKeywordValidation.js"],
+  // Batch C — full BARCODE parameter parse/build/validate. Only depends on
+  // prtfKeywordHelpers.js, but must land before prtfLayout.js (which now
+  // delegates parseBarcodeGeometry's HRI/height parsing to it) and
+  // prtfEngine.js (which re-exports it for the webview's BARCODE panel).
+  ["src", "prtfBarcodeParams.js"],
   ["src", "prtfLayout.js"],
   ["src", "prtfEngine.js"],
   // Pure keyword-text/pixel-math helpers pulled out of webviewClient.js

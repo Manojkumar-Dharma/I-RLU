@@ -33,6 +33,7 @@ const KeywordHelpers = req("./prtfKeywordHelpers.js", "PrtfKeywordHelpers");
 const Layout = req("./prtfLayout.js", "PrtfLayout");
 const ReferenceField = req("./prtfReferenceField.js", "PrtfReferenceField");
 const KeywordValidation = req("./prtfKeywordValidation.js", "PrtfKeywordValidation");
+const BarcodeParams = req("./prtfBarcodeParams.js", "PrtfBarcodeParams");
 
 const mod = {
   resolveLayout: Layout.resolveLayout,
@@ -61,6 +62,13 @@ const mod = {
   paramTokens: Layout.paramTokens,
   isFieldRef: Layout.isFieldRef,
   parseFontKeyword: Layout.parseFontKeyword,
+  // Batch C — full BARCODE parameter surface (parse/build/validate), used
+  // by both the engine (parseBarcodeGeometry's rendering-only subset
+  // delegates to parseBarcodeParams — see prtfLayout.js) and the webview's
+  // BARCODE properties-panel form.
+  parseBarcodeParams: BarcodeParams.parseBarcodeParams,
+  buildBarcodeParams: BarcodeParams.buildBarcodeParams,
+  validateBarcodeParams: BarcodeParams.validateBarcodeParams,
 };
 if (typeof module !== "undefined" && module.exports) module.exports = mod;
 if (typeof window !== "undefined") window.PrtfEngine = mod;

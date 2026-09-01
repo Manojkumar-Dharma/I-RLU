@@ -78,7 +78,7 @@ vice versa.
 |---|---|---|---|---|
 | A | ~~Properties-panel editing: general field/record keywords~~ | `EDTCDE`, `EDTWRD`, `DATE`, `DATFMT`, `DATSEP`, `TIME`, `TIMFMT`, `TIMSEP`, `DFT`, `MSGCON`, `COLOR`, `HIGHLIGHT`, `UNDERLINE`, `PAGNBR`, `PRTQLTY`, `DRAWER`, `PAGRTT` | **Done** | none |
 | B | Font/sizing keyword editing + shared P-field toggle component | `FONT`, `CDEFNT`, `FNTCHRSET`, `FONTNAME`, `CHRSIZ`, `CHRID`, `CCSID` | **Done** | none (but A and C benefit from B's P-field component if B lands first) |
-| C | `BARCODE` full parameter surface (still placeholder render) | `BARCODE` | Not started | none |
+| C | `BARCODE` full parameter surface (still placeholder render) | `BARCODE` | **Done** | none |
 | D | `BARCODE` real symbol rendering | `BARCODE` | Not started | **C** |
 | E | AFP page-group / resource keyword placeholders | `OVERLAY` (record), `PAGSEG`, `STRPAGGRP`, `ENDPAGGRP`, `DOCIDXTAG`, `AFPRSC`, `DTASTMCMD` | Not started | none |
 | F | Print/finishing keywords, validation-only | `DUPLEX`, `FORCE`, `OUTBIN`, `ZFOLD`, `STAPLE`, `INVMMAP` | **Done** | none |
@@ -212,7 +212,7 @@ record-level) round-trip to confirm the shared code path actually works
 identically at both levels rather than just being copy-pasted and hoped
 to match.
 
-### Batch C — BARCODE parameter surface
+### Batch C — BARCODE parameter surface [DONE]
 **Current state, precisely** (checked against `src/prtfEngine.js`'s
 `parseBarcodeGeometry`, added in the BARCODE placeholder commit before this
 task board existed): the engine already **parses** bar-code-ID, direction
@@ -244,6 +244,67 @@ labeled placeholder box; this batch is UI/model/parsing, not rendering.
   bar width 0.007–0.208) client-side in the webview form.
 - Tests: round-trip full BARCODE parameter set; a specific test for the
   HRI three-way value (below/above/none) surviving edit-then-reparse.
+
+**Implementation notes:**
+- New module `src/prtfBarcodeParams.js` owns the full structured parse
+  (`parseBarcodeParams`), the inverse builder (`buildBarcodeParams`), and
+  the range-hint validator (`validateBarcodeParams`) — kept separate from
+  `prtfLayout.js` since it's a parse/build pair the properties panel calls
+  directly, not geometry math. Re-exported through `prtfEngine.js` (as
+  `parseBarcodeParams`/`buildBarcodeParams`/`validateBarcodeParams`) and
+  added to `buildWebviewTemplate.js`'s `WEBVIEW_MODULE_FILES` list (before
+  `prtfLayout.js`, which now depends on it).
+- Added a small paren-aware tokenizer (`groupTokens`) rather than reusing
+  `prtfKeywordHelpers.js`'s `paramTokens`, which only splits on bare
+  whitespace — not enough here since `*WIDTH`/`*RATIO`/the 2D-data
+  parameter are themselves parenthesized (and the 2D-data parameter can
+  itself contain nested parens, e.g. `(*QRCODE 4 1 *CONVERT(1) *TRIM)`).
+- **HRI gap fixed as planned:** `parseBarcodeGeometry` (prtfLayout.js) now
+  delegates to `parseBarcodeParams` instead of parsing independently, and
+  exposes the three-way `hriPosition` ("below"/"above"/"none") on
+  `cell.barcode`. The old `hri` boolean is kept too (derived: `hriPosition
+  !== "none"`) since existing tests and the placeholder-box render still
+  use it for "is HRI showing at all" — no reason to force those call
+  sites to switch just because the richer value now also exists.
+- `resolveLayout` also attaches the full structured parse as
+  `cell.barcodeParams` (separate from the existing rendering-only
+  `cell.barcode` geometry object) so the webview's BARCODE form can
+  prefill without a second round trip to the extension host.
+- **Round-trip safety for parameters this batch doesn't give a dedicated
+  form field to:** RLU's own screen (and this batch's form) doesn't cover
+  IBM's `(*SWIDTH n)` "requested symbol width" parameter. Rather than
+  silently dropping it if present in hand-written source and the field
+  gets edited through this form, any token `parseBarcodeParams` doesn't
+  specifically recognize is preserved verbatim in `unrecognizedRaw` and
+  re-emitted by `buildBarcodeParams`. Same treatment for anything else not
+  modeled here.
+- The single "additional 2D parameters" field is deliberately free text
+  (`extra2D`) covering the whole `(*PDF417 ...)`/`(*MAXICODE ...)`/
+  `(*DATAMATRIX ...)`/`(*QRCODE ...)` group verbatim — modeling each of
+  those four symbologies' own sub-grammar (PDF417's row-size/rows/
+  security/..., QR Code's version/error-correction/..., etc.) individually
+  was judged out of scope for this batch; RLU's screen doesn't expose them
+  as separate fields either.
+- Properties panel: bespoke `renderBarcodeSection` in
+  `media/webviewClient.js` (same "hand-written section" approach as
+  `appendColorRow`/`appendMsgconRow`, not `appendKeywordRows`, since
+  BARCODE's shape doesn't fit that helper's one-value-per-keyword model).
+  Wired into `renderEditPanel` for both fields and constants (DDS allows
+  BARCODE on constants too, restricted to CODEABAR/CODE128/CODE3OF9 +
+  DFT — surfaced as a hint, not enforced, matching every other
+  validation's "live-editor hint only" treatment in this codebase).
+  Applies via the existing generic `setFieldKeyword`/`removeFieldKeyword`
+  edit kinds (Batch F/G/B's shared plumbing) — no `extension.ts` changes
+  needed.
+- Tests: `test/prtfBatchC.test.ts` — full-parameter-set parse, `(height
+  *UOM)` vs. line-count height, documented defaults when params are
+  omitted, `unrecognizedRaw` preservation, build→parse round-trip of the
+  full structured object, the HRI three-way-survives-edit-then-reparse
+  test called for above, `parseBarcodeGeometry`'s `hriPosition`/`hri`
+  coexistence (via `resolveLayout`, not calling the internal parser
+  directly — same convention `prtfLayoutGeometry.test.ts` already uses),
+  and validation-hint tests for in- and out-of-range values.
+
 
 ### Batch D — BARCODE real rendering
 **Goal:** replace the placeholder box with an actual rendered symbol, reading

@@ -109,11 +109,25 @@ full detail, acceptance criteria, and file-level ownership per batch):
       the raw-params-text model already represents `&NAME` vs. a literal
       identically either way, as this batch's own task description
       anticipated might be true.
-- [ ] **Batch C — Real `BARCODE` parameter surface (still placeholder
-      rendering):** expose the full parameter set now confirmed in
-      KEYWORD-INVENTORY §3 (symbology id, height-in-lines-or-UOM, bar format,
-      HRI position, modifier, narrow bar width, wide:narrow ratio, 2D params)
-      in the properties panel, even before real symbol rendering exists.
+- [x] **Batch C — Real `BARCODE` parameter surface (still placeholder
+      rendering) — done.** New `src/prtfBarcodeParams.js` module
+      (`parseBarcodeParams`/`buildBarcodeParams`/`validateBarcodeParams`)
+      exposes every parameter confirmed in KEYWORD-INVENTORY §3 —
+      symbology id, height-in-lines-or-UOM, bar format, HRI position,
+      asterisk-on-CODE3OF9, modifier, narrow bar width, wide:narrow ratio,
+      and a free-text field for the 2D symbologies' own parameter groups
+      (PDF417/Data Matrix/Maxicode/QR Code) — in a new properties-panel
+      section for both fields and constants. Fixed the known gap flagged
+      in `docs/TASKS.md`: HRI is now a three-way below/above/none value
+      (`hriPosition`) rather than the boolean `parseBarcodeGeometry` used
+      to collapse it to; that function now delegates to the new module so
+      the two can't drift, while keeping the old boolean for existing
+      callers. Anything the parser doesn't specifically model (e.g. IBM's
+      `(*SWIDTH n)`, not on RLU's own screen) round-trips verbatim via an
+      `unrecognizedRaw` catch-all rather than being silently dropped when
+      a field is edited. Rendering is still the existing placeholder box
+      — real symbol rendering is Batch D. 10 new tests
+      (`test/prtfBatchC.test.ts`).
 - [ ] **Batch D — Real `BARCODE` symbol rendering:** actual bars via a
       barcode-generation library, once Batch C's parameters are wired up to
       read from.

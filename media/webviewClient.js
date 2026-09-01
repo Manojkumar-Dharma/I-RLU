@@ -985,6 +985,165 @@
     cb.addEventListener("change", sendUpdate);
   }
 
+  // Batch C (docs/TASKS.md) — BARCODE full parameter surface. Bespoke
+  // (like appendColorRow/appendMsgconRow above) rather than a
+  // BATCH_C_KEYWORDS + appendKeywordRows entry, since BARCODE's shape —
+  // one keyword with up to a dozen sub-parameters, several themselves
+  // parenthesized expressions — doesn't fit appendKeywordRows'
+  // single-value-per-keyword model. Valid on both fields and constants
+  // per IBM's DDS reference (constants are restricted to CODEABAR/
+  // CODE128/CODE3OF9 plus DFT — surfaced as a hint, not enforced, same
+  // "live-editor hint, CRTPRTF is the real enforcement point" spirit as
+  // every other validation in this file). Rendering stays the existing
+  // labeled placeholder box (see renderPage) — this batch is UI/model/
+  // parsing only, per its docs/TASKS.md scope; Batch D gives it visual
+  // meaning later.
+  const BARCODE_DEFAULTS = {
+    barCodeId: "",
+    heightMode: "none",
+    heightLines: undefined,
+    heightValue: undefined,
+    direction: "horizontal",
+    hriPosition: "below",
+    asterisk: false,
+    modifier: "",
+    narrowBarWidth: undefined,
+    ratio: undefined,
+    extra2D: "",
+    unrecognizedRaw: [],
+  };
+
+  function renderBarcodeSection(cell) {
+    const section = el("div", {});
+    section.appendChild(el("h4", {}, ["BARCODE"]));
+    if (cell.kind === "constant") {
+      section.appendChild(
+        el("div", { class: "hint" }, [
+          "On a constant, only CODEABAR/CODE128/CODE3OF9 are valid bar-code-IDs, and DFT must also be coded — not enforced here.",
+        ])
+      );
+    }
+
+    const existing = PrtfEngine.findKeyword(cell.keywords, "BARCODE");
+    const f = Object.assign({}, BARCODE_DEFAULTS, existing ? cell.barcodeParams || {} : {});
+
+    const onRemove = () => vscode.postMessage({ type: "edit", edit: { kind: "removeFieldKeyword", id: cell.id, name: "BARCODE" } });
+    const sendUpdate = () => {
+      if (!cb.checked) {
+        onRemove();
+        return;
+      }
+      if (!f.barCodeId.trim()) return; // bar-code-ID is required — don't write BARCODE()
+      vscode.postMessage({
+        type: "edit",
+        edit: { kind: "setFieldKeyword", id: cell.id, name: "BARCODE", params: PrtfEngine.buildBarcodeParams(f) },
+      });
+    };
+
+    const cbId = "barcode-" + cell.id;
+    const cb = el("input", { type: "checkbox", id: cbId });
+    if (existing) cb.setAttribute("checked", "checked");
+    const enableRow = el("div", { class: "prop-row" });
+    enableRow.appendChild(el("label", { class: "ind-label", for: cbId }, [cb, " Enable BARCODE"]));
+    section.appendChild(enableRow);
+
+    const formWrap = el("div", { style: existing ? "" : "display:none;" });
+    cb.addEventListener("change", () => {
+      formWrap.style.display = cb.checked ? "" : "none";
+      sendUpdate();
+    });
+    section.appendChild(formWrap);
+
+    const idRow = labeledInput("Bar-code-ID", { type: "text", maxlength: "10", placeholder: "e.g. CODE3OF9, UPCA", value: f.barCodeId });
+    idRow.input.addEventListener("change", () => {
+      f.barCodeId = idRow.input.value.trim().toUpperCase();
+      sendUpdate();
+    });
+    formWrap.appendChild(idRow.row);
+
+    const heightModeRow = labeledSelect("Height", ["none", "lines", "uom"], f.heightMode);
+    formWrap.appendChild(heightModeRow.row);
+    const heightValueRow = labeledInput("Height value", {
+      type: "number",
+      min: f.heightMode === "lines" ? "1" : "0.1",
+      max: f.heightMode === "lines" ? "9" : "10",
+      step: f.heightMode === "lines" ? "1" : "0.01",
+      value: String((f.heightMode === "lines" ? f.heightLines : f.heightValue) || ""),
+    });
+    heightValueRow.row.style.display = f.heightMode === "none" ? "none" : "";
+    formWrap.appendChild(heightValueRow.row);
+    heightModeRow.input.addEventListener("change", () => {
+      f.heightMode = heightModeRow.input.value;
+      heightValueRow.row.style.display = f.heightMode === "none" ? "none" : "";
+      heightValueRow.input.min = f.heightMode === "lines" ? "1" : "0.1";
+      heightValueRow.input.max = f.heightMode === "lines" ? "9" : "10";
+      sendUpdate();
+    });
+    heightValueRow.input.addEventListener("change", () => {
+      const n = Number(heightValueRow.input.value);
+      if (f.heightMode === "lines") f.heightLines = n;
+      else if (f.heightMode === "uom") f.heightValue = n;
+      sendUpdate();
+    });
+
+    const dirRow = labeledSelect("Bar format", ["horizontal", "vertical"], f.direction);
+    dirRow.input.addEventListener("change", () => {
+      f.direction = dirRow.input.value;
+      sendUpdate();
+    });
+    formWrap.appendChild(dirRow.row);
+
+    const hriRow = labeledSelect("HRI position", ["below", "above", "none"], f.hriPosition);
+    hriRow.input.addEventListener("change", () => {
+      f.hriPosition = hriRow.input.value;
+      sendUpdate();
+    });
+    formWrap.appendChild(hriRow.row);
+
+    const astRow = el("label", { class: "prop-row" }, ["Asterisk (CODE3OF9)"]);
+    const astCb = el("input", { type: "checkbox" });
+    if (f.asterisk) astCb.setAttribute("checked", "checked");
+    astRow.appendChild(astCb);
+    astCb.addEventListener("change", () => {
+      f.asterisk = astCb.checked;
+      sendUpdate();
+    });
+    formWrap.appendChild(astRow);
+
+    const modRow = labeledInput("Modifier (hex)", { type: "text", maxlength: "2", placeholder: "00-FE", value: f.modifier });
+    modRow.input.addEventListener("change", () => {
+      f.modifier = modRow.input.value.trim().toUpperCase();
+      sendUpdate();
+    });
+    formWrap.appendChild(modRow.row);
+
+    const widthRow = labeledInput("Narrow bar width (in)", { type: "number", min: "0.007", max: "0.208", step: "0.001", value: f.narrowBarWidth != null ? String(f.narrowBarWidth) : "" });
+    widthRow.input.addEventListener("change", () => {
+      f.narrowBarWidth = widthRow.input.value === "" ? undefined : Number(widthRow.input.value);
+      sendUpdate();
+    });
+    formWrap.appendChild(widthRow.row);
+
+    const ratioRow = labeledInput("Wide:narrow ratio", { type: "number", min: "2.00", max: "3.00", step: "0.01", value: f.ratio != null ? String(f.ratio) : "" });
+    ratioRow.input.addEventListener("change", () => {
+      f.ratio = ratioRow.input.value === "" ? undefined : Number(ratioRow.input.value);
+      sendUpdate();
+    });
+    formWrap.appendChild(ratioRow.row);
+
+    const extra2DRow = labeledInput("Additional 2D params", { type: "text", placeholder: "e.g. (*QRCODE 4 1)", value: f.extra2D });
+    extra2DRow.input.addEventListener("change", () => {
+      f.extra2D = extra2DRow.input.value.trim();
+      sendUpdate();
+    });
+    formWrap.appendChild(extra2DRow.row);
+
+    const hints = PrtfEngine.validateBarcodeParams(f, state.uom);
+    hints.forEach((h) => formWrap.appendChild(el("div", { class: "hint warning" }, [h])));
+
+    return section;
+  }
+
   /** Batch A: general field/constant keyword section, appended into the click-a-cell properties panel below the existing Batch G "Data/edit keywords" section (fields) or directly (constants). Applies immediately on change, same UX as the other keyword panels. */
   function renderBatchAKeywordsSection(cell) {
     const section = el("div", {});
@@ -1100,6 +1259,7 @@
         )
       );
       panel.appendChild(renderBatchAKeywordsSection(cell));
+      panel.appendChild(renderBarcodeSection(cell));
     }
 
     const btnRow = el("div", { class: "prop-buttons" });

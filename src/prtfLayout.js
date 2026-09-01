@@ -41,6 +41,9 @@ const { resolveReferenceTarget } =
 // eslint-disable-next-line no-undef
 const { validateFieldKeywords } =
   typeof module !== "undefined" && module.exports ? require("./prtfKeywordValidation.js") : window.PrtfKeywordValidation;
+// eslint-disable-next-line no-undef
+const { parseBarcodeParams } =
+  typeof module !== "undefined" && module.exports ? require("./prtfBarcodeParams.js") : window.PrtfBarcodeParams;
 
 /**
  * Resolves CPI (characters per inch) and LPI (lines per inch) for a
@@ -148,37 +151,36 @@ function parseBoxGeometry(kw, cpi, lpi, uom) {
  * direction, and height (in character rows, converted from either a plain
  * line count or a "(height *UOM)" physical measurement via LPI; that
  * measurement is in the compile's unit of measure too — see toInches).
+ *
+ * docs/TASKS.md Batch C added the full structured parse of every BARCODE
+ * parameter (prtfBarcodeParams.js's parseBarcodeParams, used by the
+ * properties panel to make all of it editable) and fixed the gap this
+ * function used to have on its own: HRI is a three-way value (below/
+ * above/none — RLU's own screen exposes it as 1=Below/2=Above/3=None,
+ * docs/KEYWORD-INVENTORY.md §3), not the boolean this function collapsed
+ * it to. This function now delegates to that shared parser instead of
+ * re-parsing independently, so the two can't drift; `hriPosition` is the
+ * new three-way value, `hri` is kept (derived from it) for existing
+ * callers/tests that just want "is HRI showing at all".
  */
 function parseBarcodeGeometry(kw, lpi, uom) {
-  const t = paramTokens(kw);
-  const barCodeId = (t[0] || "").replace(/^\*/, "");
-  const rest = t.slice(1);
-  const direction = rest.some((x) => x.toUpperCase() === "*VRT") ? "vertical" : "horizontal";
-  const hri = !rest.some((x) => x.toUpperCase() === "*NOHRI");
+  const parsed = parseBarcodeParams(kw);
+  const barCodeId = parsed.barCodeId;
+  const direction = parsed.direction;
+  const hriPosition = parsed.hriPosition;
+  const hri = hriPosition !== "none";
 
   let heightLines = 2; // placeholder default when height isn't a plain line count
   let approximateHeight = true;
-  if (rest.length > 0) {
-    const h = rest[0];
-    if (/^\d+$/.test(h)) {
-      const n = Number(h);
-      if (n >= 1 && n <= 9) {
-        heightLines = n;
-        approximateHeight = false;
-      }
-    } else if (h.startsWith("(")) {
-      // "(height *UOM)" form, e.g. "(0.5 *IN)" — find the closing token.
-      let combined = h;
-      for (let i = 1; i < rest.length && !combined.endsWith(")"); i++) combined += " " + rest[i];
-      const m = combined.match(/\(([\d.]+)/);
-      if (m) {
-        heightLines = Math.max(1, Math.round(toInches(Number(m[1]), uom) * lpi));
-        approximateHeight = false;
-      }
-    }
+  if (parsed.heightMode === "lines") {
+    heightLines = parsed.heightLines;
+    approximateHeight = false;
+  } else if (parsed.heightMode === "uom" && parsed.heightValue != null) {
+    heightLines = Math.max(1, Math.round(toInches(parsed.heightValue, uom) * lpi));
+    approximateHeight = false;
   }
 
-  return { barCodeId, direction, hri, heightLines, approximateHeight };
+  return { barCodeId, direction, hri, hriPosition, heightLines, approximateHeight };
 }
 
 function resolvePageSize(record, fileLevel) {
@@ -271,6 +273,11 @@ function resolveLayout(model, recordName, indicatorState, uom) {
       // data/edit keywords (e.g. FLTPCN on a non-F field).
       fieldWarnings: entry.kind === "field" ? validateFieldKeywords(entry) : undefined,
       barcode: barcodeKw ? parseBarcodeGeometry(barcodeKw, lpi, uom) : undefined,
+      // Batch C (docs/TASKS.md) — the full structured parse of every
+      // BARCODE parameter (not just the geometry subset `barcode` above
+      // carries), so the properties panel's BARCODE form can prefill
+      // without a second round trip to the extension host.
+      barcodeParams: barcodeKw ? parseBarcodeParams(barcodeKw) : undefined,
       // Raw keyword array (fields and constants) so the webview's various
       // properties-panel sections — Batch G data/edit keywords, Batch B
       // font & sizing (FONT/CDEFNT/FNTCHRSET/FONTNAME/CHRID/CHRSIZ/CCSID),
