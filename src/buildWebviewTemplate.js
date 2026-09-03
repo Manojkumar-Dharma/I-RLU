@@ -51,11 +51,20 @@ const WEBVIEW_MODULE_FILES = [
   // placeholder geometry to it) and prtfEngine.js (which re-exports it for
   // the webview's page-group/resource properties panel).
   ["src", "prtfPageGroupKeywords.js"],
+  // Batch L (continued) — CDEFNT/FNTCHRSET/FONTNAME resolution. No
+  // dependencies of its own; must land before prtfLayout.js (which now
+  // delegates to it via resolveFontDisplay) and prtfEngine.js (which
+  // re-exports it directly too).
+  ["src", "afpCodedFontMetrics.js"],
   ["src", "prtfLayout.js"],
   ["src", "prtfEngine.js"],
   // Pure keyword-text/pixel-math helpers pulled out of webviewClient.js
   // (review comment #6) so they're unit testable — see prtfWebviewLogic.js's
-  // own header for why. Only depends on prtfKeywordHelpers.js (isFieldRef).
+  // own header for why. Depends on prtfKeywordHelpers.js (isFieldRef) and,
+  // as of Batch L (continued)'s FONTNAME-quoting fix, prtfBarcodeParams.js
+  // (reuses its quote-aware groupTokens tokenizer, same as
+  // prtfPageGroupKeywords.js already does) — both already land earlier in
+  // this list.
   ["src", "prtfWebviewLogic.js"],
   // Batch D — real BARCODE symbol rendering. Third-party, vendored rather
   // than require()'d — see media/vendor/jsbarcode/README.md for why (needs

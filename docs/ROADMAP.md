@@ -351,7 +351,7 @@ full detail, acceptance criteria, and file-level ownership per batch):
       `images/icon.png` were copied over from the I-SDA repo (same
       publisher) at the repo owner's direction. See `docs/TASKS.md` Batch K
       for the rest (`.vscodeignore`, `vsce` scripts).
-- [x]/[ ] **Batch L — Real AFP font metrics — mostly done.** `FONT`/FGID
+- [x] **Batch L — Real AFP font metrics — done.** `FONT`/FGID
       *identification* is resolved: a verified FGID table (Courier/
       Gothic fixed families, Helvetica/Times New Roman proportional
       families, point-size-to-CPI conversion for scalable monospace fonts),
@@ -366,26 +366,32 @@ full detail, acceptance criteria, and file-level ownership per batch):
       Times-Roman/Bold/Italic/BoldItalic) — genuine, stable, industry-
       standard data (used in every PDF library and PostScript RIP since
       1985), not an invented approximation, replacing the earlier flat
-      placeholder table. **Still open:** the one honest caveat on the
-      above — these are the *substitute* font's published metrics, applied
-      as the best available proxy for IBM's own FGID-named fonts, not a
-      verified byte-for-byte extraction of IBM's own FGID resource data
-      (this tool has no access to that). Also still unresolved:
-      `CDEFNT`/`FNTCHRSET`/`FONTNAME` resolution, which reference host/IFS
-      font objects that `FONT`/FGID doesn't touch at all (these overlap
-      with Batch B's scope for the DDS-editing side, but the actual
-      metric/resource data behind them is Batch L's remaining blocker). A
-      promising direction raised for closing this gap: extracting real
-      font data from a connected IBM i (TrueType files under
-      `/QIBM/ProdData/OS400/Fonts/TTFonts` for IBM-supplied fonts, or
-      `/QIBM/UserData/OS400/Fonts/TTFonts` for user-installed ones — now
-      verified against IBM's own documentation, correcting an earlier
-      version of this note that had the wrong path entirely; or FOCA font
-      character-set metrics via host APIs, whose specific API names still
-      haven't been independently verified) — worth pursuing; nothing's
-      been built against either yet. See `src/afpFontMetrics.js` for the
-      full tables and sourcing notes, and `docs/TASKS.md` Batch L for the
-      canonical status (update that file too if you pick this back up).
+      placeholder table. One honest caveat remains: these are the
+      *substitute* font's published metrics, applied as the best available
+      proxy for IBM's own FGID-named fonts, not a verified byte-for-byte
+      extraction of IBM's own FGID resource data (this tool has no access
+      to that).
+      **`CDEFNT`/`FNTCHRSET`/`FONTNAME` resolution — also now done,** on
+      investigation turning out to need a much smaller lift than the
+      TTF-fetch-from-a-live-IBM-i direction earlier versions of this note
+      proposed: tracing through `resolveLayout`'s actual consumers showed
+      the glyph-width math (`getAdvanceWidth`) that plan was aimed at
+      feeding isn't called anywhere in the codebase — only a renderable
+      font *identity* (family/weight/style/name) is ever needed. `FONTNAME`
+      resolves completely offline (its value already IS the real font
+      name); `CDEFNT`/`FNTCHRSET` resolve their documented `X0`/`XZ`/`C0`/
+      `CZ` raster-vs-outline naming prefix plus a small number of
+      IBM-verified example names, with an honest note (not a guess) for
+      anything else — IBM's own documentation states plainly that a coded
+      font's real typeface is per-system data with no universal decode
+      table (`WRKFNTRSC` is the only way to know for certain, a
+      live-connection lookup not implemented here). Found and fixed a real,
+      separate pre-existing bug along the way: FONTNAME's DDS-quoted value
+      (routinely containing spaces, e.g. 'Courier New') was being mangled
+      by a whitespace-only tokenizer in Batch B's own properties-panel
+      code. 34 new tests across three files. See `src/afpCodedFontMetrics.js`
+      and `docs/TASKS.md` Batch L for the full sourcing notes and
+      implementation writeup.
 - [x] **Batch Q — Copy/duplicate a field or constant — done.** New "Copy"
       button next to "Delete" (`renderEditPanel`) arms the same
       click-to-place flow `+ Field`/`+ Constant` already use, landing on a

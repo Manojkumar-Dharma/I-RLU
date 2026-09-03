@@ -129,26 +129,28 @@ Courier Roman Medium; real Times New Roman Medium is FGID 2308. There's a
 regression test (`FGID 416 correctly resolves to Courier Roman Medium...`)
 guarding against that mistake resurfacing.
 
-What's still an approximation: `CDEFNT`, `FNTCHRSET`, and `FONTNAME` aren't
-resolved at all yet — those reference host/IFS font objects this tool
-doesn't have access to. Proportional-font (Helvetica/Times New Roman)
-character widths now use the real published Adobe Font Metrics (AFM)
-values for the metric-compatible PostScript substitute fonts (Helvetica,
-Times-Roman/Bold/Italic/BoldItalic) — stable, industry-standard data used
-in every PDF library and PostScript RIP since 1985, a genuine improvement
-over an earlier flat placeholder table. The one remaining honest caveat:
-these are the *substitute* font's published metrics, applied as the best
-available proxy for IBM's own FGID-named fonts — not a verified
-byte-for-byte extraction of IBM's own FGID resource data (which this tool
-has no access to), so don't treat this as guaranteed pixel-identical to
-what a specific target printer actually renders. Extracting real metrics
-from a live IBM i (TrueType files under
-`/QIBM/ProdData/OS400/Fonts/TTFonts` for IBM-supplied fonts, or
-`/QIBM/UserData/OS400/Fonts/TTFonts` for user-installed ones — verified
-against IBM's own documentation — or FOCA font objects via host APIs) is a
-promising direction for later; FOCA's specific API names haven't been
-independently verified yet, so it's not implemented against unverified
-specifics — see `docs/ROADMAP.md`.
+What's still an approximation vs. what's now real: `FONTNAME` (TrueType/
+OpenType by name) resolves completely — its value already IS the real font
+family name, no lookup needed. `CDEFNT` (coded font) and `FNTCHRSET` (host
+font character set + code page) resolve their documented `X0`/`XZ`/`C0`/`CZ`
+raster-vs-outline naming prefix plus a small number of IBM-verified example
+names (e.g. `X0GT10` = Gothic Text 10 pitch), but a specific coded font's
+real typeface is, by IBM's own documented design, per-system data with no
+universal decode table — resolving it fully would need a live connection to
+query `WRKFNTRSC` on that exact system, which isn't implemented; anything
+not recognized gets an honest note saying so, not a guess. Proportional-font
+(Helvetica/Times New Roman) character widths use the real published Adobe
+Font Metrics (AFM) values for the metric-compatible PostScript substitute
+fonts (Helvetica, Times-Roman/Bold/Italic/BoldItalic) — stable,
+industry-standard data used in every PDF library and PostScript RIP since
+1985, a genuine improvement over an earlier flat placeholder table. The one
+remaining honest caveat: these are the *substitute* font's published
+metrics, applied as the best available proxy for IBM's own FGID-named
+fonts — not a verified byte-for-byte extraction of IBM's own FGID resource
+data (which this tool has no access to), so don't treat this as guaranteed
+pixel-identical to what a specific target printer actually renders. See
+`docs/TASKS.md` Batch L for the full sourcing behind every resolution rule
+above.
 
 ## Building and testing
 

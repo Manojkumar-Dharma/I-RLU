@@ -21,6 +21,14 @@
 
 // eslint-disable-next-line no-undef
 const { isFieldRef } = typeof module !== "undefined" && module.exports ? require("./prtfKeywordHelpers.js") : window.PrtfKeywordHelpers;
+// eslint-disable-next-line no-undef
+// Batch L (continued) — groupTokens is needed here now that
+// parseFontSpecKeyword/buildFontSpecParamsFromValues handle FONTNAME's
+// quoted name param (see both functions' updated comments below); reused
+// from prtfBarcodeParams.js rather than reimplemented, same as
+// prtfPageGroupKeywords.js already does for the identical quote/paren-
+// aware tokenizing need.
+const { groupTokens } = typeof module !== "undefined" && module.exports ? require("./prtfBarcodeParams.js") : window.PrtfBarcodeParams;
 
 /**
  * Serializes a properties-panel input value into a keyword's "(...)" params
@@ -66,10 +74,21 @@ function paramsInnerText(kw, kind) {
  * program-to-system field reference (&NAME), for the Batch B P-field
  * toggle component (docs/TASKS.md) shared across FONT/CDEFNT/FNTCHRSET/
  * FONTNAME/CHRID. Mirrors PrtfEngine.isFieldRef's own &-prefix rule.
+ *
+ * `quoted` (Batch L continued): FONTNAME's name param is DDS-quoted
+ * (IBM's own example: FONTNAME('Courier New' ...)) — unlike CDEFNT/
+ * FNTCHRSET's params, which are bare object/character-set names. When
+ * `quoted` is true and the token isn't a P-field reference, this strips
+ * the surrounding DDS quote pair and un-escapes doubled '' quotes, so the
+ * P-field row's literal input shows the clean name text, not the raw
+ * quoted source token.
  */
-function tokenToPField(tok) {
+function tokenToPField(tok, quoted) {
   if (!tok) return { isPField: false, value: "" };
   if (isFieldRef(tok)) return { isPField: true, value: tok.slice(1) };
+  if (quoted && tok.length >= 2 && tok[0] === "'" && tok[tok.length - 1] === "'") {
+    return { isPField: false, value: tok.slice(1, -1).replace(/''/g, "'") };
+  }
   return { isPField: false, value: tok };
 }
 
@@ -80,6 +99,17 @@ function tokenToPField(tok) {
  * reference places *POINTSIZE last, after all name/library params, for
  * every keyword that supports it — this assumes that documented order
  * rather than trying to parse an arbitrary interleaving.
+ *
+ * Uses groupTokens (Batch L continued — previously a plain
+ * `.split(/\s+/)`) rather than a bare whitespace split, because FONTNAME's
+ * quoted name param can itself contain internal spaces (e.g. 'Courier
+ * New', 'Times New Roman') that a naive split would incorrectly tear into
+ * two tokens — this was a genuine pre-existing bug: FONTNAME('Courier
+ * New') parsed to a mangled "'Courier" (losing "New" entirely), found
+ * while adding real FONTNAME resolution (see afpCodedFontMetrics.js) and
+ * fixed here since resolution downstream depends on getting the name
+ * right. groupTokens keeps a whole quoted span together the same way it
+ * already does for BARCODE's own quoted/parenthesized parameters.
  */
 function parseFontSpecKeyword(spec, existingKw) {
   const raw = existingKw ? String(existingKw.params || "").replace(/^\(/, "").replace(/\)$/, "").trim() : "";
@@ -94,8 +124,8 @@ function parseFontSpecKeyword(spec, existingKw) {
       plainPart = raw.slice(0, m.index).trim();
     }
   }
-  const tokens = plainPart === "" ? [] : plainPart.split(/\s+/);
-  const values = spec.params.map((_p, i) => tokenToPField(tokens[i]));
+  const tokens = plainPart === "" ? [] : groupTokens(plainPart);
+  const values = spec.params.map((p, i) => tokenToPField(tokens[i], p.quoted));
   return { values, height: tokenToPField(height), width: tokenToPField(width) };
 }
 
@@ -106,6 +136,12 @@ function parseFontSpecKeyword(spec, existingKw) {
  * via its own .getValue() before calling this) plus an optional point-size
  * height/width pair. Returns null if the mandatory first param is empty
  * (meaning: don't write this keyword).
+ *
+ * Inverse of parseFontSpecKeyword's quoting handling above: a value whose
+ * spec param is `quoted` gets DDS-quoted here (embedded '  doubled) UNLESS
+ * it's a P-field reference (starts with "&", per pFieldRow.getValue()'s
+ * own convention — a P-field is never quoted, same rule
+ * PrtfKeywordHelpers.isFieldRef uses everywhere else in this codebase).
  */
 function buildFontSpecParamsFromValues(spec, values, height, width) {
   const vals = values.slice();
@@ -115,7 +151,14 @@ function buildFontSpecParamsFromValues(spec, values, height, width) {
   while (vals.length > 1 && !vals[vals.length - 1] && spec.params[vals.length - 1] && spec.params[vals.length - 1].optional) {
     vals.pop();
   }
-  let inner = vals.join(" ").replace(/\s+$/, "");
+  const rendered = vals.map((v, i) => {
+    const isPField = typeof v === "string" && v.startsWith("&");
+    if (spec.params[i] && spec.params[i].quoted && v && !isPField) {
+      return "'" + String(v).replace(/'/g, "''") + "'";
+    }
+    return v;
+  });
+  let inner = rendered.join(" ").replace(/\s+$/, "");
   if (spec.pointSize && height) {
     inner += (inner ? " " : "") + "(*POINTSIZE " + height + (width ? " " + width : "") + ")";
   }

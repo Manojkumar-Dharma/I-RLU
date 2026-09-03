@@ -171,3 +171,62 @@ test("pixelToLineCol: rounds to the nearest cell rather than always flooring", (
 test("pixelToLineCol: never resolves below line/position 1, even for a negative pixel offset", () => {
   assert.deepEqual(PrtfWebviewLogic.pixelToLineCol(-50, -50, 8, 18), { position: 1, line: 1 });
 });
+
+// --- FONTNAME quoting (Batch L continued) --------------------------------
+// Regression coverage for a real pre-existing bug found while adding real
+// FONTNAME resolution: FONTNAME's value is DDS-quoted and routinely
+// contains spaces ('Courier New', 'Times New Roman'), but
+// parseFontSpecKeyword/buildFontSpecParamsFromValues used a plain
+// whitespace split with no quote-awareness — FONTNAME('Courier New')
+// parsed to a mangled "'Courier" (losing "New" entirely). Fixed by adding
+// a `quoted` flag to a param spec (only set for FONTNAME's own "name"
+// param — CDEFNT/FNTCHRSET's params are bare, unquoted object names and
+// are NOT marked quoted) and using groupTokens (reused from
+// prtfBarcodeParams.js) instead of a bare split.
+
+const FONTNAME_SPEC_QUOTED = { name: "FONTNAME", params: [{ key: "name", label: "Font resource name", quoted: true }], pointSize: false };
+
+test("parseFontSpecKeyword: a quoted FONTNAME value with an internal space is parsed as one complete token, not split at the space", () => {
+  const parsed = PrtfWebviewLogic.parseFontSpecKeyword(FONTNAME_SPEC_QUOTED, { params: "('Courier New')" });
+  assert.deepEqual(parsed.values, [{ isPField: false, value: "Courier New" }]);
+});
+
+test("parseFontSpecKeyword: a quoted FONTNAME value with an embedded doubled-quote escape is unescaped correctly", () => {
+  const parsed = PrtfWebviewLogic.parseFontSpecKeyword(FONTNAME_SPEC_QUOTED, { params: "('O''Brien Sans')" });
+  assert.deepEqual(parsed.values, [{ isPField: false, value: "O'Brien Sans" }]);
+});
+
+test("parseFontSpecKeyword: a &NAME P-field for a quoted param is still recognized as a P-field, not treated as quoted text", () => {
+  const parsed = PrtfWebviewLogic.parseFontSpecKeyword(FONTNAME_SPEC_QUOTED, { params: "(&MYFONT)" });
+  assert.deepEqual(parsed.values, [{ isPField: true, value: "MYFONT" }]);
+});
+
+test("parseFontSpecKeyword: an unquoted param (e.g. CDEFNT's name) is unaffected by the quoted-param handling", () => {
+  const parsed = PrtfWebviewLogic.parseFontSpecKeyword(CDEFNT_SPEC, { params: "(X0N51EHC MYLIB)" });
+  assert.deepEqual(parsed.values, [
+    { isPField: false, value: "X0N51EHC" },
+    { isPField: false, value: "MYLIB" },
+  ]);
+});
+
+test("buildFontSpecParamsFromValues: a quoted param's value is written back DDS-quoted, with embedded quotes doubled", () => {
+  assert.equal(PrtfWebviewLogic.buildFontSpecParamsFromValues(FONTNAME_SPEC_QUOTED, ["Courier New"], null, null), "('Courier New')");
+  assert.equal(PrtfWebviewLogic.buildFontSpecParamsFromValues(FONTNAME_SPEC_QUOTED, ["O'Brien Sans"], null, null), "('O''Brien Sans')");
+});
+
+test("buildFontSpecParamsFromValues: a P-field value for a quoted param is written back bare (&NAME), never quoted", () => {
+  assert.equal(PrtfWebviewLogic.buildFontSpecParamsFromValues(FONTNAME_SPEC_QUOTED, ["&MYFONT"], null, null), "(&MYFONT)");
+});
+
+test("FONTNAME quoting round-trips through parse -> build unchanged", () => {
+  const original = "('Times New Roman')";
+  const parsed = PrtfWebviewLogic.parseFontSpecKeyword(FONTNAME_SPEC_QUOTED, { params: original });
+  const rebuilt = PrtfWebviewLogic.buildFontSpecParamsFromValues(
+    FONTNAME_SPEC_QUOTED,
+    parsed.values.map((v: any) => (v.isPField ? "&" + v.value : v.value)),
+    null,
+    null
+  );
+  assert.equal(rebuilt, original);
+});
+

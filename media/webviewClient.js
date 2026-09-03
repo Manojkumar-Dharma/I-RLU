@@ -417,16 +417,19 @@
           (cell.font.weight ? `font-weight:${cell.font.weight};` : "") +
           (cell.font.style ? `font-style:${cell.font.style};` : "")
         : "";
+      // Batch L (continued): cell.font.fgid is only set when the font was
+      // resolved via FONT/FGID — CDEFNT/FNTCHRSET/FONTNAME resolutions
+      // (see prtfLayout.js's resolveFontDisplay) have no FGID at all, and
+      // carry their own resolutionNote instead of the FGID-specific
+      // isPlaceholderMetrics wording. This tooltip is written to read
+      // sensibly for either shape rather than assuming FGID is present.
       const fontTitle =
         cell.font && !cell.barcode
           ? "Font: " +
             cell.font.name +
-            " (FGID " +
-            cell.font.fgid +
-            ", " +
-            cell.font.spacing +
-            ")" +
-            (cell.font.isPlaceholderMetrics ? " — proportional widths are an approximation, not verified font metrics." : "") +
+            (cell.font.fgid !== undefined ? " (FGID " + cell.font.fgid + (cell.font.spacing ? ", " + cell.font.spacing : "") + ")" : cell.font.spacing ? " (" + cell.font.spacing + ")" : "") +
+            (cell.font.resolutionNote ? " " + cell.font.resolutionNote : "") +
+            (cell.font.isPlaceholderMetrics && !cell.font.resolutionNote ? " — proportional widths are an approximation, not verified font metrics." : "") +
             (cell.font.approximate ? " Font is set by a program-to-system field; shown using the default font." : "")
           : "";
       const div = el(
@@ -659,7 +662,12 @@
     {
       name: "FONTNAME",
       hint: "Selects a TrueType/OpenType font by resource name.",
-      params: [{ key: "name", label: "Font resource name" }],
+      // Batch L (continued): quoted, since FONTNAME's value is a DDS
+      // character literal (IBM's own example: FONTNAME('Courier New' ...))
+      // that can contain internal spaces — parseFontSpecKeyword/
+      // buildFontSpecParamsFromValues use this flag to quote/unquote it
+      // correctly rather than mishandling the embedded space.
+      params: [{ key: "name", label: "Font resource name", quoted: true }],
       pointSize: false,
     },
     {

@@ -87,7 +87,7 @@ vice versa.
 | I | ~~`UOM` modeling~~ **done elsewhere** (see `i-rlu.unitOfMeasure` setting, `docs/ROADMAP.md`) + file-level SKIPA/SKIPB *AFPDS validation | `SKIPA`, `SKIPB` (validation only) | **Done** (validation landed as part of Batch F — see `prtfEngine.js`'s `validateFileLevelKeywords`) | none |
 | J | ~~Compile command: library/source-file/member picker~~ | n/a (tooling) | **Done** | none |
 | K | Packaging (`.vsix`) | n/a (tooling) | **Done** | ideally after A–I land, but can be prepped early |
-| L | Real AFP font metrics | n/a (data) | Mostly done — FGID identification resolved; proportional widths now use real published Adobe AFM data (metric-compatible substitute fonts, not verified IBM FGID resource extraction); CDEFNT/FNTCHRSET/FONTNAME still unresolved, see REQUIREMENTS.md §9 | none |
+| L | Real AFP font metrics | n/a (data) | Mostly done — FGID identification resolved; proportional widths now use real published Adobe AFM data (metric-compatible substitute fonts, not verified IBM FGID resource extraction); FONTNAME fully resolved, CDEFNT/FNTCHRSET honestly partially resolved (documented prefix + small verified table; full resolution needs a live IBM i, see REQUIREMENTS.md §9) | none |
 | M | ~~**Bug fix:** writer emits wrong continuation character when wrapping mid-token~~ | n/a (parser/writer correctness) | **Done** | none |
 | N | ~~`BARCODE` mutual-exclusion validation~~ | `BARCODE` (validation vs. `FONT`, `EDTCDE`, `EDTWRD`, `DATE`, `TIME`, `PAGNBR`, etc.) | **Done** | **C** |
 | O | Real AFP resource rendering (actual pixel content for page segments/overlays) | `PAGSEG`, `OVERLAY` (record-level) | Blocked — needs external resource files, see REQUIREMENTS.md §8 | **E** |
@@ -738,7 +738,7 @@ incomplete-but-working extension is fine for internal testing.
   `images/icon.png`, with matching `"license": "MIT"` and
   `"icon": "images/icon.png"` added to `package.json`.
 
-### Batch L — Real AFP font metrics [MOSTLY DONE]
+### Batch L — Real AFP font metrics [DONE]
 **FGID identification: done.** `src/afpFontMetrics.js` now resolves the
 `FONT` keyword's FGID parameter against a table verified against IBM's own
 FGID/typeface documentation (Printer Device Programming, the AFP Font
@@ -773,34 +773,113 @@ improvement over the earlier flat placeholder table. The honest caveat
 that remains: these are the substitute font's published metrics, not a
 verified extraction of IBM's own FGID resource data (which this tool has
 no access to) — don't treat this as guaranteed pixel-identical to a
-specific target printer's actual rendering. Also still unresolved:
-`CDEFNT` (coded font), `FNTCHRSET` (host font character set + code page),
-and `FONTNAME` (TrueType/OpenType by name) — none of these three are
-parsed for font resolution at all yet; they reference host/IFS font
-objects this tool has no access to. One direction raised for closing this
-gap: extracting real font data from a connected IBM i (TrueType files
-under `/QIBM/ProdData/OS400/Fonts/TTFonts` for IBM-supplied fonts, or
-`/QIBM/UserData/OS400/Fonts/TTFonts` for user-installed ones, accessible
-via Code for i's IFS browsing/file-read API; or FOCA font character-set
-metrics via host APIs) — worth pursuing. The TrueType path above is now
-independently verified (IBM's own documentation, corroborated by a
-working `FONTNAME` example from a real IBM i shop), correcting an earlier
-version of this note that had the wrong base directory and directory name
-(`/QIBM/UserData/OS400/Fonts/TTF/` — both wrong: missing the `ProdData`
-half entirely, and `TTF` rather than `TTFonts`). One nuance to keep in
-mind when actually implementing this: `FONTNAME` references a TrueType
-font by its full font name, not its filename, so resolving it to real
-glyph metrics means fetching the matching `.ttf` file's bytes and parsing
-its own `name` table to find the right one — filename matching alone
-won't reliably work. FOCA's own API names/paths still haven't been
-independently verified, so don't build against those specifically without
-checking first (same discipline that caught the FGID 416 error, and that
-caught this TTF path error too).
+specific target printer's actual rendering.
+
+**[CDEFNT/FNTCHRSET/FONTNAME — DONE, as follows]:**
+
+Before implementing, traced through `resolveLayout`'s actual consumers and
+found that `AfpFontMetrics.getAdvanceWidth`/`pointSizeToCpi` — the
+glyph-level width math the original TTF-fetch plan below was aimed at
+feeding — aren't called anywhere in the codebase at all; `resolveLayout`'s
+field placement is purely CPI/LPI character-grid based, and `font: {...}`
+only ever needs a renderable *identity* (family/weight/style/name for
+CSS), not per-glyph widths. That completely changed the realistic scope of
+this piece: a live IBM i / TTF-file-fetch integration (the direction
+originally proposed and left in this doc's history) turned out to be
+solving a problem nothing downstream actually has.
+
+Investigating each keyword's own architecture instead (verified against
+IBM's own documentation, not guessed) showed the three are NOT
+symmetrical:
+
+- **`FONTNAME`** — its value already IS the human-readable TrueType/
+  OpenType font family name (IBM's own "Example: Specifying a font":
+  `FONTNAME('Courier New' (*POINTSIZE 20)(*CODEPAGE T1V10037))`,
+  https://www.ibm.com/docs/ssw_ibm_i_72/rzau6/rzau6fntxmp.htm) — fully
+  resolvable **offline, no live IBM i connection needed at all**. Nobody
+  had gotten around to wiring this in; there was no actual blocker.
+- **`CDEFNT`** — names an IBM i "coded font" *resource object*
+  (library-qualified, viewable via `WRKFNTRSC`). IBM's own "Coded fonts"
+  documentation states plainly there is no substitution and no universal
+  decode table: "To find out which font character set and code page make
+  up a coded font name, use the Work with Font Resources (WRKFNTRSC)
+  command." Beyond the documented `X0`/`XZ` (raster/outline) prefix and a
+  small number of independently-verified IBM example names (`X0GT10` =
+  Gothic Text 10 pitch; `X0SHAD` = IBM's shading font), a specific coded
+  font's real typeface genuinely IS per-system data — this is IBM's own
+  documented design, not a research gap. IBM's own worked DDS-reference
+  example, `CDEFNT(X0N51EHC)`, is itself unresolvable beyond "custom
+  raster coded font" for exactly this reason — confirmed by testing
+  against that exact value rather than assuming.
+- **`FNTCHRSET`** — same treatment: `C0` (raster) / `CZ` (outline) prefix
+  is documented (IBM's AFP Font Collection reference, G544-5846-03, and
+  corroborated by z/OS's font-mapping-table `MAPFONT` examples pairing
+  `RFONT=C0...`/`OFONT=CZ...`), but the rest of the name comes from large
+  IBM summary tables not reproduced here; the code-page parameter (always
+  prefixed `T1`) selects an encoding, not a typeface, so it isn't
+  independently decoded either.
+
+**Implementation:**
+- New `src/afpCodedFontMetrics.js`: `resolveFontName` (complete, real
+  resolution — CSS family = the exact name, plus a small conservative
+  generic-fallback/spacing table for extremely common names like Arial/
+  Courier New/Times New Roman), `resolveCodedFont` (X0/XZ prefix + the two
+  verified example names + an honest `resolutionNote` pointing to
+  `WRKFNTRSC` for anything else), `resolveFontCharacterSet` (same
+  treatment for C0/CZ). Every one of these returns a `resolutionNote`
+  field (new — not present on the FGID path) explaining exactly what's
+  still unknown, never a confident-looking guess.
+- `src/prtfLayout.js`'s `resolveFont` rewritten: previously it only ever
+  checked `FONT` (field, then record, then file level in isolation). It
+  now checks all **four** font-selection keywords together AT EACH LEVEL
+  before falling through to the next — meaning "nearest specification
+  wins" correctly applies across keyword types (a field-level `CDEFNT`
+  correctly overrides a record-level `FONT`, not just a field-level
+  `FONT`). New `resolveFontDisplay` converts whichever mode was resolved
+  into the final `cells[].font` shape; the `&NAME` P-field fallback path
+  is now centralized here (previously duplicated per-caller) rather than
+  living inside each of the three new resolver functions.
+- **Found and fixed a real, separate pre-existing bug** while wiring this
+  in: `FONTNAME`'s value is DDS-quoted and routinely contains spaces
+  ('Courier New', 'Times New Roman'), but `prtfWebviewLogic.js`'s
+  `parseFontSpecKeyword`/`buildFontSpecParamsFromValues` (Batch B) used a
+  plain whitespace split with no quote-awareness —
+  `FONTNAME('Courier New')` parsed to a mangled `"'Courier"` (losing "New"
+  entirely). This would have fed a mangled name straight into the new
+  resolution logic, so it was directly in scope, not a detour. Fixed by
+  adding an opt-in `quoted` flag to a param spec (set only for FONTNAME's
+  own "name" param — CDEFNT/FNTCHRSET's params are bare, unquoted object
+  names) and reusing `groupTokens` (from `prtfBarcodeParams.js`, already
+  used by `prtfPageGroupKeywords.js` for the identical need) instead of a
+  bare split.
+- **Found and fixed a self-introduced regression** during implementation:
+  an early draft of `resolveFontDisplay`'s `&NAME` P-field fallback branch
+  hardcoded `isPlaceholderMetrics: true`, but the fallback font
+  (`DEFAULT_FGID`, Courier 10 pitch) is fixed-spacing, so that flag should
+  be `false` — `isPlaceholderMetrics` (substitute-font AFM widths) and
+  `approximate` (unresolvable runtime P-field value) are independent
+  caveats, not the same thing. Caught and fixed before landing, with a
+  dedicated regression test (`test/prtfFontResolution.test.ts`).
+- `media/webviewClient.js`'s font tooltip updated to read sensibly for
+  either shape — it previously assumed `cell.font.fgid` was always
+  present, which the three new modes don't set.
+- **Tests:** `test/afpCodedFontMetrics.test.ts` (14 tests) covers every
+  resolver directly, including IBM's own worked example values
+  (`X0N51EHC`, `C0S0BRTR`, `CZH200`) to confirm they're honestly
+  unresolved rather than guessed. `test/prtfFontResolution.test.ts` (13
+  tests) covers `resolveFont`'s cross-keyword precedence and
+  `resolveLayout`'s end-to-end wiring, including the regression guard
+  above. `test/prtfWebviewLogic.test.ts` gained 7 tests for the FONTNAME
+  quoting fix (parse, build, P-field interaction, round-trip).
+- Full suite: 334 tests, all passing (300 prior + 34 new); `tsc --noEmit`
+  clean; verified end-to-end in the assembled webview script (same
+  `vm`-context technique as `test/webviewAssembly.test.ts`).
 
 Batch B's `FONT`/`CDEFNT`/`FNTCHRSET`/`FONTNAME` properties-panel editing
-work is unaffected by this and can proceed independently — it's about
-letting the user *set* these keywords' values through the UI, not about
-resolving their real metrics for rendering.
+work needed one small adjustment (the FONTNAME quoting fix above) but was
+otherwise unaffected — it's about letting the user *set* these keywords'
+values through the UI, which is a separate concern from resolving their
+real metrics for rendering.
 
 ### Batch M — Fix writer's continuation-character bug [DONE]
 **Found by:** `test/prtfFixtures.test.ts`'s round-trip test against

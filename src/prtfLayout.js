@@ -47,6 +47,12 @@ const { parseBarcodeParams } =
 // eslint-disable-next-line no-undef
 const { parseOverlay, parsePagseg, parseAfprsc } =
   typeof module !== "undefined" && module.exports ? require("./prtfPageGroupKeywords.js") : window.PrtfPageGroupKeywords;
+// eslint-disable-next-line no-undef
+// Batch L (continued) — CDEFNT/FNTCHRSET/FONTNAME resolution, alongside
+// this file's own FONT/FGID resolution below (see resolveFont/
+// resolveFontDisplay).
+const AfpCodedFontMetrics =
+  typeof module !== "undefined" && module.exports ? require("./afpCodedFontMetrics.js") : window.AfpCodedFontMetrics;
 
 /**
  * Resolves CPI (characters per inch) and LPI (lines per inch) for a
@@ -84,15 +90,121 @@ function parseFontKeyword(kw) {
 }
 
 /**
- * Resolves the effective FONT for a field/constant entry: field-level
- * FONT keyword takes precedence, then record-level, then file-level, then
- * IBM i's own default substitution target (Courier 10 pitch, FGID 11 —
- * see afpFontMetrics.js).
+ * Resolves the effective font-selection keyword for a field/constant
+ * entry. FONT/CDEFNT/FNTCHRSET/FONTNAME are alternative ways to select a
+ * font — a real DDS source normally uses exactly one at any given level —
+ * so unlike this function's pre-Batch-L-continued form (which only ever
+ * looked for FONT), this checks all four AT EACH LEVEL (field, then
+ * record, then file) before falling through to the next level, so
+ * "nearest specification wins" applies across whichever of the four
+ * keywords is actually present, not just to FONT's own isolated cascade.
+ * IBM's DDS reference doesn't document a combining/precedence rule for
+ * more than one of these appearing on the SAME level (an atypical case) —
+ * the fixed order checked within a level (FONT, then CDEFNT, then
+ * FNTCHRSET, then FONTNAME) is this tool's own consistent tie-break, not
+ * an IBM-documented rule, for that atypical case specifically.
+ *
+ * Returns a `mode`-tagged object; see resolveFontDisplay below for how
+ * each mode becomes the final renderable font identity.
  */
 function resolveFont(entry, record, fileLevel) {
-  const kw = findKeyword(entry.keywords, "FONT") || findKeyword(record.keywords, "FONT") || findKeyword(fileLevel.keywords, "FONT");
-  if (!kw) return { fgid: AfpFontMetrics.DEFAULT_FGID, pointSize: undefined, approximate: false };
-  return parseFontKeyword(kw);
+  for (const level of [entry, record, fileLevel]) {
+    const fontKw = findKeyword(level.keywords, "FONT");
+    if (fontKw) return Object.assign({ mode: "fgid" }, parseFontKeyword(fontKw));
+
+    const cdefntKw = findKeyword(level.keywords, "CDEFNT");
+    if (cdefntKw) {
+      const inner = String(cdefntKw.params || "").replace(/^\(/, "").replace(/\)$/, "").trim();
+      const value = inner.split(/\s+/)[0] || "";
+      return { mode: "cdefnt", value, approximate: isFieldRef(value) };
+    }
+
+    const fntchrsetKw = findKeyword(level.keywords, "FNTCHRSET");
+    if (fntchrsetKw) {
+      const toks = paramTokens(fntchrsetKw);
+      return { mode: "fntchrset", fontCharacterSet: toks[0] || "", codePage: toks[1] || "", approximate: isFieldRef(toks[0]) };
+    }
+
+    const fontnameKw = findKeyword(level.keywords, "FONTNAME");
+    if (fontnameKw) {
+      // FONTNAME's value is DDS-quoted (see prtfWebviewLogic.js's
+      // parseFontSpecKeyword/buildFontSpecParamsFromValues for the fix to
+      // the pre-existing bug this used to trip on) — strip the quote pair
+      // here the same way, since this function reads the raw keyword
+      // params directly rather than going through that shared helper.
+      const inner = String(fontnameKw.params || "").replace(/^\(/, "").replace(/\)$/, "").trim();
+      const firstToken = (inner.match(/^'((?:[^']|'')*)'|^(\S+)/) || [])[0] || "";
+      let value = firstToken;
+      if (value.length >= 2 && value[0] === "'" && value[value.length - 1] === "'") {
+        value = value.slice(1, -1).replace(/''/g, "'");
+      }
+      return { mode: "fontname", value, approximate: isFieldRef(value) };
+    }
+  }
+  return { mode: "fgid", fgid: AfpFontMetrics.DEFAULT_FGID, pointSize: undefined, approximate: false };
+}
+
+/**
+ * Converts resolveFont's mode-tagged result into the final renderable font
+ * identity resolveLayout's `cells[].font` carries. A program-to-system
+ * field reference (&NAME, any mode) can't be resolved without a live
+ * compile/run — same "flagged approximate, fall back to the tool's own
+ * default" treatment every other P-field case in this codebase already
+ * gets (see e.g. parseFontKeyword's own approximate handling) — so that
+ * check happens once here, ahead of the per-mode branches, rather than
+ * being duplicated in each of afpCodedFontMetrics.js's three resolver
+ * functions.
+ */
+function resolveFontDisplay(font) {
+  if (font.approximate) {
+    const fontInfo = AfpFontMetrics.getFontInfo(AfpFontMetrics.DEFAULT_FGID);
+    return {
+      fgid: AfpFontMetrics.DEFAULT_FGID,
+      name: fontInfo.name,
+      family: fontInfo.family,
+      spacing: fontInfo.spacing,
+      weight: fontInfo.weight,
+      style: fontInfo.style,
+      pointSize: font.pointSize,
+      approximate: true,
+      // Computed the same way the fgid branch below does (rather than a
+      // hardcoded true) — DEFAULT_FGID is Courier 10 pitch, a fixed-
+      // spacing font, so this correctly comes out false: the "proportional
+      // widths are an approximation" caveat shouldn't show for a fixed
+      // font just because it's ALSO a P-field fallback. The two caveats
+      // are independent (isPlaceholderMetrics: substitute-font AFM widths;
+      // approximate: program-to-system field, runtime value unknown) and
+      // webviewClient.js's tooltip already shows them as separate clauses.
+      isPlaceholderMetrics: AfpFontMetrics.isPlaceholder(AfpFontMetrics.DEFAULT_FGID),
+      resolutionNote: undefined,
+    };
+  }
+  if (font.mode === "fontname") {
+    const resolved = AfpCodedFontMetrics.resolveFontName(font.value);
+    return Object.assign({ fgid: undefined, pointSize: font.pointSize, approximate: false }, resolved);
+  }
+  if (font.mode === "cdefnt") {
+    const resolved = AfpCodedFontMetrics.resolveCodedFont(font.value);
+    return Object.assign({ fgid: undefined, pointSize: font.pointSize, approximate: false }, resolved);
+  }
+  if (font.mode === "fntchrset") {
+    const resolved = AfpCodedFontMetrics.resolveFontCharacterSet(font.fontCharacterSet);
+    return Object.assign({ fgid: undefined, pointSize: font.pointSize, approximate: false }, resolved);
+  }
+  // mode === "fgid" — the pre-existing FONT/FGID resolution, unchanged.
+  const fontInfo = AfpFontMetrics.getFontInfo(font.fgid);
+  return {
+    fgid: font.fgid,
+    name: fontInfo.name,
+    family: fontInfo.family,
+    spacing: fontInfo.spacing,
+    weight: fontInfo.weight,
+    style: fontInfo.style,
+    pointSize: font.pointSize,
+    approximate: font.approximate,
+    isPlaceholderMetrics: AfpFontMetrics.isPlaceholder(font.fgid),
+    resolutionNote: undefined,
+  };
 }
 
 /**
@@ -302,7 +414,7 @@ function resolveLayout(model, recordName, indicatorState, uom) {
         : entry.length || 1;
     const barcodeKw = entry.kind === "field" ? findKeyword(entry.keywords, "BARCODE") : undefined;
     const font = resolveFont(entry, record, model.fileLevel);
-    const fontInfo = AfpFontMetrics.getFontInfo(font.fgid);
+    const fontDisplay = resolveFontDisplay(font);
 
     cells.push({
       id: entry.id,
@@ -347,17 +459,11 @@ function resolveLayout(model, recordName, indicatorState, uom) {
       // version since Batch A's general-keywords panel needs it for
       // constants too.
       keywords: entry.keywords,
-      font: {
-        fgid: font.fgid,
-        name: fontInfo.name,
-        family: fontInfo.family,
-        spacing: fontInfo.spacing,
-        weight: fontInfo.weight,
-        style: fontInfo.style,
-        pointSize: font.pointSize,
-        approximate: font.approximate,
-        isPlaceholderMetrics: AfpFontMetrics.isPlaceholder(font.fgid),
-      },
+      // Batch L (continued) — fontDisplay resolves whichever of
+      // FONT/CDEFNT/FNTCHRSET/FONTNAME is actually in effect (see
+      // resolveFont/resolveFontDisplay above); previously this object was
+      // built inline here and only ever handled FONT/FGID.
+      font: fontDisplay,
     });
 
     cursorLine = line;
@@ -411,6 +517,10 @@ const mod = {
   paramTokens,
   isFieldRef,
   parseFontKeyword,
+  // Batch L (continued) — exported directly (not just via resolveLayout's
+  // cells[].font) so they're unit-testable in isolation.
+  resolveFont,
+  resolveFontDisplay,
 };
 if (typeof module !== "undefined" && module.exports) module.exports = mod;
 if (typeof window !== "undefined") window.PrtfLayout = mod;

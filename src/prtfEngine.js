@@ -35,6 +35,7 @@ const ReferenceField = req("./prtfReferenceField.js", "PrtfReferenceField");
 const KeywordValidation = req("./prtfKeywordValidation.js", "PrtfKeywordValidation");
 const BarcodeParams = req("./prtfBarcodeParams.js", "PrtfBarcodeParams");
 const PageGroupKeywords = req("./prtfPageGroupKeywords.js", "PrtfPageGroupKeywords");
+const CodedFontMetrics = req("./afpCodedFontMetrics.js", "AfpCodedFontMetrics");
 
 const mod = {
   resolveLayout: Layout.resolveLayout,
@@ -91,6 +92,16 @@ const mod = {
   buildDocidxtagParams: PageGroupKeywords.buildDocidxtagParams,
   // Batch P
   validatePageGroupOrder: PageGroupKeywords.validatePageGroupOrder,
+  // Batch L (continued) — CDEFNT/FNTCHRSET/FONTNAME resolution (see
+  // prtfLayout.js's resolveFont/resolveFontDisplay for how these feed
+  // into resolveLayout's cells[].font, and afpCodedFontMetrics.js's own
+  // header for why each of the three gets a different depth of
+  // resolution).
+  resolveFont: Layout.resolveFont,
+  resolveFontDisplay: Layout.resolveFontDisplay,
+  resolveFontName: CodedFontMetrics.resolveFontName,
+  resolveCodedFont: CodedFontMetrics.resolveCodedFont,
+  resolveFontCharacterSet: CodedFontMetrics.resolveFontCharacterSet,
 };
 if (typeof module !== "undefined" && module.exports) module.exports = mod;
 if (typeof window !== "undefined") window.PrtfEngine = mod;
