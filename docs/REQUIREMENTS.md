@@ -199,13 +199,27 @@ published metrics, applied as the best available proxy for IBM's own
 FGID-named fonts — not a verified byte-for-byte extraction of IBM's own
 FGID resource data, which this tool has no access to; don't treat this as
 guaranteed pixel-identical to a specific target printer's actual
-rendering. Also still unresolved: `CDEFNT` (coded font), `FNTCHRSET` (host
-font character set + code page), and `FONTNAME` (TrueType/OpenType by
-name) — these reference host/IFS font objects that `FONT`/FGID doesn't
-touch at all, and none of the three are parsed for font resolution yet. A
-promising direction raised for closing this gap: extracting real font data
-from a connected IBM i (TrueType files under
-`/QIBM/UserData/OS400/Fonts/TTF/`, or FOCA font character-set metrics via
-host APIs) — worth pursuing, but the specific paths/API names for that
-haven't been independently verified yet, so nothing has been built against
-them.
+rendering.
+
+**`CDEFNT`/`FNTCHRSET`/`FONTNAME` — resolved** (see `docs/TASKS.md` Batch
+L for the full writeup; this section previously said none of the three
+were parsed at all, and mentioned pursuing a TTF-fetch-from-a-live-IBM-i
+direction with an unverified path — both now superseded). `FONTNAME`
+resolves completely offline: its value already IS the real TrueType/
+OpenType font name, so no live connection or file fetch was ever actually
+needed — the earlier TTF-file-access idea was solving a problem that
+turned out not to exist, once it became clear `resolveLayout` never
+consumes per-glyph width data for any font-selection keyword, FGID
+included. `CDEFNT`/`FNTCHRSET` resolve their documented `X0`/`XZ`/`C0`/`CZ`
+raster-vs-outline naming prefix, plus a small number of independently
+IBM-verified example names (e.g. `X0GT10` = Gothic Text, 10 pitch) — but a
+specific coded font or font character set's real typeface is, by IBM's own
+documented design, per-system data with no universal decode table (IBM's
+own "Coded fonts" documentation: "To find out which font character set and
+code page make up a coded font name, use the Work with Font Resources
+(WRKFNTRSC) command"). Fully resolving an arbitrary `CDEFNT`/`FNTCHRSET`
+value would need a live `WRKFNTRSC`-equivalent query against the connected
+IBM i — not implemented, and not a research gap the way this section
+previously described it; anything not in the small verified table gets an
+honest note rather than a guess. See `src/afpCodedFontMetrics.js` for the
+full resolution logic and sourcing.

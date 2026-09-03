@@ -418,8 +418,13 @@ Each batch's keyword list, current model/parser/engine status
 
 ## Explicit open decision points (carried from REQUIREMENTS.md)
 
-- Font resource access (§9) — partially resolved. FGID identification
-  (which font family/spacing a `FONT` keyword refers to) is now backed by
-  a verified table. Real per-glyph metrics for proportional fonts, and any
-  resolution of `CDEFNT`/`FNTCHRSET`/`FONTNAME`, are still open — see the
-  two items directly above.
+- Font resource access (§9) — mostly resolved. FGID identification (which
+  font family/spacing a `FONT` keyword refers to) is backed by a verified
+  table, and `FONTNAME`/`CDEFNT`/`FNTCHRSET` are now resolved too — see
+  `docs/TASKS.md` Batch L for the full writeup. What's genuinely still
+  open: real per-glyph metrics for proportional fonts remain the
+  *substitute* font's published AFM data rather than IBM's own FGID
+  resource data (this tool has no access to that), and a specific
+  `CDEFNT`/`FNTCHRSET` value's exact typeface is, by IBM's own documented
+  design, per-system data (`WRKFNTRSC`) that only a live IBM i connection
+  could resolve fully — not a research gap, a live-connection dependency.
