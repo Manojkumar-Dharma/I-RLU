@@ -57,6 +57,24 @@ class PrtfDesignerProvider implements vscode.CustomTextEditorProvider {
       webviewPanel.webview.postMessage({ type: "setModel", model: currentModel, uom: currentUom() });
     }
 
+    // Drives the webview's "IBM i: Connected/Not connected/Not installed"
+    // badge and the Resolve/Browse Referenced Field buttons' visibility —
+    // same sendCodeForIStatus pattern and timing I-SDA's Task L18 uses:
+    // called on 'ready' (badge populated before anything needing a
+    // connection is clicked), right after resolveReferencedField/
+    // browseReferencedField below (so a just-established or just-dropped
+    // connection is reflected without waiting for the next poll), on a
+    // cheap poll while the panel is open (catches a connection made/lost
+    // from OUTSIDE this panel, e.g. Code for i's own connection tree), and
+    // on vscode.extensions.onDidChange (catches Code for i being installed
+    // or uninstalled while this panel is already open).
+    const sendCodeForIStatus = async () => {
+      const status = await getCodeForIStatus();
+      webviewPanel.webview.postMessage({ type: "codeForIStatus", installed: status.installed, connected: status.connected });
+    };
+    const statusPollInterval = setInterval(() => { void sendCodeForIStatus(); }, 10000);
+    const extChangeSub = vscode.extensions.onDidChange(() => { void sendCodeForIStatus(); });
+
     const changeSub = vscode.workspace.onDidChangeTextDocument((e) => {
       if (e.document.uri.toString() === document.uri.toString()) {
         currentModel = parseSource(document.getText());
@@ -71,11 +89,14 @@ class PrtfDesignerProvider implements vscode.CustomTextEditorProvider {
     webviewPanel.onDidDispose(() => {
       changeSub.dispose();
       configSub.dispose();
+      clearInterval(statusPollInterval);
+      extChangeSub.dispose();
     });
 
     webviewPanel.webview.onDidReceiveMessage(async (msg: WebviewMessage) => {
       if (msg.type === "ready") {
         postModel();
+        await sendCodeForIStatus();
         return;
       }
       if (msg.type === "select") {
@@ -91,11 +112,13 @@ class PrtfDesignerProvider implements vscode.CustomTextEditorProvider {
         await handleResolveReferencedField(document, currentModel, msg);
         currentModel = parseSource(document.getText());
         postModel();
+        await sendCodeForIStatus();
       }
       if (msg.type === "browseReferencedField") {
         await handleBrowseReferencedField(document, currentModel, msg);
         currentModel = parseSource(document.getText());
         postModel();
+        await sendCodeForIStatus();
       }
     });
   }
@@ -184,6 +207,41 @@ async function getCodeForIConnection(): Promise<
   const connection = instance && typeof instance.getConnection === "function" ? instance.getConnection() : undefined;
   if (!connection || typeof connection.runCommand !== "function" || typeof connection.runSQL !== "function") return undefined;
   return connection;
+}
+
+/**
+ * Drives the "IBM i: Connected/Not connected/Not installed" badge in the
+ * designer webview and the `i-rlu.codeForIConnected` context key (see
+ * activate() below) — mirrors I-SDA's own Task L18 (`getCodeForIStatus` in
+ * that project's src/extension.ts) exactly, including WHY it's a thin
+ * sibling of getCodeForIConnection() above rather than a reuse of it: that
+ * function's callers all want "give me a usable connection or undefined"
+ * and don't care why one isn't available, while the badge/context-key need
+ * to tell "extension not installed" apart from "installed but not
+ * connected" — different, actionable states (install Code for i vs. connect
+ * to a system). Cheap to call often: no round trip to the IBM i itself,
+ * just an extension-registry lookup and (if already active) a plain
+ * in-memory connection-object check — the one exception is the same lazy-
+ * activation nudge getCodeForIConnection() already documents, which only
+ * ever runs once per extension host session (ext.isActive stays true after
+ * the first successful activate()).
+ */
+async function getCodeForIStatus(): Promise<{ installed: boolean; connected: boolean }> {
+  const ext = vscode.extensions.getExtension("halcyontechltd.code-for-ibmi");
+  if (!ext) return { installed: false, connected: false };
+  if (!ext.isActive) {
+    try {
+      await ext.activate();
+    } catch {
+      // fall through — same reasoning as getCodeForIConnection(): exports
+      // may still be usable, or the checks below correctly report "not connected"
+    }
+  }
+  if (!ext.exports) return { installed: true, connected: false };
+  const instance = ext.exports.instance;
+  const connection = instance && typeof instance.getConnection === "function" ? instance.getConnection() : undefined;
+  const connected = !!(connection && typeof connection.runCommand === "function" && typeof connection.runSQL === "function");
+  return { installed: true, connected };
 }
 
 /**
@@ -585,8 +643,35 @@ async function setCompileTarget(context: vscode.ExtensionContext): Promise<void>
 
 
 
+/**
+ * Sets the `i-rlu.codeForIConnected` context key package.json's
+ * commandPalette `when` clause for i-rlu.compilePrtf reads (see
+ * package.json), so the compile command drops out of the Command Palette
+ * the moment there's no live connection to compile against, rather than
+ * staying listed and failing with an error message once clicked. This is
+ * the global-command-visibility half of the same "don't offer an action
+ * that's guaranteed to fail while disconnected" fix I-SDA's Task L18 makes
+ * for its own webview-button Compile/Add-fields actions — adapted to
+ * i-rlu.compilePrtf specifically because it's reached via Command
+ * Palette/keybinding rather than a webview button, so there's no per-panel
+ * badge to hide it from; a single global poll (rather than one per open
+ * designer panel) is what a context key needs, since it's shared VS
+ * Code-wide state, not per-webview state.
+ */
+function watchCodeForIConnectedContext(context: vscode.ExtensionContext): void {
+  const update = async () => {
+    const status = await getCodeForIStatus();
+    await vscode.commands.executeCommand("setContext", "i-rlu.codeForIConnected", status.connected);
+  };
+  void update();
+  const poll = setInterval(() => { void update(); }, 10000);
+  const extChangeSub = vscode.extensions.onDidChange(() => { void update(); });
+  context.subscriptions.push({ dispose: () => clearInterval(poll) }, extChangeSub);
+}
+
 export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(PrtfDesignerProvider.register(context));
+  watchCodeForIConnectedContext(context);
   context.subscriptions.push(
     // Accepts an optional `uri` — VS Code passes the right-clicked
     // resource's URI as the first argument when this command is invoked

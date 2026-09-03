@@ -127,6 +127,27 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       has no `vscode`-module mock); full suite still 300 tests, all
       passing.
 
+- [x] **Batch U — Hide Code-for-i-dependent UI when disconnected +
+      themed properties-column scrollbar.** Prompted by comparing against
+      a matching fix in I-SDA (sibling project): the runCommand-race half
+      of that fix was already independently present in I-RLU
+      (`getCodeForIConnection()` already calls `connection.runCommand()`
+      directly, not `vscode.commands.executeCommand`), but the
+      hide-Compile/lookup-UI-when-disconnected half had no I-RLU
+      equivalent. Added a `getCodeForIStatus()`-driven connection badge
+      plus hidden Browse/Resolve Referenced Field buttons in the designer
+      webview (mirrors I-SDA's Task L18), and a global
+      `i-rlu.codeForIConnected` context key gating `i-rlu.compilePrtf`'s
+      Command Palette entry (I-RLU's Compile command isn't a webview
+      button like I-SDA's, so it needed a VS Code-wide toggle instead of
+      a per-panel one). Also gave the properties/keywords column an
+      explicit, VS Code-themed scrollbar (`scrollbar-width`/-`color` +
+      `::-webkit-scrollbar` rules) — it already scrolled (Batch S), but
+      the default was thin enough to miss. See `docs/TASKS.md` Batch U
+      for the full writeup. No automated test coverage for the new
+      behavior itself (same documented gap as Batch T); full suite still
+      334 tests, all passing.
+
 ## Next up
 
 As of the RLU screen-capture review (`docs/KEYWORD-INVENTORY.md`), the

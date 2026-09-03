@@ -96,6 +96,7 @@ vice versa.
 | R | ~~**Bug fix:** `emitWithKeywords` collapses multiple consecutive internal spaces inside any quoted keyword literal~~ | n/a (parser/writer correctness) | **Done** | none |
 | S | ~~**Bug fix:** wide record formats (e.g. 130/132-position) pushed the properties/keywords panels below the fold instead of alongside the report~~ | n/a (webview UI/CSS, `media/webviewClient.js` + `src/buildWebviewTemplate.js`) | **Done** | none |
 | T | ~~**Bug fix:** no right-click "open designer" option for `.pf`/`.prtf`/`.rlu` files~~ | n/a (packaging/activation, `package.json` + `src/extension.ts`) | **Done** | none |
+| U | ~~Hide Compile/Resolve/Browse-Referenced-Field UI when Code for i isn't connected + themed scrollbar on the properties column~~ | n/a (webview UI + activation, `src/extension.ts`, `media/webviewClient.js`, `src/buildWebviewTemplate.js`, `package.json`) | **Done** | none |
 
 ## Batch detail
 
@@ -1498,6 +1499,110 @@ empty array here is already correct, not a bug.
   `.prtf` file in a real VS Code Extension Development Host. Full
   existing suite (300 tests) still passes unchanged, since this batch
   touched no code any existing test exercises.
+
+### Batch U — Hide Code-for-i-dependent UI when disconnected + themed scrollbar [DONE]
+
+Requested directly by Warrior after comparing against a matching fix made
+in I-SDA (this project's sibling): I-SDA's own `getConnectedCodeForIBMi()`-
+style call sites had a real race (`vscode.commands.executeCommand(
+'code-for-ibmi.runCommand', ...)` depends on Code for i having *finished*
+registering that command — a race `ext.activate()` only narrows, not
+closes) which I-RLU had *already* independently fixed and consolidated
+(see `getCodeForIConnection()`, predating this batch) by calling
+`connection.runCommand()`/`.runSQL()` directly instead. The other half of
+that same I-SDA fix — hiding Compile/lookup UI outright when there's no
+live connection, rather than leaving it clickable and doomed to fail —
+had NO equivalent in I-RLU at all. This batch ports that half, adapted to
+I-RLU's actual UI surfaces (which differ from I-SDA's), plus a
+`Warrior`-reported UI polish: a barely-visible scrollbar on the
+properties/keywords column.
+
+**Part 1 — Code for i connection badge + hide-when-disconnected (mirrors
+I-SDA's Task L18):**
+- `src/extension.ts` gained `getCodeForIStatus()`, a thin sibling of
+  `getCodeForIConnection()` — same extension lookup and lazy-activation
+  nudge, but returns `{ installed, connected }` instead of a connection
+  object, since the badge/hide logic need to tell "extension not
+  installed" apart from "installed but not connected" (different,
+  actionable states) rather than just "connection or not."
+- `PrtfDesignerProvider.resolveCustomTextEditor` now sends a
+  `{ type: "codeForIStatus", installed, connected }` message to the
+  webview on `ready`, right after `resolveReferencedField`/
+  `browseReferencedField` complete (so a connection made/lost by that very
+  action is reflected immediately), on a 10s poll while the panel is open
+  (catches a connection made/lost from OUTSIDE the panel — e.g. Code for
+  i's own connection tree), and on `vscode.extensions.onDidChange`
+  (catches Code for i being installed/uninstalled while the panel is
+  open). Poll interval and the `onDidChange` subscription are disposed in
+  `onDidDispose`, alongside the pre-existing `changeSub`/`configSub`.
+- `media/webviewClient.js` gained `state.codeForI = { installed, connected
+  }` (starts `false`/`false` — the safe "not confirmed yet" state before
+  the first `codeForIStatus` message arrives), a small badge in the
+  toolbar ("IBM i: Connected" / "Not connected" / "Not installed", reusing
+  the existing `.hint`/`.hint.warning` styling), and the "Browse fields…"/
+  "Resolve Referenced Field" buttons in the field properties panel
+  (`renderEditPanel`) are now only rendered when `state.codeForI.connected`
+  is true — otherwise a `.hint.warning` line explains why, pointing back
+  at the badge. Since `render()` already rebuilds the whole panel from
+  `state` on every incoming message, this needed no DOM-diffing/classList-
+  toggle machinery the way I-SDA's non-rebuilding webview does — a plain
+  conditional in the render function does the same job.
+
+**Part 2 — hide the Compile command from the Command Palette when
+disconnected:** I-RLU's Compile command (`i-rlu.compilePrtf`) isn't a
+webview button at all (unlike I-SDA's `compileDspfBtn`) — it's reached
+via Command Palette/keybinding only, with no existing menu contribution.
+So instead of a per-panel badge toggle, `src/extension.ts`'s `activate()`
+now calls a new `watchCodeForIConnectedContext()`, which sets the
+`i-rlu.codeForIConnected` context key (via `vscode.commands.executeCommand
+("setContext", ...)`) on activation, a 10s poll, and
+`vscode.extensions.onDidChange` — global, VS Code-wide state, not tied to
+any one open designer panel. `package.json`'s `commandPalette` menu
+contribution gained an entry for `i-rlu.compilePrtf` with
+`"when": "i-rlu.codeForIConnected"`, so it drops out of the palette
+(rather than staying listed and failing once invoked) the moment there's
+no live connection, and reappears the moment one exists — same "don't
+offer an action guaranteed to fail" fix, adapted to how this specific
+command is actually surfaced.
+
+**Part 3 — themed scrollbar on `.side-col`:** the properties/keywords
+column (`.side-col` in `src/buildWebviewTemplate.js`) already had
+`overflow-y: auto` (from Batch S) and did already scroll — but VS Code's
+default webview scrollbar renders thin/near-invisible against a themed
+background, so with several stacked panels (field properties + every
+keyword section) it was easy to miss that the column scrolls at all
+rather than being cut off. Added explicit `scrollbar-width: thin` /
+`scrollbar-color` (Firefox-style) plus `::-webkit-scrollbar`/`-track`/
+`-thumb`/`-thumb:hover` rules (Chromium, which is what VS Code's webview
+actually uses) styled from the same `--vscode-scrollbarSlider-*` theme
+variables VS Code's own UI uses, so the scrollbar is clearly visible and
+theme-consistent instead of relying on the easy-to-miss OS default.
+`scrollbar-gutter: stable` reserves the scrollbar's width up front so a
+panel that later grows past the fold doesn't shift already-visible
+content sideways the instant the scrollbar appears.
+
+**Verification:** clean `npm install` + `npx tsc --noEmit` + full suite —
+334/334 passing (the pre-existing 331 plus none removed; this batch added
+no new automated tests — see below). `node src/buildWebviewTemplate.js`
+regenerates cleanly and the existing `webviewAssembly.test.ts` suite
+(which actually runs the assembled inline script in a `vm` context)
+confirms the modified `media/webviewClient.js` is still syntactically
+valid and executes end-to-end.
+
+**No automated test coverage for the new behavior itself** — same
+documented gap as Batch T: `extension.ts`'s `activate()`/webview-message-
+handling logic isn't exercised by `node --test` (no `vscode`-module mock
+in this project, unlike I-SDA's `src/test/vscode-mock.js`), and
+`media/webviewClient.js`'s DOM-building functions (`renderToolbar`,
+`renderEditPanel`) have no dedicated render-level tests either (only
+`webviewAssembly.test.ts`'s coarser "does the assembled script execute at
+all" check, which does still cover this file). Manually verify in a real
+Extension Development Host: badge reads "Not installed"/"Not
+connected"/"Connected" correctly as Code for i's state changes, Browse/
+Resolve buttons appear only once connected, `i-rlu.compilePrtf` drops out
+of the Command Palette while disconnected, and the properties column's
+scrollbar is visibly themed and doesn't jump content sideways when it
+appears.
 
 ## Adding a new batch
 

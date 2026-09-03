@@ -46,6 +46,14 @@
     recordName: null,
     indicators: {},
     uom: "inch", // set from the extension host's i-rlu.unitOfMeasure setting; see setModel handler
+    // Code for i connection badge — mirrors I-SDA's Task L18: pushed by
+    // extension.ts's sendCodeForIStatus on "ready", after every Code-for-i-
+    // dependent action, and on its own poll/extension-change watchers (see
+    // that file). "installed: false" until the very first codeForIStatus
+    // message arrives, so the badge (and any buttons gated on `connected`)
+    // start in the safe "not usable yet" state rather than assuming a
+    // connection that hasn't been confirmed.
+    codeForI: { installed: false, connected: false },
     selectedId: null, // id of the currently selected cell, if any
     placing: null, // null | "field" | "constant" — armed "click to place" mode
     pendingNew: null, // { kind, line, position } — set right after a placement click, before Save
@@ -211,6 +219,20 @@
       render();
     });
     toolbar.appendChild(el("label", {}, ["Record: ", select]));
+
+    // Code for i connection badge (see state.codeForI's own comment above).
+    // Text matches I-SDA's three-state Task L18 badge: "Not installed"
+    // when the extension itself isn't present, "Not connected" when it's
+    // present but has no live connection yet, "Connected" once one does —
+    // the two disconnected states get the same warning-style hint styling
+    // (.hint.warning) I-SDA uses for its own equivalent badge.
+    const badgeText = !state.codeForI.installed
+      ? "IBM i: Not installed"
+      : state.codeForI.connected
+        ? "IBM i: Connected"
+        : "IBM i: Not connected";
+    const badgeClass = state.codeForI.connected ? "hint" : "hint warning";
+    toolbar.appendChild(el("span", { class: badgeClass, title: "Status of the Code for IBM i (halcyontechltd.code-for-ibmi) extension \u2014 needed for Resolve/Browse Referenced Field and Compile." }, [badgeText]));
 
     // Batch P — reorder buttons act on the currently-selected record
     // format; simple up/down (rather than drag-to-reorder) per this
@@ -1578,11 +1600,25 @@
       // file first if they were just typed. Applies immediately on pick,
       // same as "Resolve Referenced Field" — no separate Save click
       // needed for the field name itself.
-      const browseBtn = el("button", { class: "btn", style: "width:100%;margin-bottom:8px;" }, ["Browse fields… (Code for i)"]);
-      browseBtn.addEventListener("click", () => {
-        vscode.postMessage({ type: "browseReferencedField", id: cell.id });
-      });
-      refFieldsRow.appendChild(browseBtn);
+      // Bug-fix follow-up (same "not connected" state the badge above
+      // already reports, just acted on instead of only displayed —
+      // mirrors I-SDA's own Task L18 follow-up fix): rather than leaving
+      // this visible-but-doomed-to-fail with no live connection, it's
+      // hidden outright and replaced with a hint explaining why. Reappears
+      // the moment state.codeForI next reports connected: true (on
+      // "ready", after any Code-for-i action, or the cheap poll — see
+      // extension.ts's sendCodeForIStatus) — no reload needed, since
+      // render() rebuilds this panel from state on every codeForIStatus
+      // message.
+      if (state.codeForI.connected) {
+        const browseBtn = el("button", { class: "btn", style: "width:100%;margin-bottom:8px;" }, ["Browse fields… (Code for i)"]);
+        browseBtn.addEventListener("click", () => {
+          vscode.postMessage({ type: "browseReferencedField", id: cell.id });
+        });
+        refFieldsRow.appendChild(browseBtn);
+      } else {
+        refFieldsRow.appendChild(el("div", { class: "hint warning", style: "margin-bottom:8px;" }, ["Browse fields… needs a live Code for i connection (see IBM i status above)."]));
+      }
       const refLibRow = labeledInput("Ref. library", { type: "text", maxlength: "10", value: target.library || "" });
       refLibInput = refLibRow.input;
       refFieldsRow.appendChild(refLibRow.row);
@@ -1594,15 +1630,21 @@
       useRefValuesCheckbox.setAttribute("checked", "checked"); // default Y, matching real RLU
       useRefValuesRow.appendChild(useRefValuesCheckbox);
       refFieldsRow.appendChild(useRefValuesRow);
-      const resolveBtn = el("button", { class: "btn", style: "width:100%;margin-bottom:8px;" }, ["Resolve Referenced Field (Code for i)"]);
-      resolveBtn.addEventListener("click", () => {
-        vscode.postMessage({
-          type: "resolveReferencedField",
-          id: cell.id,
-          useReferencedValues: useRefValuesCheckbox.checked,
+      // Same hide-when-disconnected treatment as the "Browse fields…"
+      // button above.
+      if (state.codeForI.connected) {
+        const resolveBtn = el("button", { class: "btn", style: "width:100%;margin-bottom:8px;" }, ["Resolve Referenced Field (Code for i)"]);
+        resolveBtn.addEventListener("click", () => {
+          vscode.postMessage({
+            type: "resolveReferencedField",
+            id: cell.id,
+            useReferencedValues: useRefValuesCheckbox.checked,
+          });
         });
-      });
-      refFieldsRow.appendChild(resolveBtn);
+        refFieldsRow.appendChild(resolveBtn);
+      } else {
+        refFieldsRow.appendChild(el("div", { class: "hint warning", style: "margin-bottom:8px;" }, ["Resolve Referenced Field needs a live Code for i connection (see IBM i status above)."]));
+      }
       panel.appendChild(refFieldsRow);
 
       refCheckbox.addEventListener("change", (e) => {
@@ -2022,6 +2064,9 @@
       if (!state.model.records.find((r) => r.name === state.recordName)) {
         state.recordName = state.model.records[0] ? state.model.records[0].name : null;
       }
+      render();
+    } else if (msg.type === "codeForIStatus") {
+      state.codeForI = { installed: !!msg.installed, connected: !!msg.connected };
       render();
     }
   });

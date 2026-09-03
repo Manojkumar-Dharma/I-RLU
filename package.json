@@ -73,6 +73,10 @@
         {
           "command": "i-rlu.openDesigner",
           "when": "resourceExtname == .pf || resourceExtname == .prtf || resourceExtname == .rlu"
+        },
+        {
+          "command": "i-rlu.compilePrtf",
+          "when": "i-rlu.codeForIConnected"
         }
       ]
     },

@@ -125,6 +125,22 @@ body { font-family: var(--vscode-editor-font-family, monospace); color: var(--vs
 .workspace { display: flex; flex: 1; min-height: 0; overflow: hidden; }
 .canvas-col { flex: 1; min-width: 0; overflow: auto; padding: 8px; }
 .side-col { width: 340px; flex: 0 0 340px; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 8px; box-sizing: border-box; border-left: 1px solid var(--vscode-panel-border); background: var(--vscode-sideBar-background, var(--vscode-editorWidget-background)); }
+/* .side-col already scrolls (overflow-y: auto above), but VS Code's
+   default webview scrollbar is thin/near-invisible against a themed
+   background, so with several stacked .props panels (properties + all
+   keyword sections) it was easy to miss that the column scrolls at all.
+   Explicit, always-visible, theme-colored scrollbar styling — same
+   ::-webkit-scrollbar approach used for e.g. the barcode symbol preview
+   elsewhere in this project's webview — makes the scroll affordance
+   obvious instead of relying on the (easy to miss) default. The
+   scrollbar-gutter: stable rule reserves its width up front so a panel
+   that later grows past the fold doesn't shift already-visible content
+   sideways the instant the scrollbar appears. */
+.side-col { scrollbar-gutter: stable; scrollbar-width: thin; scrollbar-color: var(--vscode-scrollbarSlider-background, rgba(121,121,121,0.4)) transparent; }
+.side-col::-webkit-scrollbar { width: 10px; }
+.side-col::-webkit-scrollbar-track { background: transparent; }
+.side-col::-webkit-scrollbar-thumb { background: var(--vscode-scrollbarSlider-background, rgba(121,121,121,0.4)); border-radius: 5px; }
+.side-col::-webkit-scrollbar-thumb:hover { background: var(--vscode-scrollbarSlider-hoverBackground, rgba(100,100,100,0.7)); }
 .main { display: flex; flex-direction: column; width: max-content; }
 .ruler { position: relative; height: 14px; font-size: 9px; color: var(--vscode-descriptionForeground); border-bottom: 1px solid var(--vscode-panel-border); margin-bottom: 2px; }
 .page { border: 1px solid var(--vscode-panel-border); background: var(--vscode-editorWidget-background, #fff); }
