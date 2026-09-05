@@ -102,6 +102,8 @@ vice versa.
 | X | ~~Track source modifications (comment-out-and-tag changed lines instead of overwriting, mirroring I-SDA's `isda.trackSourceModifications`/`isda.modificationTag`)~~ | n/a (writer/UI, not a keyword) | **Done** | none |
 | Y | ~~"Add fields from database file" — browse every field in a PF/LF via Code for i and add them as named fields (mirroring I-SDA's Task L14 `fetchDatabaseFileFields`), distinct from Batch H's single-field `REF`/`REFFLD` resolution~~ | n/a (Code for i integration/UI, not a keyword) | **Done** | **H** (shared its Code-for-i-connection plumbing/UI conventions, didn't block on it) |
 | Z | ~~System-constant fields (`DATE`, `TIME`, `USER`, `SYSNAME`, `PAGNBR`) — parse as design-time placeholder text (mirroring I-SDA's `fieldDisplayText`) and add an "Add system constant" option alongside literal-text constants~~ | `DATE`, `TIME`, `PAGNBR` (`USER`/`SYSNAME` dropped — see detail section: verified against IBM's DDS reference, neither is a valid printer-file keyword) | **Done** | none |
+| AA | **Bug fix:** `regenerateSource` unconditionally blanks out each line's optional column-6 form-type marker (`A`) instead of preserving whatever was already there, and rebuilds every line fresh on every edit regardless of whether it changed — the two combine to make Batch X's "Track source modifications" flag nearly the entire file as changed from a single one-field edit, on any source written in the (very common) `A`-in-column-6 style | n/a (writer correctness, `src/prtfWriter.js`) | Open | **X** (this is specifically what makes X's diff-based tracking unreliable on this style of source — fix this first, or re-verify X against it afterward) |
+| BB | **Bug fix:** a constant's quoted literal is only recognized when it's the *first* token in the keyword area (`prtfParser.ts`'s literal-extraction regex is anchored with `^`) — a literal preceded by another keyword (e.g. `SPACEB(1) 'CUSTOMER MASTER LISTING'`, a common real-world pattern) parses with `entry.literal` left `undefined`, so the Properties panel shows blank Text for a constant that has real display text | n/a (parser correctness, `src/prtfParser.ts`) | Open | none |
 
 ## Batch detail
 
@@ -1976,6 +1978,96 @@ write `literal: ""` for an empty Text field instead of leaving it
 `undefined`, which would've regenerated a spurious `''` literal token next
 to a system-constant's keyword on write-back. Tests: `test/prtfBatchZ.test.ts`
 (7 new tests; full suite 347, all passing).
+
+### Batch AA — Bug fix: `regenerateSource` drops the optional column-6 form-type marker on every line, breaking Batch X's tracking [OPEN]
+
+Found while reviewing two real-world sample files supplied for keyword-usage
+reference (`SCSPRT1.prtf`, `AFPPRT1.prtf` — both use the common convention
+of `A` in column 6 throughout, which IBM's own DDS reference confirms is
+optional and "for documentation purposes only," so its absence never
+affects compilation on its own).
+
+**Root cause:** `src/prtfWriter.js`'s `buildPositional` hardcodes column 6
+to a single blank (`s += " "; // 6 form type`), and the `"comment"` case in
+`regenerateSource` hardcodes it the same way (`"      *" + entry.text`).
+Since `regenerateSource` rebuilds **every** line in `model.sequence` fresh
+on **every** call — not just the entry(ies) actually touched by the edit
+in progress — this blanks out column 6 across the entire file on any
+single edit, not just the edited line.
+
+**Why this matters beyond cosmetics:** confirmed by parsing `SCSPRT1.prtf`,
+adding one `COLOR` keyword to one field, then running the result through
+Batch X's `applyModificationTracking` — **67 of the file's 93 lines** came
+back flagged as "changed" (commented-out-and-tagged), including the
+header comment block nowhere near the actual edit. Batch X's tracking
+works by comparing raw line text before/after, so a writer that
+rewrites unrelated lines for a formatting reason unrelated to the actual
+edit makes that comparison meaningless on this style of file. Beyond
+Batch X specifically, silently reformatting hundreds of untouched lines
+on every save is also bad behavior on its own (destroys the file's diff
+history in the person's own source control on every edit).
+
+**What to do:** preserve each entry's own original column 6 rather than
+hardcoding blank — `prtfParser.ts` already knows what character was in
+column 6 for any impacted line via `col(line, 6)` (mirroring
+`col(line, 7)`'s comment check next to it), so thread it onto each parsed
+entry (`ParsedSource`'s `comment`/`fileLevel`/`record`/`field`/`constant`
+entry shapes in `src/prtfModel.ts`) at parse time, then have
+`buildPositional`/the comment case in `regenerateSource` emit that
+captured character back at column 6 instead of a hardcoded blank. A
+freshly-*added* entry (no original source line to capture from) should
+still default to blank, matching current behavior and every existing
+fixture/test.
+
+**Re-verify against Batch X afterward:** re-run the exact repro above
+(parse `SCSPRT1.prtf`/`AFPPRT1.prtf`, make one small edit, enable
+tracking, confirm only the actually-changed line(s) get commented/tagged)
+as part of this batch's own test additions, not just whatever new
+unit tests get added for the column-6 preservation itself — the whole
+point of this batch is fixing that specific interaction.
+
+### Batch BB — Bug fix: a constant's literal is only recognized when it's the first keyword-area token [OPEN]
+
+Found in the same real-world sample-file review as Batch AA.
+`SCSPRT1.prtf` has lines like:
+
+```
+                                     2SPACEB(1) 'CUSTOMER MASTER LISTING'
+```
+
+— a `SPACEB` keyword followed by the constant's own display text, which is
+legal DDS (a constant's literal can appear anywhere among its keywords, not
+only first) and not a rare pattern; this same file also has
+`SPACEB(1) 'TIME:'` hitting the identical case.
+
+**Root cause:** `prtfParser.ts`'s literal-extraction regex,
+`/^\s*'((?:[^']|'')*)'/`, is anchored at the start of the keyword-area
+text (see the comment directly above it: "Pull a leading quoted literal
+out of the keyword text, if present"). When a keyword comes first instead,
+the anchor never matches, so `constant.literal` stays `undefined` and the
+quoted text falls through to `tokenizeKeywordText` as an ordinary
+(nameless) keyword token instead of the entry's own defining literal.
+
+**Practical impact:** confirmed via `parseSource`/`regenerateSource` on
+`SCSPRT1.prtf` — the compiled DDS itself still round-trips correctly (the
+bare literal token re-serializes fine sitting among the other keywords),
+so this is **not** a source-corruption bug. It IS a model-fidelity bug:
+`media/webviewClient.js`'s Properties panel reads `entry.literal` to show
+a constant's "Text" field, so for a constant hit by this case the panel
+would show blank Text for a field that has real, compiled display text —
+and saving from that blank-looking panel would risk the person unknowingly
+wiping out text they never saw was there.
+
+**What to do:** change the literal-extraction logic to scan the whole
+keyword-area text for a quoted-literal token (reusing
+`tokenizeKeywordText`'s own quote-aware tokenization — see Batch R's fix
+for the internal-spaces-in-a-literal case, which already had to get this
+right once) rather than only checking the start, and pull out the FIRST
+such bare (nameless) token found as `constant.literal`, leaving every other
+token as an ordinary keyword in original order. Add a test fixture based
+directly on the `SPACEB(1) 'literal'` pattern from `SCSPRT1.prtf` (and the
+`'TIME:'` variant) to `prtfParser.test.ts`, and confirm the round trip
+(parse → regenerate) still reproduces the original source for both.
 
 ## Adding a new batch
 
