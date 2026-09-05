@@ -13,7 +13,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { parseSource } from "../src/prtfParser";
-import { applyEditToModel, findEntryById } from "../src/prtfEdits";
+import { applyEditToModel, findEntryById, nextAvailableFieldName } from "../src/prtfEdits";
 import { FieldEntry, ParsedSource } from "../src/prtfModel";
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { regenerateSource, buildPositional, emitWithKeywords } = require("../src/prtfWriter.js");
@@ -358,6 +358,75 @@ test("applyEditToModel: addField/addConstant on an unknown recordName return fal
   const model = buildModel();
   assert.equal(applyEditToModel(model, { kind: "addField", recordName: "NOPE", line: 1, position: 1, name: "X", length: 1, dataType: "A", usage: "O" }), false);
   assert.equal(applyEditToModel(model, { kind: "addConstant", recordName: "NOPE", line: 1, position: 1, literal: "X" }), false);
+});
+
+// Batch Y (docs/TASKS.md) — "Add fields from database file". edit.reference
+// lets addField create a field already flagged as a database reference
+// (position 29 'R'), same flag updateField already toggles for an existing
+// field — these two tests cover both states of that new, optional field.
+test("applyEditToModel: addField with reference=true marks the new field as a reference field", () => {
+  const model = buildModel();
+  applyEditToModel(model, {
+    kind: "addField",
+    recordName: "HEADER",
+    line: 4,
+    position: 10,
+    name: "CUSTNO",
+    length: 6,
+    dataType: "S",
+    usage: "O",
+    reference: true,
+    sourceKeywords: [{ name: "REFFLD", params: "(CUSTNO MYLIB/CUSTMAST)" }],
+  });
+  const header = model.records.find((r) => r.name === "HEADER")!;
+  const newField = header.fields[header.fields.length - 1] as FieldEntry;
+  assert.equal(newField.reference, true);
+  assert.ok(newField.keywords.some((k) => k.name === "REFFLD"));
+});
+
+test("applyEditToModel: addField with reference omitted defaults to false (unchanged behavior for a plain '+ Field' add or a Batch Q copy)", () => {
+  const model = buildModel();
+  applyEditToModel(model, {
+    kind: "addField",
+    recordName: "HEADER",
+    line: 4,
+    position: 10,
+    name: "PLAINFLD",
+    length: 5,
+    dataType: "A",
+    usage: "O",
+  });
+  const header = model.records.find((r) => r.name === "HEADER")!;
+  const newField = header.fields[header.fields.length - 1] as FieldEntry;
+  assert.equal(newField.reference, false);
+});
+
+// Batch Y — nextAvailableFieldName's own de-duplication, used when bulk-
+// adding several fields from a database file in one go.
+test("nextAvailableFieldName: returns the desired name unchanged when it isn't already used", () => {
+  const model = buildModel();
+  const header = model.records.find((r) => r.name === "HEADER")!;
+  assert.equal(nextAvailableFieldName(header, "BRANDNEW"), "BRANDNEW");
+});
+
+test("nextAvailableFieldName: appends an incrementing numeric suffix when the desired name collides", () => {
+  const model = buildModel();
+  const header = model.records.find((r) => r.name === "HEADER")!;
+  const existingName = (header.fields.find((f) => f.kind === "field") as FieldEntry).name;
+  const result = nextAvailableFieldName(header, existingName);
+  assert.equal(result, existingName.slice(0, 9) + "2");
+  // Also collides with the *2 candidate itself, so it should skip to *3.
+  applyEditToModel(model, { kind: "addField", recordName: "HEADER", line: 20, position: 2, name: result, length: 1, dataType: "A", usage: "O" });
+  assert.equal(nextAvailableFieldName(header, existingName), existingName.slice(0, 9) + "3");
+});
+
+test("nextAvailableFieldName: truncates to fit DDS's 10-character field-name limit", () => {
+  const model = buildModel();
+  const header = model.records.find((r) => r.name === "HEADER")!;
+  applyEditToModel(model, { kind: "addField", recordName: "HEADER", line: 20, position: 2, name: "TENCHARFLD", length: 1, dataType: "A", usage: "O" });
+  const result = nextAvailableFieldName(header, "TENCHARFLD");
+  assert.equal(result.length, 10);
+  assert.equal(result, "TENCHARFL2");
 });
 
 test("round trip: several edits applied in sequence still regenerate to valid, reparseable DDS", () => {

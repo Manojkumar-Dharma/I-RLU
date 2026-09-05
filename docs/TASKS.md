@@ -100,7 +100,7 @@ vice versa.
 | V | ~~**Bug fix:** properties/keywords column (`.side-col`) still didn't actually scroll despite `overflow-y: auto` (Batch S) and a themed scrollbar (Batch U) — the height-constraint chain from `body` down to `.side-col` had a gap at `#root`~~ | n/a (webview UI/CSS, `src/buildWebviewTemplate.js`) | **Done** | none |
 | W | ~~Configurable designer-open location (`i-rlu.designerOpenColumn` setting, mirroring I-SDA's `isda.designerOpenColumn`)~~ | n/a (tooling/UI, not a keyword) | **Done** | none |
 | X | Track source modifications (comment-out-and-tag changed lines instead of overwriting, mirroring I-SDA's `isda.trackSourceModifications`/`isda.modificationTag`) | n/a (writer/UI, not a keyword) | Open | none |
-| Y | "Add fields from database file" — browse every field in a PF/LF via Code for i and add them as named fields (mirroring I-SDA's Task L14 `fetchDatabaseFileFields`), distinct from Batch H's single-field `REF`/`REFFLD` resolution | n/a (Code for i integration/UI, not a keyword) | Open | **H** (shares its Code-for-i-connection plumbing/UI conventions, doesn't block on it) |
+| Y | ~~"Add fields from database file" — browse every field in a PF/LF via Code for i and add them as named fields (mirroring I-SDA's Task L14 `fetchDatabaseFileFields`), distinct from Batch H's single-field `REF`/`REFFLD` resolution~~ | n/a (Code for i integration/UI, not a keyword) | **Done** | **H** (shared its Code-for-i-connection plumbing/UI conventions, didn't block on it) |
 | Z | System-constant fields (`DATE`, `TIME`, `USER`, `SYSNAME`, `PAGNBR`) — parse as design-time placeholder text (mirroring I-SDA's `fieldDisplayText`) and add an "Add system constant" option alongside literal-text constants | `DATE`, `TIME`, `USER`, `SYSNAME`, `PAGNBR` (`DATE`/`TIME`/`PAGNBR` params already validated as constant-only per Batch A — see `docs/KEYWORD-INVENTORY.md` — but none of the five have placeholder-text rendering or an add-UI yet; `USER`/`SYSNAME` aren't in the inventory at all, so confirm their keyword syntax against the IBM DDS reference first) | Open | none |
 
 ## Batch detail
@@ -1896,6 +1896,103 @@ time text, for each), plus a round-trip parse→write test confirming a
 system-constant field written back to source doesn't gain a spurious
 literal-text token. Run the full suite afterward, not just the new
 tests.
+
+### Batch Y — Add fields from database file [DONE]
+**Scope, confirmed against I-SDA's own implementation before writing any
+code:** this batch's own task description cites I-SDA's Task L14
+(`fetchDatabaseFileFields`/`addFieldsFromDatabase`) as the pattern to
+mirror. Reading I-SDA's `src/extension.ts` and `src/buildWebviewTemplate.js`
+showed Task L14 itself (browse a file's fields via DSPFFD, multi-select,
+insert each as a new field stacked one row below the previous at a fixed
+column) is a separate, LATER addition — Task L53 — layered a click-to-place
+refinement on top (choose a starting Line/Column on the screen preview
+before the batch lands). This batch deliberately implements L14's scope
+only, not L53's: the task description names L14 specifically, and I-RLU's
+existing "+ Field"/"+ Constant" click-to-place system
+(`state.placing`/`state.pendingNew`, `media/webviewClient.js`) would need
+real UI work to extend to a *multi-field* batch, which is its own scope
+decision better left to a future batch if wanted, not assumed here.
+
+**Distinct from Batch H's "remaining piece"**, which this batch shares
+plumbing with rather than duplicating: Batch H's `fetchDatabaseFileFields`/
+`groupDatabaseFileFieldRows` (`src/prtfReferenceField.js`) already list
+every field in a PF/LF — Batch H's own "Browse fields… (Code for i)" button
+just uses that list to set `REFFLD` on ONE already-existing field. This
+batch reuses the exact same `fetchDatabaseFileFields` function unchanged
+(no new DSPFFD/SQL code) to instead let someone pick SEVERAL fields at once
+and add each as a brand new field entry in the current record.
+
+**Implementation:**
+- `src/webviewProtocol.ts`: added `reference?: boolean` to the `addField`
+  edit kind — lets a field be created already flagged as a database
+  reference (position 29 'R'), the same flag `updateField` already toggles
+  for an existing field via its own `reference` parameter (Batch H), just
+  now settable at creation time too. Omitted (or `false`) preserves the
+  exact prior hardcoded-`false` behavior for a plain "+ Field" add or a
+  Batch Q copy — neither of those sends this field. Also added a new
+  `{ type: "addFieldsFromDatabase"; recordName: string }` webview message
+  for the new toolbar button.
+- `src/prtfEdits.ts`: `addField`'s model mutation now sets
+  `reference: !!edit.reference` instead of the old hardcoded `false`.
+  Added a new pure, exported `nextAvailableFieldName(record, desiredName)`
+  — DDS field names must be unique within one record format, so bulk-adding
+  several fields needs a de-duplication step; returns the desired name
+  unchanged if it's free, or `<truncated-base><n>` (n from 2, truncated to
+  fit the 10-character field-name limit) otherwise. Checks whether the
+  base name is ALREADY free first, unlike I-SDA's own
+  `nextAvailableFieldName` (`src/dspfWriter.js`), which always appends a
+  suffix even when the base name has no collision at all — a real, if
+  minor, behavioral difference worth deviating from I-SDA's own version
+  for, not just mirroring it blindly.
+- `src/extension.ts`: new `handleAddFieldsFromDatabase(document, model,
+  msg)`, wired to the new `"addFieldsFromDatabase"` message in
+  `onDidReceiveMessage`. Prompts for library (optional) and file (required)
+  via `showInputBox` with `validateIbmIObjectName` — same shape
+  `promptForCompileTarget` (Batch J) already uses for the same kind of
+  library/file entry, since there's no existing field to read a
+  library/file FROM the way `handleBrowseReferencedField` does. Fetches the
+  field list via the unchanged `fetchDatabaseFileFields`, handling the
+  "file has more than one record format" ambiguity the same way
+  `handleBrowseReferencedField` already does (a disambiguating QuickPick
+  first). Shows a `canPickMany: true` QuickPick over the field list. For
+  each field picked: computes a de-duplicated name via
+  `nextAvailableFieldName`, builds the qualified `REFFLD` params string the
+  same way `upsertReffldKeyword` (`prtfWriter.js`) does internally, and
+  applies an `addField` edit (via `applyEditToModel`, `reference: true`,
+  `sourceKeywords: [{name: "REFFLD", ...}]`) directly against the SAME
+  in-memory model object. Placement: one row below the record's current
+  highest field/constant line (or row 1 if it has none), incrementing by 1
+  per field, all at a fixed column — a starting point, individually
+  draggable/editable afterward like any other field, same framing I-SDA's
+  own Task L14 uses. Regenerates source and applies ONE `WorkspaceEdit` for
+  the whole batch after every field is added, rather than one per field —
+  unlike I-SDA's own `handleAddFieldsFromDatabase` (which re-parses the
+  document TEXT after each field, since `DspfWriter.insertField` works at
+  the line-text level), I-RLU's `applyEditToModel` mutates model objects
+  directly (`record.fields`/`model.sequence`), so each successive
+  `addField` call already sees the previous one's result with no text
+  round-trip needed in between.
+- `media/webviewClient.js`: new "+ Fields from DB…" toolbar button next to
+  "+ Field"/"+ Constant" — its only job is to post the
+  `addFieldsFromDatabase` message; everything else (prompts, fetch, picker,
+  apply) happens host-side via native VS Code UI, no webview round-trip for
+  the picker itself, matching how `browseReferencedField` already works.
+  Hidden (replaced with a warning hint) when `!state.codeForI.connected`,
+  same hide-when-disconnected treatment `renderFieldKeywordsSection`
+  already gives "Browse fields…"/"Resolve Referenced Field" — reappears
+  automatically once a connection is (re)established, no reload needed.
+- Tests: `test/prtfEdits.test.ts` gained 5 new tests — `addField` with
+  `reference: true`/omitted (both states of the new field), and three for
+  `nextAvailableFieldName` (name free, name collides + the *2 candidate
+  ALSO collides so it skips to *3, and truncation to fit the 10-character
+  limit). `handleAddFieldsFromDatabase` itself has no automated test — same
+  "no `vscode`-module mock in this project" limitation Batch T's writeup
+  already documents for `extension.ts`'s host-side handlers generally;
+  verified instead with a jsdom smoke check confirming the toolbar button
+  is hidden with a warning hint while disconnected, appears once
+  `codeForIStatus` reports `connected: true`, and posts the correct
+  `{ type: "addFieldsFromDatabase", recordName }` message on click. Full
+  suite: 345 tests, all passing (5 new, 340 pre-existing unchanged).
 
 ## Adding a new batch
 

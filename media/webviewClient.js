@@ -306,6 +306,28 @@
       toolbar.appendChild(el("span", { class: "hint" }, ["Click on the page to place " + what + "."]));
     }
 
+    // Batch Y (docs/TASKS.md) — "Add fields from database file". Unlike
+    // "+ Field"/"+ Constant" above, this doesn't use the click-to-place
+    // flow at all: the extension host prompts for library/file and which
+    // fields to add via native VS Code UI (showInputBox/showQuickPick)
+    // and applies the result directly, so this button's only job is to
+    // fire the request — see extension.ts's handleAddFieldsFromDatabase.
+    // Same hide-when-disconnected treatment as "Browse fields…"/"Resolve
+    // Referenced Field" in renderFieldKeywordsSection below (state.codeForI
+    // reappears the moment a connection is (re)established — no reload
+    // needed, render() rebuilds the toolbar from state every time).
+    if (state.codeForI.connected) {
+      const addDbFieldsBtn = el("button", { class: "btn" }, ["+ Fields from DB…"]);
+      addDbFieldsBtn.addEventListener("click", () => {
+        vscode.postMessage({ type: "addFieldsFromDatabase", recordName: state.recordName });
+      });
+      toolbar.appendChild(addDbFieldsBtn);
+    } else {
+      toolbar.appendChild(
+        el("span", { class: "hint warning" }, ["Add Fields from DB needs a live Code for i connection."])
+      );
+    }
+
     const indicators = PrtfEngine.collectIndicators(record);
     if (indicators.length) {
       // Batch G (docs/TASKS.md) — INDTXT (documentation-only, no compile

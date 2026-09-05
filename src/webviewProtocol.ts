@@ -48,6 +48,15 @@ export type WebviewEdit =
       dataType: string;
       decimalPositions?: number;
       usage: string;
+      // Batch Y — "Add fields from database file" sets this true for a
+      // field brought in via DSPFFD browse (position 29 'R', paired with
+      // the REFFLD keyword already carried via sourceKeywords below) —
+      // same flag updateField's own `reference` already toggles for an
+      // EXISTING field, just settable at creation time too. Omitted (or
+      // false) for a plain "+ Field" add or a Batch Q copy, matching the
+      // hardcoded `reference: false` this replaces — see prtfEdits.ts's
+      // "addField" case.
+      reference?: boolean;
       // Batch Q — carries the source field/constant's keywords along on a
       // copy (media/webviewClient.js's "Copy" button, renderEditPanel).
       // name/params only (not the full Keyword shape) — prtfEdits.ts
@@ -86,5 +95,16 @@ export type WebviewMessage =
   // PrtfEngine.resolveReferenceTarget's already-saved library/file (same
   // source resolveReferencedField itself reads) rather than trusting
   // whatever's currently typed into the (possibly unsaved) webview inputs.
-  | { type: "browseReferencedField"; id: string };
+  | { type: "browseReferencedField"; id: string }
+  // Batch Y — "Add fields from database file" toolbar button
+  // (media/webviewClient.js). Deliberately carries only `recordName`, not
+  // a library/file — unlike browseReferencedField (which reads an
+  // already-saved REF/REFFLD off an EXISTING field), this is how a
+  // library/file gets chosen in the first place, since there's no
+  // existing field to read one from; extension.ts's handler prompts for
+  // both itself via showInputBox, then a multi-select QuickPick for which
+  // fields to add — same "ask via native VS Code UI, apply directly, no
+  // webview round-trip for the picker itself" shape browseReferencedField
+  // already uses.
+  | { type: "addFieldsFromDatabase"; recordName: string };
 

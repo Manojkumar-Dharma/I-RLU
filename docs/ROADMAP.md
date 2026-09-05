@@ -189,6 +189,28 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       Extension Development Host.** Full suite now 340 tests, all
       passing.
 
+- [x] **Batch Y — Add fields from database file.** Browse every field in a
+      PF/LF via Code for i and add several as new named fields in one go —
+      distinct from Batch H's own "Browse fields…" (which sets `REFFLD` on
+      ONE already-existing field), though it reuses that same batch's
+      `fetchDatabaseFileFields` unchanged. New "+ Fields from DB…" toolbar
+      button (hidden with a warning hint while disconnected, same treatment
+      as Batch H's own buttons) prompts for library/file, fetches the field
+      list, and shows a multi-select QuickPick; each pick becomes a new
+      field (auto-`REFFLD`'d, position 29 'R' set via a new `reference`
+      flag on the `addField` edit kind) stacked one row below the previous.
+      Deliberately scoped to I-SDA's Task L14 only, not its later Task L53
+      click-to-place refinement — see `docs/TASKS.md` Batch Y for why that
+      line was drawn. New `nextAvailableFieldName` helper in
+      `prtfEdits.ts` de-duplicates field names across the batch. No
+      automated coverage for the host-side handler itself (same
+      no-`vscode`-mock gap Batches T/U/V/W already document); the pure
+      model-mutation and name-deduplication logic got 5 new unit tests, and
+      the toolbar button's hide/show/message-posting behavior was verified
+      with a jsdom smoke check. **Please verify against a real, connected
+      IBM i in a real Extension Development Host.** Full suite now 345
+      tests, all passing.
+
 ## Next up
 
 As of the RLU screen-capture review (`docs/KEYWORD-INVENTORY.md`), the
