@@ -357,6 +357,44 @@ function resolvePageSize(record, fileLevel) {
   return { lines, cols };
 }
 
+// Batch Z (docs/TASKS.md) — system-constant fields (DATE/TIME/PAGNBR).
+// Mirrors I-SDA's fieldDisplayText fallback: a constant entry with no
+// literal text (entry.literal undefined — see prtfModel.ts's ConstantEntry
+// comment) is rendered blank today, even though real DDS lets DATE/TIME/
+// PAGNBR define a constant field purely via the keyword (see
+// prtfParser.ts's constant-parsing branch, which already tolerates this
+// shape). This resolves a *design-time placeholder* for those three —
+// approximate, not a live-system value, same "no live-system
+// verification" caveat as this file's other approximate-width keywords
+// (see the file banner comment and docs/REQUIREMENTS.md §6).
+//
+// USER/SYSNAME were named in the original task alongside DATE/TIME/PAGNBR
+// (mirroring I-SDA's own fieldDisplayText, which handles USER/SYSNAME for
+// *display* files) but verification against IBM's DDS Reference: Printer
+// Files keyword list turned up no USER or SYSNAME keyword for printer
+// files at all — only DSPF supports them. Deliberately NOT implemented
+// here; see docs/ROADMAP.md/docs/REQUIREMENTS.md for this correction,
+// same honesty-over-silently-dropping-scope treatment as the earlier
+// fictitious DRAW keyword correction (docs/TASKS.md's Batch history).
+function resolveConstantPlaceholder(entry) {
+  if (entry.literal !== undefined) return undefined;
+  if (findKeyword(entry.keywords, "DATE")) {
+    // DATE's own *Y/*YY parameter controls a 2- vs 4-digit year (see
+    // KEYWORD-INVENTORY.md / IBM's DATE keyword description) — approximate
+    // that shape with the platform's local date string rather than
+    // inventing DATFMT-aware formatting (explicit non-goal, see this
+    // file's other EDTCDE/EDTWRD-adjacent approximations).
+    return new Date().toLocaleDateString();
+  }
+  if (findKeyword(entry.keywords, "TIME")) {
+    return new Date().toLocaleTimeString();
+  }
+  if (findKeyword(entry.keywords, "PAGNBR")) {
+    return "1";
+  }
+  return undefined;
+}
+
 function indicatorActive(conditions, indicatorState) {
   if (!conditions || conditions.length === 0) return true;
   return conditions.every((c) => {
@@ -406,11 +444,20 @@ function resolveLayout(model, recordName, indicatorState, uom) {
     const line = entry.line || cursorLine;
     const position = entry.position || cursorCol;
 
+    // Batch Z (docs/TASKS.md) — resolved once per constant so both `text`
+    // and `length` below agree on the same placeholder (a system-constant
+    // field's design-time length is the placeholder text's length, not the
+    // entry.length||1 fallback that only makes sense for a truly blank
+    // constant).
+    const constantPlaceholder = entry.kind === "constant" ? resolveConstantPlaceholder(entry) : undefined;
+
     const length =
       entry.kind === "field"
         ? entry.length || (entry.name || "").length || 1
         : entry.literal
         ? entry.literal.length
+        : constantPlaceholder
+        ? constantPlaceholder.length
         : entry.length || 1;
     const barcodeKw = entry.kind === "field" ? findKeyword(entry.keywords, "BARCODE") : undefined;
     const font = resolveFont(entry, record, model.fileLevel);
@@ -420,7 +467,7 @@ function resolveLayout(model, recordName, indicatorState, uom) {
       id: entry.id,
       kind: entry.kind,
       name: entry.kind === "field" ? entry.name : undefined,
-      text: entry.kind === "constant" ? entry.literal || "" : entry.name,
+      text: entry.kind === "constant" ? entry.literal || constantPlaceholder || "" : entry.name,
       line,
       position,
       length,

@@ -223,3 +223,33 @@ IBM i — not implemented, and not a research gap the way this section
 previously described it; anything not in the small verified table gets an
 honest note rather than a guess. See `src/afpCodedFontMetrics.js` for the
 full resolution logic and sourcing.
+
+## 10. System-constant fields (Batch Z) — USER/SYSNAME correction
+
+Batch Z (docs/TASKS.md) was filed to cover five keywords together — `DATE`,
+`TIME`, `USER`, `SYSNAME`, `PAGNBR` — mirroring I-SDA's `fieldDisplayText`,
+which handles all five for *display* files. The task itself flagged that
+`USER`/`SYSNAME` weren't in `docs/KEYWORD-INVENTORY.md` and asked for their
+syntax to be confirmed against the IBM DDS reference before assuming
+I-SDA's shape carried over.
+
+**Correction, found during that verification:** `USER` and `SYSNAME` are
+not valid *printer-file* DDS keywords at all. IBM's DDS Reference: Printer
+Files' own exhaustive keyword list (Chapter 2's "The following keywords are
+valid for printer files" enumeration) does not include either one —
+they're a display-file (DSPF)-only pair. This is corroborated independently
+(IBM's TechTalk column on the topic notes SYSNAME/USER exist for display
+files and explicitly calls out that IBM never extended them to printer
+files, unlike DATE/TIME which do work in both).
+
+`DATE`/`TIME`/`PAGNBR` are confirmed valid printer-file constant-field
+keywords (IBM's own "Constant fields in printer files" rule lists exactly
+these three, plus `DFT`/`MSGCON`, as the only keywords that can define a
+constant with no location-only, no-literal shape). Batch Z implements
+design-time placeholders for these three only; `USER`/`SYSNAME` are not
+offered anywhere in I-RLU's UI or rendering, since there is no real DDS
+syntax for them to parse, render, or write back. Same "verify before
+propagating, correct honestly if wrong" treatment as the earlier fictitious
+`DRAW` keyword correction (docs/TASKS.md's Batch history) — not silently
+dropped from scope, documented here instead.
+

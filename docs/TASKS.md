@@ -101,7 +101,7 @@ vice versa.
 | W | ~~Configurable designer-open location (`i-rlu.designerOpenColumn` setting, mirroring I-SDA's `isda.designerOpenColumn`)~~ | n/a (tooling/UI, not a keyword) | **Done** | none |
 | X | Track source modifications (comment-out-and-tag changed lines instead of overwriting, mirroring I-SDA's `isda.trackSourceModifications`/`isda.modificationTag`) | n/a (writer/UI, not a keyword) | Open | none |
 | Y | ~~"Add fields from database file" — browse every field in a PF/LF via Code for i and add them as named fields (mirroring I-SDA's Task L14 `fetchDatabaseFileFields`), distinct from Batch H's single-field `REF`/`REFFLD` resolution~~ | n/a (Code for i integration/UI, not a keyword) | **Done** | **H** (shared its Code-for-i-connection plumbing/UI conventions, didn't block on it) |
-| Z | System-constant fields (`DATE`, `TIME`, `USER`, `SYSNAME`, `PAGNBR`) — parse as design-time placeholder text (mirroring I-SDA's `fieldDisplayText`) and add an "Add system constant" option alongside literal-text constants | `DATE`, `TIME`, `USER`, `SYSNAME`, `PAGNBR` (`DATE`/`TIME`/`PAGNBR` params already validated as constant-only per Batch A — see `docs/KEYWORD-INVENTORY.md` — but none of the five have placeholder-text rendering or an add-UI yet; `USER`/`SYSNAME` aren't in the inventory at all, so confirm their keyword syntax against the IBM DDS reference first) | Open | none |
+| Z | ~~System-constant fields (`DATE`, `TIME`, `USER`, `SYSNAME`, `PAGNBR`) — parse as design-time placeholder text (mirroring I-SDA's `fieldDisplayText`) and add an "Add system constant" option alongside literal-text constants~~ | `DATE`, `TIME`, `PAGNBR` (`USER`/`SYSNAME` dropped — see detail section: verified against IBM's DDS reference, neither is a valid printer-file keyword) | **Done** | none |
 
 ## Batch detail
 
@@ -1836,7 +1836,7 @@ doesn't need to wait on Batch H's still-unverified "live round-trip"
 half to land — the UI shape and pure logic can proceed independently,
 same caveat Batch H's own table row already notes about itself.
 
-### Batch Z — System-constant fields (`DATE`/`TIME`/`USER`/`SYSNAME`/`PAGNBR`) [OPEN]
+### Batch Z — System-constant fields (`DATE`/`TIME`/`USER`/`SYSNAME`/`PAGNBR`) [DONE]
 
 Requested alongside Batch W/X/Y: "System constants fields like date,
 time, user are not parsed and we don't have option to add as well."
@@ -1993,6 +1993,23 @@ and add each as a brand new field entry in the current record.
   `codeForIStatus` reports `connected: true`, and posts the correct
   `{ type: "addFieldsFromDatabase", recordName }` message on click. Full
   suite: 345 tests, all passing (5 new, 340 pre-existing unchanged).
+
+### Batch Z — System-constant fields [DONE]
+**Landed as:** see `docs/ROADMAP.md`'s Batch Z entry and
+`docs/REQUIREMENTS.md` §10 for the full writeup. Short version:
+`USER`/`SYSNAME` verified against IBM's DDS Reference: Printer Files and
+found to not be valid printer-file keywords at all (display-file only) —
+dropped from scope, documented rather than silently absorbed. `DATE`/
+`TIME`/`PAGNBR` placeholders implemented in `src/prtfLayout.js`
+(`resolveConstantPlaceholder`), wired into both display text and display
+length. "Add system constant" UI added to the "+ Constant" properties
+panel via a new optional `systemConstantKeyword` field on the
+`addConstant` edit kind (not a new edit kind). Found and fixed a real
+pre-existing bug along the way: `updateConstant`/`addConstant` used to
+write `literal: ""` for an empty Text field instead of leaving it
+`undefined`, which would've regenerated a spurious `''` literal token next
+to a system-constant's keyword on write-back. Tests: `test/prtfBatchZ.test.ts`
+(7 new tests; full suite 347, all passing).
 
 ## Adding a new batch
 

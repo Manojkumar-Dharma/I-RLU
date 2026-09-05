@@ -73,6 +73,14 @@ export type WebviewEdit =
       literal: string;
       // Batch Q — see addField's own comment on this field, same shape and purpose.
       sourceKeywords?: { name: string; params: string }[];
+      // Batch Z — "Add system constant" alternative to a literal-text
+      // constant (see renderNewEntryPanel's constant branch). When set,
+      // `literal` is ignored by prtfEdits.ts's addConstant case — the new
+      // constant carries the bare keyword only (matching real DDS: DATE/
+      // TIME/PAGNBR constants take no literal text token at all — see
+      // "Constant fields in printer files" in IBM's DDS Reference:
+      // Printer Files), not an empty-string literal.
+      systemConstantKeyword?: "DATE" | "TIME" | "PAGNBR";
     }
   // Batch P — record-format container operations. Unlike field/constant
   // edits, record formats are identified by NAME (there's no stable `id`
