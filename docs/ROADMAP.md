@@ -210,6 +210,21 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       with a jsdom smoke check. **Please verify against a real, connected
       IBM i in a real Extension Development Host.** Full suite now 345
       tests, all passing.
+- [x] **Follow-up consolidation (Batch H + Batch Y) — done.** Reported by
+      Manojkumar-dharma: Batch H's `handleBrowseReferencedField` and
+      Batch Y's `handleAddFieldsFromDatabase` (above) each carried their
+      own copy of the identical "fetch → disambiguate multi-format file →
+      show a QuickPick of the resulting fields" sequence, and Batch Y's
+      added fields are indeed just REFFLD references under the hood —
+      same mechanism Batch H already uses, confirming the report.
+      Extracted the shared sequence into `pickDatabaseFileFields()`
+      (`src/extension.ts`); both handlers now call it instead of
+      duplicating it. The two remain separate commands/buttons (resolve
+      REFFLD on one existing field vs. bulk-add several new ones are
+      still genuinely different actions from the person's perspective) —
+      only the shared internal picker logic was merged, not the features
+      themselves. Pure refactor, no behavior change; full suite still
+      352/352.
 - [x] **Batch Z — System-constant fields (`DATE`/`TIME`/`PAGNBR`) —
       done.** Design-time placeholder text for constants defined purely
       via keyword (no literal) — mirrors I-SDA's `fieldDisplayText`:

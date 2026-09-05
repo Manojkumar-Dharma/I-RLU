@@ -369,6 +369,79 @@ async function fetchDatabaseFileFields(
 }
 
 /**
+ * Consolidation (docs/TASKS.md Batch H/Batch Y — code review follow-up):
+ * `handleBrowseReferencedField` (Batch H — picks ONE field, to set REFFLD
+ * on an existing field) and `handleAddFieldsFromDatabase` (Batch Y — picks
+ * one-or-more fields, to add as new fields) each carried their own copy of
+ * the exact same "fetch -> disambiguate record format if the file has more
+ * than one -> re-fetch scoped to the chosen format -> show a QuickPick of
+ * the resulting field list" sequence, down to identical QuickPick item
+ * shapes — a direct instance of this project's own documented lesson
+ * ("duplicate logic across parallel sessions accumulates fast" — see
+ * README.md/docs/TASKS.md), landed here because Batch Y (written in a
+ * separate session) reused `fetchDatabaseFileFields` itself but not the
+ * surrounding picker flow built around it in Batch H's earlier
+ * `handleBrowseReferencedField`. Both handlers below now call this
+ * instead of carrying their own copy.
+ *
+ * Returns `undefined` if the person cancelled any step (format picker,
+ * field picker) or a request failed — an error/info message has already
+ * been shown to the person in that case, so callers just need to return.
+ * Otherwise returns the field(s) picked: exactly one for
+ * `canPickMany: false` (VS Code's own `showQuickPick` enforces
+ * single-selection there), one-or-more for `canPickMany: true`.
+ */
+async function pickDatabaseFileFields(
+  library: string | null,
+  file: string,
+  options: { canPickMany: boolean }
+): Promise<DatabaseFileField[] | undefined> {
+  const qualifiedForDisplay = (library ? library + "/" : "") + file;
+  let outcome = await fetchDatabaseFileFields(library, file);
+  if ("error" in outcome) {
+    vscode.window.showErrorMessage(`I-RLU: ${outcome.error}`);
+    return undefined;
+  }
+  if ("formats" in outcome) {
+    const formatChoice = await vscode.window.showQuickPick(outcome.formats, {
+      placeHolder: `${file} has multiple record formats — pick one to browse its fields`,
+    });
+    if (!formatChoice) return undefined;
+    outcome = await fetchDatabaseFileFields(library, file, formatChoice);
+    if ("error" in outcome) {
+      vscode.window.showErrorMessage(`I-RLU: ${outcome.error}`);
+      return undefined;
+    }
+  }
+  if (!("fields" in outcome) || outcome.fields.length === 0) {
+    vscode.window.showInformationMessage(`I-RLU: no fields found in ${qualifiedForDisplay}.`);
+    return undefined;
+  }
+
+  const items = outcome.fields.map((f) => ({
+    label: f.name,
+    description: f.text || undefined,
+    detail: `${f.dataType || "A"}, length ${f.length}${f.decimalPositions ? ", " + f.decimalPositions + " decimals" : ""}`,
+    field: f,
+  }));
+
+  if (options.canPickMany) {
+    const picks = await vscode.window.showQuickPick(items, {
+      canPickMany: true,
+      placeHolder: `Pick fields to add from ${qualifiedForDisplay}`,
+    });
+    if (!picks || picks.length === 0) return undefined;
+    return picks.map((p) => p.field);
+  }
+
+  const pick = await vscode.window.showQuickPick(items, {
+    placeHolder: `Pick a field from ${qualifiedForDisplay}`,
+  });
+  if (!pick) return undefined;
+  return [pick.field];
+}
+
+/**
  * Handles a 'browseReferencedField' message from the designer's webview —
  * the "Browse..." button next to REFFLD's field-name input (Batch H
  * "remaining" piece). Resolves the SAME library/file
@@ -405,45 +478,17 @@ async function handleBrowseReferencedField(document: vscode.TextDocument, model:
   await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: `I-RLU: Browsing fields in ${target.library ? target.library + "/" : ""}${target.file} via Code for IBM i` },
     async () => {
-      let outcome = await fetchDatabaseFileFields(target.library, target.file);
-      if ("error" in outcome) {
-        vscode.window.showErrorMessage(`I-RLU: ${outcome.error}`);
-        return;
-      }
-      if ("formats" in outcome) {
-        const formatChoice = await vscode.window.showQuickPick(outcome.formats, {
-          placeHolder: `${target.file} has multiple record formats — pick one to browse its fields`,
-        });
-        if (!formatChoice) return;
-        outcome = await fetchDatabaseFileFields(target.library, target.file, formatChoice);
-        if ("error" in outcome) {
-          vscode.window.showErrorMessage(`I-RLU: ${outcome.error}`);
-          return;
-        }
-      }
-      if (!("fields" in outcome) || outcome.fields.length === 0) {
-        vscode.window.showInformationMessage(`I-RLU: no fields found in ${target.library ? target.library + "/" : ""}${target.file}.`);
-        return;
-      }
+      const picked = await pickDatabaseFileFields(target.library, target.file, { canPickMany: false });
+      if (!picked) return;
+      const dbField = picked[0];
 
-      const fieldChoice = await vscode.window.showQuickPick(
-        outcome.fields.map((f) => ({
-          label: f.name,
-          description: f.text || undefined,
-          detail: `${f.dataType || "A"}, length ${f.length}${f.decimalPositions ? ", " + f.decimalPositions + " decimals" : ""}`,
-          field: f,
-        })),
-        { placeHolder: `Pick a field from ${target.library ? target.library + "/" : ""}${target.file}` }
-      );
-      if (!fieldChoice) return;
-
-      entry.keywords = upsertReffldKeyword(entry.keywords, { fieldName: fieldChoice.field.name, library: target.library, file: target.file });
+      entry.keywords = upsertReffldKeyword(entry.keywords, { fieldName: dbField.name, library: target.library, file: target.file });
       const newText = regenerateSource(model);
       const fullRange = new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length));
       const wsEdit = new vscode.WorkspaceEdit();
       wsEdit.replace(document.uri, fullRange, newText);
       await vscode.workspace.applyEdit(wsEdit);
-      vscode.window.showInformationMessage(`I-RLU: Set REFFLD to ${fieldChoice.field.name}.`);
+      vscode.window.showInformationMessage(`I-RLU: Set REFFLD to ${dbField.name}.`);
     }
   );
 }
@@ -506,37 +551,8 @@ async function handleAddFieldsFromDatabase(
   await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: `I-RLU: Browsing fields in ${libraryValue ? libraryValue + "/" : ""}${fileValue} via Code for IBM i` },
     async () => {
-      let outcome = await fetchDatabaseFileFields(libraryValue, fileValue);
-      if ("error" in outcome) {
-        vscode.window.showErrorMessage(`I-RLU: ${outcome.error}`);
-        return;
-      }
-      if ("formats" in outcome) {
-        const formatChoice = await vscode.window.showQuickPick(outcome.formats, {
-          placeHolder: `${fileValue} has multiple record formats — pick one to browse its fields`,
-        });
-        if (!formatChoice) return;
-        outcome = await fetchDatabaseFileFields(libraryValue, fileValue, formatChoice);
-        if ("error" in outcome) {
-          vscode.window.showErrorMessage(`I-RLU: ${outcome.error}`);
-          return;
-        }
-      }
-      if (!("fields" in outcome) || outcome.fields.length === 0) {
-        vscode.window.showInformationMessage(`I-RLU: no fields found in ${libraryValue ? libraryValue + "/" : ""}${fileValue}.`);
-        return;
-      }
-
-      const fieldChoices = await vscode.window.showQuickPick(
-        outcome.fields.map((f) => ({
-          label: f.name,
-          description: f.text || undefined,
-          detail: `${f.dataType || "A"}, length ${f.length}${f.decimalPositions ? ", " + f.decimalPositions + " decimals" : ""}`,
-          field: f,
-        })),
-        { canPickMany: true, placeHolder: `Pick fields to add from ${libraryValue ? libraryValue + "/" : ""}${fileValue}` }
-      );
-      if (!fieldChoices || fieldChoices.length === 0) return;
+      const fieldChoices = await pickDatabaseFileFields(libraryValue, fileValue, { canPickMany: true });
+      if (!fieldChoices) return;
 
       const qualifiedFile = (libraryValue ? libraryValue.toUpperCase() + "/" : "") + fileValue.toUpperCase();
       // One row below the record's current lowest field/constant (or row 1
@@ -551,8 +567,7 @@ async function handleAddFieldsFromDatabase(
       });
       const PLACEMENT_COLUMN = 2;
 
-      for (const choice of fieldChoices) {
-        const dbField = choice.field;
+      for (const dbField of fieldChoices) {
         const fieldName = nextAvailableFieldName(record, dbField.name.toUpperCase().slice(0, 10));
         const reffldParams = "(" + dbField.name.toUpperCase() + " " + qualifiedFile + ")";
         applyEditToModel(model, {
