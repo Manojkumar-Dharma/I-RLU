@@ -137,6 +137,53 @@ body { font-family: var(--vscode-editor-font-family, monospace); color: var(--vs
 .toolbar { display: flex; align-items: center; gap: 8px; padding: 8px; font-size: 12px; flex-wrap: wrap; flex-shrink: 0; border-bottom: 1px solid var(--vscode-panel-border); }
 .indicators { display: inline-flex; gap: 8px; flex-wrap: wrap; }
 .indicators-wrap { display: inline-flex; align-items: center; gap: 4px; }
+/* Batch AA bug fix — reported: "check box and text box are improperly
+   placed", "Range them in a way it is easy and uniform". Root causes
+   found by inspection (three distinct bugs, all in this shared rule
+   set, affecting nearly every properties-panel row since they all
+   route through .prop-row):
+
+   1. an un-scoped 140px width rule shared by every input and select
+      inside .prop-row had no ":not([type=checkbox])" exclusion, so
+      it ALSO matched every checkbox nested inside an .ind-label inside
+      a .prop-row (i.e. nearly every keyword-toggle row) — stretching
+      each checkbox to 140px wide instead of its native ~13px, since
+      browsers do respect explicit width/height on a checkbox's own
+      box. Fixed below by excluding input[type=checkbox] from the width
+      rule entirely and giving it its own width:auto rule.
+   2. .ind-label/.pfield-label (the checkbox+name / label portion of a
+      row) had NO width of their own — sized purely to their own text
+      content — so the value input's starting x-position varied row to
+      row depending on how long that row's keyword name happened to be
+      (e.g. "DFT" vs "FLTFIXDEC"), instead of every row's value column
+      lining up at the same offset. Fixed by giving both a shared fixed
+      flex-basis (see the rule below combining .ind-label/.prop-label/
+      .pfield-label) — 104px comfortably fits every keyword name in
+      this codebase's own KEYWORD-INVENTORY.md (longest is
+      FLTFIXDEC, 9 chars) at 11px font, with text-overflow:ellipsis as
+      a safety net for anything longer.
+   3. The old fixed width:140px on every value input, with no shared
+      space-splitting between them, meant a row with 2+ inputs on one
+      line (EDTCDE's edit-code select + fill-character input; MSGCON's
+      four params) needed 280-560px of value-input width alone —
+      several times the ~300px usable width inside the 340px-wide
+      .side-col — guaranteeing an uneven wrap that looked different
+      depending on how many inputs a given row happened to have.
+      Changed to flex:1 1 70px, so a row's own input(s) share whatever
+      width is actually available evenly, still wrapping to a second
+      line as a cohesive group when they genuinely don't fit, rather
+      than each competing independently at a fixed size that assumed
+      it had the whole row to itself.
+
+   New shared class .prop-label added for labeledInput/labeledSelect
+   (media/webviewClient.js) — those two build a row as
+   <label class="prop-row">rawLabelText, input</label>, i.e. the label
+   text is a bare DOM text node, not an element — text nodes aren't
+   selectable in CSS and don't participate in a flex parent's per-item
+   sizing rules at all, so there was no way to give THEIR label column
+   the same fixed width .ind-label's rows already got until the raw
+   text got wrapped in an actual <span class="prop-label"> element
+   (see that function). */
 .ind-label { display: inline-flex; align-items: center; gap: 2px; font-size: 11px; }
 .ind-text { color: var(--vscode-descriptionForeground); font-style: italic; }
 .hint { font-size: 11px; color: var(--vscode-descriptionForeground); font-style: italic; }
@@ -201,11 +248,12 @@ body { font-family: var(--vscode-editor-font-family, monospace); color: var(--vs
 .props { margin-bottom: 12px; padding: 8px 10px; border: 1px solid var(--vscode-panel-border); border-radius: 3px; width: 100%; box-sizing: border-box; background: var(--vscode-editorWidget-background); }
 .props:last-child { margin-bottom: 0; }
 .props h4 { margin: 0 0 8px 0; font-size: 12px; }
-.prop-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 11px; margin-bottom: 6px; flex-wrap: wrap; }
-.prop-row input, .prop-row select { width: 140px; max-width: 100%; font-size: 11px; }
+.prop-row { display: flex; align-items: center; gap: 6px 8px; font-size: 11px; margin-bottom: 6px; flex-wrap: wrap; }
+.prop-row input[type="checkbox"] { width: auto; height: auto; flex: 0 0 auto; margin: 0; }
+.prop-row input:not([type="checkbox"]), .prop-row select { flex: 1 1 70px; width: auto; min-width: 60px; max-width: 100%; font-size: 11px; }
+.prop-row > .ind-label, .prop-row > .prop-label, .pfield-row > .pfield-label { flex: 0 0 104px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pfield-row { flex-wrap: wrap; }
-.pfield-label { flex: 1 1 auto; min-width: 90px; }
-.pfield-row input { width: 100px; }
+.pfield-row input { flex: 1 1 70px; width: auto; min-width: 60px; }
 .pfield-toggle { font-size: 10px; padding: 2px 6px; }
 .prop-buttons { display: flex; gap: 6px; margin-top: 8px; }
 `;

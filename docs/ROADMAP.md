@@ -291,6 +291,29 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       freshly-parsed system-constant. 7 new tests
       (`test/prtfBatchZ.test.ts`); full suite now 347 tests, all passing.
 
+- [x] **Batch AA — Bug fix: properties-panel row layout consistency.**
+      Reported: "check box and text box are improperly placed... Range
+      them in a way it is easy and uniform." Three independent CSS bugs
+      in the shared `.prop-row` rule set — checkboxes stretched to 140px
+      wide (an un-scoped width rule matched them too), label columns
+      that didn't line up row-to-row (`.ind-label`/`.pfield-label` had
+      no fixed width), and multi-input rows overflowing/wrapping
+      unevenly (every input independently claimed a fixed 140px instead
+      of sharing available space) — plus two structural bugs no CSS fix
+      could touch: three Y/N toggles (barcode Asterisk, "Reference a
+      field", "Use referenced values") built their checkbox+label in the
+      reverse order from every other toggle, and four AFP-resource rows
+      (`appendOverlayRow`/`appendPagsegRow`/`appendAfprscRow`/
+      `appendDocidxtagRow`) appended their value inputs with no row
+      wrapper at all. See `docs/TASKS.md` Batch AA for the full
+      root-cause writeup. `test/webviewLayout.test.ts` extended with 4
+      new tests (CSS rule shape + a source-text structural check for the
+      four bare-appendChild rows); full suite now 368 tests, all
+      passing. **Please verify in a real Extension Development Host**
+      (no headless browser available in this sandbox) — ideally against
+      a row with several different keyword types checked at once so the
+      alignment is visible across every row shape together.
+
 ## Next up
 
 As of the RLU screen-capture review (`docs/KEYWORD-INVENTORY.md`), the

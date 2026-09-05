@@ -102,7 +102,7 @@ vice versa.
 | X | ~~Track source modifications (comment-out-and-tag changed lines instead of overwriting, mirroring I-SDA's `isda.trackSourceModifications`/`isda.modificationTag`)~~ | n/a (writer/UI, not a keyword) | **Done** | none |
 | Y | ~~"Add fields from database file" — browse every field in a PF/LF via Code for i and add them as named fields (mirroring I-SDA's Task L14 `fetchDatabaseFileFields`), distinct from Batch H's single-field `REF`/`REFFLD` resolution~~ | n/a (Code for i integration/UI, not a keyword) | **Done** | **H** (shared its Code-for-i-connection plumbing/UI conventions, didn't block on it) |
 | Z | ~~System-constant fields (`DATE`, `TIME`, `USER`, `SYSNAME`, `PAGNBR`) — parse as design-time placeholder text (mirroring I-SDA's `fieldDisplayText`) and add an "Add system constant" option alongside literal-text constants~~ | `DATE`, `TIME`, `PAGNBR` (`USER`/`SYSNAME` dropped — see detail section: verified against IBM's DDS reference, neither is a valid printer-file keyword) | **Done** | none |
-| AA | ~~**Bug fix:** properties/keywords column rows inconsistent — checkboxes stretched to the value-input width, some rows put the checkbox before its label and others after, several rows had no row wrapper at all~~ | n/a (webview UI/CSS, `media/webviewClient.js` + `src/buildWebviewTemplate.js`) | **In progress** | none |
+| AA | ~~**Bug fix:** properties/keywords column rows inconsistent — checkboxes stretched to the value-input width, some rows put the checkbox before its label and others after, several rows had no row wrapper at all~~ | n/a (webview UI/CSS, `media/webviewClient.js` + `src/buildWebviewTemplate.js`) | **Done** | none |
 
 ## Batch detail
 
@@ -1977,6 +1977,94 @@ write `literal: ""` for an empty Text field instead of leaving it
 `undefined`, which would've regenerated a spurious `''` literal token next
 to a system-constant's keyword on write-back. Tests: `test/prtfBatchZ.test.ts`
 (7 new tests; full suite 347, all passing).
+
+### Batch AA — Bug fix: properties-panel row layout consistency [DONE]
+
+Reported by Manojkumar-dharma: "right panel is not correctly organized,
+check box and text box are improperly placed. Range them in a way it is
+easy and uniform." Found three distinct, independent bugs by inspection,
+all reachable through the same shared `.prop-row` rule set (so nearly
+every properties-panel row was affected by at least one of them):
+
+1. **Checkboxes stretched to 140px wide.** `.prop-row input, .prop-row
+   select { width: 140px; }` (`src/buildWebviewTemplate.js`) is a
+   descendant selector with no `:not([type="checkbox"])` exclusion — it
+   also matched every checkbox nested inside a `.ind-label` inside a
+   `.prop-row`, i.e. nearly every keyword-toggle row (`appendKeywordRows`,
+   `appendEdtcdeRow`, `appendMsgconRow`, `appendColorRow`,
+   `appendOverlayRow`, `appendPagsegRow`, `appendAfprscRow`,
+   `appendDocidxtagRow`). Browsers do respect explicit width/height on a
+   checkbox's own box, so this stretched every one of them from its
+   native ~13px to 140px. Fixed by excluding
+   `input[type="checkbox"]` from the width rule and giving it its own
+   `width: auto` rule.
+2. **Label columns didn't line up row to row.** `.ind-label`/
+   `.pfield-label` (the checkbox+name / label portion of a row) had no
+   width of their own — sized purely to their own text content — so a
+   row's value input started at a different x-position depending on how
+   long THAT row's keyword name happened to be (e.g. "DFT" vs
+   "FLTFIXDEC"), instead of every row's value column lining up at the
+   same offset. Fixed by giving `.ind-label`, a new `.prop-label`, and
+   `.pfield-label` a shared fixed `flex: 0 0 104px` (104px comfortably
+   fits every keyword name in this codebase's own
+   `docs/KEYWORD-INVENTORY.md` — longest is `FLTFIXDEC`, 9 chars — with
+   `text-overflow: ellipsis` as a safety net for anything longer).
+   `labeledInput`/`labeledSelect` (`media/webviewClient.js`) previously
+   appended their label text as a bare DOM text node rather than an
+   element — text nodes aren't selectable in CSS at all, so there was no
+   way to give THEIR label column the same width until the raw text got
+   wrapped in an actual `<span class="prop-label">`.
+3. **Multi-input rows overflowed and wrapped unevenly.** The old fixed
+   `width: 140px` per value input, with no shared space-splitting, meant
+   a row with 2+ inputs on one line (EDTCDE's edit-code select + fill
+   character; MSGCON's four params) needed 280–560px of value-input
+   width alone — several times the ~300px usable width inside the
+   340px-wide `.side-col` — guaranteeing an uneven wrap that looked
+   different depending on how many inputs a given row happened to have.
+   Changed to `flex: 1 1 70px`, so a row's own input(s) share whatever
+   width is actually available evenly, still wrapping to a second line
+   as a cohesive group when they genuinely don't fit, rather than each
+   competing independently at a size that assumed it had the whole row.
+
+**Two further structural bugs found along the way** (not CSS — no CSS
+fix could have addressed either):
+- **Reversed checkbox/label order.** Three standalone Y/N toggles — the
+  barcode "Asterisk (CODE3OF9)" row, and Batch H's "Reference a field"/
+  "Use referenced values" rows — built their `<label class="prop-row">`
+  as `[text, checkbox]` instead of the `.ind-label` convention's
+  `[checkbox, text]` used by every other toggle in the panel. Combined
+  with `.prop-row`'s old `justify-content: space-between`, this pushed
+  those three checkboxes all the way to the row's right edge with their
+  text flush left, instead of sitting right next to their text like
+  every other toggle. Restructured all three to the standard
+  checkbox-first `.ind-label` shape.
+- **Four rows with no wrapper at all.** `appendOverlayRow`,
+  `appendPagsegRow`, `appendAfprscRow`, and `appendDocidxtagRow` (all
+  Batch E) appended their 3–5 value inputs directly to the panel
+  container with `container.appendChild(i)` — no `.prop-row` div, no
+  shared width/alignment rules, no visual grouping with the checkbox
+  above them at all. `appendMsgconRow` and `appendColorRow` (both Batch
+  A) already did this correctly (their value inputs go into their own
+  `.prop-row` div); the four Batch E rows just hadn't followed that
+  existing pattern. Fixed by wrapping each one's inputs in a
+  `valuesRow = el("div", { class: "prop-row" })`, matching MSGCON/COLOR.
+
+**Verification:** `npx tsc --noEmit` clean; full suite 368/368 passing
+(364 previous + 4 new in `test/webviewLayout.test.ts`). The new tests
+lock in the specific CSS rules (checkbox exclusion, shared label-column
+flex-basis, shared value-input flex-basis) and, since the four-rows-with-
+no-wrapper bug is structural rather than CSS, a source-text shape check
+confirming those four functions build a `.prop-row` around their value
+inputs rather than appending them bare — same "can't prove real layout,
+so lock in the specific mechanism instead" approach `webviewLayout.test.ts`
+already used for the `#root` scroll-chain fix (Batch V). **No real-browser
+verification was possible in this session** (same sandbox limitation
+documented since Batch V — no usable headless browser here). **Please
+verify in a real Extension Development Host**, ideally against a field
+or record with several different keyword types checked at once (a mix
+of flag/text/select keywords, EDTCDE, and at least one AFP resource
+keyword like OVERLAY) so the alignment is visible across every row shape
+at once, not just one at a time.
 
 ## Adding a new batch
 

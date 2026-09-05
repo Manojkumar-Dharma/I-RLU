@@ -23,6 +23,8 @@
 // rules while "simplifying" the CSS) without a test failing.
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { getWebviewHtml } = require("../src/webviewTemplate.js");
 
@@ -58,5 +60,61 @@ test("webview layout: the height-constraint chain from body down to .side-col ha
     const ruleMatch = css.match(new RegExp(selector + "\\s*\\{([^}]*)\\}"));
     assert.ok(ruleMatch, `${selector} has no CSS rule`);
     assert.match(ruleMatch![1], /min-height\s*:\s*0\b/, `${selector} must have min-height: 0`);
+  }
+});
+
+// Batch AA — "check box and text box are improperly placed" / "Range them
+// in a way it is easy and uniform". Real browser layout is needed to prove
+// rows actually line up (unavailable in this sandbox), so these lock in
+// the specific CSS rules the fix depends on, the same documented-gap
+// pattern the two tests above already use for the #root fix.
+test("webview layout (Batch AA): checkboxes inside .prop-row are excluded from the value-input width rule", () => {
+  const css = extractCss(getWebviewHtml("testnonce"));
+  const checkboxRuleMatch = css.match(/\.prop-row input\[type="checkbox"\]\s*\{([^}]*)\}/);
+  assert.ok(checkboxRuleMatch, ".prop-row has no dedicated input[type=checkbox] rule — checkboxes risk being stretched by the value-input width rule again");
+  assert.match(checkboxRuleMatch![1], /width\s*:\s*auto\b/, "checkbox width must be auto, not inherited from the value-input rule");
+  const valueInputRuleMatch = css.match(/\.prop-row input:not\(\[type="checkbox"\]\), \.prop-row select\s*\{([^}]*)\}/);
+  assert.ok(valueInputRuleMatch, ".prop-row's value-input rule must explicitly exclude input[type=checkbox] via :not()");
+});
+
+test("webview layout (Batch AA): the label/checkbox column has a fixed width shared by every row shape", () => {
+  const css = extractCss(getWebviewHtml("testnonce"));
+  // .ind-label (checkbox rows), .prop-label (labeledInput/labeledSelect's
+  // wrapped text label), and .pfield-label (pFieldRow) must all resolve to
+  // the SAME flex-basis, or rows built with different helper functions
+  // would misalign against each other again despite each individually
+  // "having a width".
+  const combinedRuleMatch = css.match(/\.prop-row > \.ind-label, \.prop-row > \.prop-label, \.pfield-row > \.pfield-label\s*\{([^}]*)\}/);
+  assert.ok(combinedRuleMatch, "the three label classes must share one combined selector so a future edit can't accidentally desync their widths");
+  assert.match(combinedRuleMatch![1], /flex\s*:\s*0 0 \d+px/, "the label column must have a fixed (non-growing, non-shrinking) flex-basis");
+});
+
+test("webview layout (Batch AA): value inputs share row width proportionally instead of each claiming a fixed 140px", () => {
+  const css = extractCss(getWebviewHtml("testnonce"));
+  const valueInputRuleMatch = css.match(/\.prop-row input:not\(\[type="checkbox"\]\), \.prop-row select\s*\{([^}]*)\}/);
+  assert.ok(valueInputRuleMatch);
+  // flex: 1 ... lets 2+ inputs on one row (EDTCDE's select+fill, MSGCON's
+  // 4 params) share whatever width is actually available instead of each
+  // independently demanding 140px and forcing an uneven wrap.
+  assert.match(valueInputRuleMatch![1], /flex\s*:\s*1\s+1\s+\d+px/, "value inputs must flex-share row width, not each claim an independent fixed width");
+  assert.doesNotMatch(css, /\.prop-row input, \.prop-row select \{ width: 140px/, "the old un-scoped fixed-width rule (which also stretched checkboxes) must not still be present");
+});
+
+// media/webviewClient.js isn't require()-able as a CommonJS module (it's a
+// browser-only IIFE assuming window/document/vscode globals — see
+// webviewAssembly.test.ts for the actual vm-execution approach), so unlike
+// the CSS checks above, this is a plain source-text shape check: it can't
+// prove the four rows actually render lined-up, but it does prove the
+// specific "bare appendChild with no row wrapper at all" shape (which
+// isn't a CSS problem the rules above could ever catch, however correct
+// they are) doesn't silently come back.
+test("webview layout (Batch AA): OVERLAY/PAGSEG/AFPRSC/DOCIDXTAG's value inputs are wrapped in their own .prop-row, not appended bare", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../../media/webviewClient.js"), "utf8");
+  for (const fnName of ["appendOverlayRow", "appendPagsegRow", "appendAfprscRow", "appendDocidxtagRow"]) {
+    const fnMatch = source.match(new RegExp("function " + fnName + "\\([^)]*\\) \\{([\\s\\S]*?)\\n  \\}\\n"));
+    assert.ok(fnMatch, `${fnName} not found in media/webviewClient.js`);
+    const body = fnMatch![1];
+    assert.match(body, /const valuesRow = el\("div", \{ class: "prop-row" \}\)/, `${fnName} must build its value inputs into a .prop-row div, not append them bare to container`);
+    assert.doesNotMatch(body, /\]\.forEach\(\(i\) => container\.appendChild\(i\)\)/, `${fnName} must not append its value inputs directly to container with no row wrapper`);
   }
 });

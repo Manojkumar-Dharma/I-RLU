@@ -637,7 +637,15 @@
 
   function labeledInput(labelText, inputAttrs) {
     const input = el("input", inputAttrs);
-    return { row: el("label", { class: "prop-row" }, [labelText, input]), input };
+    // Batch AA: labelText used to be appended as a bare string (a DOM text
+    // node), which CSS can't select or size at all — meaning every
+    // labeledInput row's value input started at whatever x-position that
+    // row's OWN label text happened to end at, instead of lining up with
+    // every other row's. Wrapping it in an actual element gives
+    // `.prop-row > .prop-label` (src/buildWebviewTemplate.js) something to
+    // apply the same fixed width to that `.ind-label` rows already get.
+    const label = el("span", { class: "prop-label" }, [labelText]);
+    return { row: el("label", { class: "prop-row" }, [label, input]), input };
   }
 
   // ---------------------------------------------------------------------
@@ -889,7 +897,9 @@
       if (opt === currentValue) o.setAttribute("selected", "selected");
       select.appendChild(o);
     });
-    return { row: el("label", { class: "prop-row" }, [labelText, select]), input: select };
+    // Batch AA: same bare-text-node fix as labeledInput above.
+    const label = el("span", { class: "prop-label" }, [labelText]);
+    return { row: el("label", { class: "prop-row" }, [label, select]), input: select };
   }
 
   /** Renders the properties panel for either a pending-new entry or the currently selected one. Returns null if nothing to show. */
@@ -1573,10 +1583,15 @@
     });
     formWrap.appendChild(hriRow.row);
 
-    const astRow = el("label", { class: "prop-row" }, ["Asterisk (CODE3OF9)"]);
+    // Batch AA: was text-then-checkbox in one <label>, the opposite order
+    // from every other keyword-toggle row's checkbox-then-text `.ind-label`
+    // (appendKeywordRows etc.) — combined with .prop-row's old
+    // justify-content:space-between, that pushed this checkbox all the way
+    // to the row's right edge with the text flush left, instead of sitting
+    // right next to it like every other toggle in this panel.
     const astCb = el("input", { type: "checkbox" });
     if (f.asterisk) astCb.setAttribute("checked", "checked");
-    astRow.appendChild(astCb);
+    const astRow = el("div", { class: "prop-row" }, [el("label", { class: "ind-label" }, [astCb, " Asterisk (CODE3OF9)"])]);
     astCb.addEventListener("change", () => {
       f.asterisk = astCb.checked;
       sendUpdate();
@@ -1675,10 +1690,11 @@
       // database picker (that part needs Code for i — see the "Resolve
       // Referenced Field" button below), same manually-entered-first
       // approach Batch H's task detail calls for.
-      const refToggleRow = el("label", { class: "prop-row" }, ["Reference a field"]);
+      // Batch AA: same text-then-checkbox reversal fix as the barcode
+      // Asterisk toggle above.
       refCheckbox = el("input", { type: "checkbox" });
       if (cell.reference) refCheckbox.setAttribute("checked", "checked");
-      refToggleRow.appendChild(refCheckbox);
+      const refToggleRow = el("div", { class: "prop-row" }, [el("label", { class: "ind-label" }, [refCheckbox, " Reference a field"])]);
       panel.appendChild(refToggleRow);
 
       const target = cell.refTarget || {};
@@ -1719,10 +1735,10 @@
       const refFileRow = labeledInput("Ref. file", { type: "text", maxlength: "10", value: target.file || "" });
       refFileInput = refFileRow.input;
       refFieldsRow.appendChild(refFileRow.row);
-      const useRefValuesRow = el("label", { class: "prop-row" }, ["Use referenced values"]);
+      // Batch AA: same text-then-checkbox reversal fix as above.
       useRefValuesCheckbox = el("input", { type: "checkbox" });
       useRefValuesCheckbox.setAttribute("checked", "checked"); // default Y, matching real RLU
-      useRefValuesRow.appendChild(useRefValuesCheckbox);
+      const useRefValuesRow = el("div", { class: "prop-row" }, [el("label", { class: "ind-label" }, [useRefValuesCheckbox, " Use referenced values"])]);
       refFieldsRow.appendChild(useRefValuesRow);
       // Same hide-when-disconnected treatment as the "Browse fields…"
       // button above.
@@ -1924,7 +1940,14 @@
     const downInp = el("input", { type: "text", placeholder: "position-down", value: f.posDown || "" });
     const acrossInp = el("input", { type: "text", placeholder: "position-across", value: f.posAcross || "" });
     const extraInp = el("input", { type: "text", placeholder: "extra, e.g. (*ROTATION 90)", value: f.extra || "" });
-    [nameInp, downInp, acrossInp, extraInp].forEach((i) => container.appendChild(i));
+    // Batch AA: these 4 used to be appended directly to `container` with
+    // no row wrapper at all — no `.prop-row`, no shared width/alignment
+    // rules, no visual grouping with the checkbox above them. Wrapping
+    // them in their own `.prop-row` matches how MSGCON/COLOR's own
+    // multi-input value rows already do this correctly.
+    const valuesRow = el("div", { class: "prop-row" });
+    [nameInp, downInp, acrossInp, extraInp].forEach((i) => valuesRow.appendChild(i));
+    container.appendChild(valuesRow);
 
     const sendUpdate = () => {
       if (!cb.checked) {
@@ -1955,7 +1978,10 @@
     const downInp = el("input", { type: "text", placeholder: "vertical offset (optional)", value: f.posDown || "" });
     const acrossInp = el("input", { type: "text", placeholder: "horizontal offset (optional)", value: f.posAcross || "" });
     const extraInp = el("input", { type: "text", placeholder: "extra, e.g. (*ROTATION 90)", value: f.extra || "" });
-    [nameInp, downInp, acrossInp, extraInp].forEach((i) => container.appendChild(i));
+    // Batch AA: see OVERLAY's own row above — same bare-appendChild bug, same fix.
+    const valuesRow = el("div", { class: "prop-row" });
+    [nameInp, downInp, acrossInp, extraInp].forEach((i) => valuesRow.appendChild(i));
+    container.appendChild(valuesRow);
 
     const sendUpdate = () => {
       if (!cb.checked) {
@@ -1987,7 +2013,10 @@
     const downInp = el("input", { type: "text", placeholder: "position-down", value: f.posDown || "" });
     const acrossInp = el("input", { type: "text", placeholder: "position-across", value: f.posAcross || "" });
     const extraInp = el("input", { type: "text", placeholder: "extra, e.g. (*SIZE 2 1)", value: f.extra || "" });
-    [nameInp, typeInp, downInp, acrossInp, extraInp].forEach((i) => container.appendChild(i));
+    // Batch AA: see OVERLAY's own row above — same bare-appendChild bug, same fix.
+    const valuesRow = el("div", { class: "prop-row" });
+    [nameInp, typeInp, downInp, acrossInp, extraInp].forEach((i) => valuesRow.appendChild(i));
+    container.appendChild(valuesRow);
 
     const sendUpdate = () => {
       if (!cb.checked) {
@@ -2022,7 +2051,10 @@
       if (opt === f.tagLevel) o.setAttribute("selected", "selected");
       levelSel.appendChild(o);
     });
-    [nameInp, valueInp, levelSel].forEach((i) => container.appendChild(i));
+    // Batch AA: see OVERLAY's own row above — same bare-appendChild bug, same fix.
+    const valuesRow = el("div", { class: "prop-row" });
+    [nameInp, valueInp, levelSel].forEach((i) => valuesRow.appendChild(i));
+    container.appendChild(valuesRow);
 
     const sendUpdate = () => {
       if (!cb.checked) {
