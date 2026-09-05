@@ -98,6 +98,10 @@ vice versa.
 | T | ~~**Bug fix:** no right-click "open designer" option for `.pf`/`.prtf`/`.rlu` files~~ | n/a (packaging/activation, `package.json` + `src/extension.ts`) | **Done** | none |
 | U | ~~Hide Compile/Resolve/Browse-Referenced-Field UI when Code for i isn't connected + themed scrollbar on the properties column~~ | n/a (webview UI + activation, `src/extension.ts`, `media/webviewClient.js`, `src/buildWebviewTemplate.js`, `package.json`) | **Done** | none |
 | V | ~~**Bug fix:** properties/keywords column (`.side-col`) still didn't actually scroll despite `overflow-y: auto` (Batch S) and a themed scrollbar (Batch U) — the height-constraint chain from `body` down to `.side-col` had a gap at `#root`~~ | n/a (webview UI/CSS, `src/buildWebviewTemplate.js`) | **Done** | none |
+| W | Configurable designer-open location (`i-rlu.designerOpenColumn` setting, mirroring I-SDA's `isda.designerOpenColumn`) | n/a (tooling/UI, not a keyword) | Open | none |
+| X | Track source modifications (comment-out-and-tag changed lines instead of overwriting, mirroring I-SDA's `isda.trackSourceModifications`/`isda.modificationTag`) | n/a (writer/UI, not a keyword) | Open | none |
+| Y | "Add fields from database file" — browse every field in a PF/LF via Code for i and add them as named fields (mirroring I-SDA's Task L14 `fetchDatabaseFileFields`), distinct from Batch H's single-field `REF`/`REFFLD` resolution | n/a (Code for i integration/UI, not a keyword) | Open | **H** (shares its Code-for-i-connection plumbing/UI conventions, doesn't block on it) |
+| Z | System-constant fields (`DATE`, `TIME`, `USER`, `SYSNAME`, `PAGNBR`) — parse as design-time placeholder text (mirroring I-SDA's `fieldDisplayText`) and add an "Add system constant" option alongside literal-text constants | `DATE`, `TIME`, `USER`, `SYSNAME`, `PAGNBR` (`DATE`/`TIME`/`PAGNBR` params already validated as constant-only per Batch A — see `docs/KEYWORD-INVENTORY.md` — but none of the five have placeholder-text rendering or an add-UI yet; `USER`/`SYSNAME` aren't in the inventory at all, so confirm their keyword syntax against the IBM DDS reference first) | Open | none |
 
 ## Batch detail
 
@@ -1667,6 +1671,211 @@ available to write one against. **Please verify in a real Extension
 Development Host** with a record format that has enough field/keyword
 panels to overflow the properties column, confirming both that it
 scrolls and that the themed scrollbar from Batch U appears as expected.
+
+### Batch W — Configurable designer-open location [OPEN]
+
+Requested by Manojkumar-dharma: "open RLU design like how the display
+design in iSDA...also we have setting for the same." I-RLU already
+registers a custom editor (`i-rlu.designer` in `package.json`,
+`PrtfDesignerProvider` in `src/extension.ts`) the same way I-SDA does, and
+already has an `i-rlu.openDesigner` command (added in Batch T) — what's
+missing is I-SDA's `isda.designerOpenColumn` setting and the column logic
+that reads it.
+
+**Reference implementation — I-SDA:**
+- `package.json`'s `contributes.configuration.properties`:
+  `isda.designerOpenColumn`, `type: "string"`, `enum: ["active", "beside",
+  "newWindow"]`, `default: "active"`. Read each option's
+  `enumDescriptions` entry in that file for the exact user-facing wording
+  to mirror.
+- `src/extension.ts`: `getDesignerOpenMode()` reads the setting;
+  `openInDesigner(uri, viewType)` (grep for it) maps `"beside"` to
+  `vscode.ViewColumn.Beside` and everything else to
+  `vscode.ViewColumn.Active`, calls `vscode.commands.executeCommand
+  ("vscode.openWith", uri, viewType, column)`, then for `"newWindow"`
+  additionally calls `workbench.action.moveEditorToNewWindow` afterward
+  (see that function's own doc comment for exactly why — operates on
+  "whichever editor is currently active", which the preceding
+  `openWith` call just made the designer).
+
+**What to do in I-RLU:** add an `i-rlu.designerOpenColumn` setting
+(same three enum values; reuse I-SDA's `enumDescriptions` wording,
+substituting "Report Designer" for "Screen/Menu Designer") to
+`package.json`, add the equivalent `getDesignerOpenMode()`/column logic,
+and thread it through the existing `i-rlu.openDesigner` command handler
+in `src/extension.ts` (currently a plain `vscode.commands.executeCommand
+("vscode.openWith", target, PrtfDesignerProvider.viewType)` with no
+column argument — see that command's registration). Also apply it
+wherever a `.prtf`/`.pf`/`.rlu` file might be opened via the
+`customEditors` `priority: "option"` selector path (double-click in
+Explorer), not just the explicit command, if VS Code's API allows
+influencing that (I-SDA's own comment on `supportsMultipleEditorsPerDocument:
+false` is relevant background — check if that applies here too).
+
+**Verification:** no automated test coverage expected (same documented
+gap as Batch T/U — no `vscode`-module mock in this project); manually
+verify each of the three enum values in a real Extension Development
+Host, same as I-SDA's own manual-verification note for this feature.
+
+### Batch X — Track source modifications [OPEN]
+
+Requested alongside Batch W: "I have added track modification changes in
+display designer, similar feature required here as well." Mirrors
+I-SDA's `isda.trackSourceModifications`/`isda.modificationTag`.
+
+**Reference implementation — I-SDA:**
+- `package.json`: `isda.trackSourceModifications` (`boolean`, default
+  `false`) — "when a keyword/field/record edit changes an existing
+  source line, comment out the original line instead of overwriting it
+  (so its history stays in the file), and tag the new/changed line with
+  the Modification tag (columns 81-90, past what the DDS compiler
+  reads)." Also `isda.modificationTag` (`string`, `maxLength: 10`) — the
+  default starting value for a **session-only** Properties-panel box
+  that can override the tag (and the on/off toggle itself) per-session
+  without touching the setting. Read both descriptions verbatim in that
+  file before implementing — the exact column range (81-90) and the
+  "session-only override, doesn't write back to the setting" behavior
+  are both load-bearing details, not incidental wording.
+- Find the actual write-path logic (grep I-SDA's writer/engine files for
+  `trackSourceModifications`/`modificationTag`) to see exactly how an
+  existing line gets commented out (what comment-marker convention DDS
+  source uses at column 1, presumably `*` per standard DDS comment
+  rules — verify against `docs/REQUIREMENTS.md`/IBM DDS reference rather
+  than assuming) versus how the tag gets written into columns 81-90 of
+  the new line.
+
+**What to do in I-RLU:** add the equivalent pair of settings (`i-rlu.`
+prefix), a session-only Properties-panel toggle + tag box (mirrors
+Batch B/G's existing P-field-style toggle components in
+`media/webviewClient.js` — reuse that shared component rather than
+building a new one), and thread the comment-out-instead-of-overwrite
+behavior through `src/prtfWriter.js` (`prtfEdits.js`'s mutations
+presumably need to carry enough information for the writer to know a
+line changed rather than was newly added — check how `prtfEdits.js`
+currently distinguishes those cases, if at all).
+
+**Note:** this interacts with `prtfWriter.js`'s existing continuation-
+character handling (see Batch M's bug fix — "writer emits wrong
+continuation character when wrapping mid-token") and Batch R's
+quote-aware tokenization fix; a commented-out original line still needs
+to round-trip correctly if the file is reopened, so re-run the full
+suite (particularly `prtfWriter.test.ts`) after implementing, not just
+whatever new tests this batch adds.
+
+### Batch Y — Add fields from database file via Code for i [OPEN]
+
+Requested alongside Batch W/X: "IBM i connection batch and file field
+from data base." Distinct from Batch H (`REF`/`REFFLD` resolution of ONE
+already-named field's attributes) — this is I-SDA's separate Task L14,
+"browse every field in a PF/LF and add the ones you pick as new named
+fields," which I-RLU has no equivalent of yet.
+
+**Reference implementation — I-SDA (`src/extension.ts`):**
+- `fetchDatabaseFileFields(library, file, recordFormat?)` — the core
+  logic. Read its full doc comment (grep `Task L14` in that file) before
+  touching anything; it documents several non-obvious, previously-wrong-
+  in-a-real-bug details worth not re-discovering the hard way:
+  - Uses `DSPFFD FILE(...) OUTPUT(*OUTFILE)` into a `QTEMP` outfile
+    (`QADSPFFD`/`QWHDRFFD` format), same approach as
+    `fetchReferencedFieldAttributes` (Batch H's I-SDA equivalent) —
+    **not** the `QSYS2.SYSCOLUMNS` SQL catalog, because DSPFFD's
+    OUTFILE gives the real DDS position-35 type code directly.
+  - Orders fields by `WHFOBO` (Output Buffer Position) — **not**
+    `WHFLDO`, which doesn't exist as a column and surfaces as a
+    real-world-reported SQL0206 error if used by mistake (an actual
+    prior bug in this project's own history, per the comment).
+  - `recordFormat` is optional: omitted + single-format file → proceeds
+    normally (common case, since most REFFLD targets are physical
+    files). Omitted + multi-format file → returns `{ formats: [...] }`
+    instead of guessing, since `WHFOBO` only orders correctly *within*
+    one format. Preserve this three-way return shape
+    (`{fields,recordFormat} | {formats} | {error}`) rather than
+    simplifying it away.
+  - `mapDspffdRowToAttributes` (shared with `fetchReferencedFieldAttributes`)
+    for the char-vs-numeric DSPFFD row interpretation — reuse the
+    equivalent I-RLU already has for Batch H rather than re-deriving it,
+    if Batch H's implementation already extracted this into its own
+    function (check `src/prtfReferenceField.js`).
+- Webview message handlers: grep `listDatabaseFields` and
+  `addFieldsFromDatabase` in `src/extension.ts` for the request/response
+  and commit shapes; the commit path "creates one new field per
+  selected row, same as any other field."
+
+**What to do in I-RLU:** add the equivalent
+`fetchDatabaseFileFields`-style function (reusing Batch H's existing
+Code-for-i-connection helper — memory notes this project already
+consolidated that lookup into one shared helper, so extend it rather
+than duplicating), a picker UI in `media/webviewClient.js` (a new
+"Add fields from database file" panel/button, following the connected-
+vs-disconnected hide/show convention Batch U established for
+Browse/Resolve buttons), and the `webviewProtocol.ts`
+request/response message kinds.
+
+**Depends on:** shares Batch H's Code-for-i connection plumbing but
+doesn't need to wait on Batch H's still-unverified "live round-trip"
+half to land — the UI shape and pure logic can proceed independently,
+same caveat Batch H's own table row already notes about itself.
+
+### Batch Z — System-constant fields (`DATE`/`TIME`/`USER`/`SYSNAME`/`PAGNBR`) [OPEN]
+
+Requested alongside Batch W/X/Y: "System constants fields like date,
+time, user are not parsed and we don't have option to add as well."
+Confirmed by inspection (session that filed this task): `src/
+prtfModel.ts`'s `constant` entry kind already has a comment noting
+`constantValue` is "undefined if the constant is defined purely via a
+keyword like DATE/TIME/PAGNBR" — i.e. the *parser* already tolerates
+this shape — but `src/prtfLayout.js` resolves design-time text as
+`entry.literal || ""`, so a system-constant field currently renders as
+blank in the designer instead of a placeholder. There is also no "add a
+system constant" option in `media/webviewClient.js` — grep `addConstant`
+there; only literal-text constants can currently be added.
+
+**Reference implementation — I-SDA (`src/dspfEngine.js`,
+`fieldDisplayText`):** for a constant field with no literal text, checks
+the field's keyword names and falls back to a design-time placeholder:
+`DATE` → current date via `new Date().toLocaleDateString()`, `TIME` →
+`new Date().toLocaleTimeString()`, `USER` → literal string `*USER`,
+`SYSNAME` → literal string `*SYSNAME`, `PAGNBR` → literal `"1"`, else
+empty string. Also note `displayLength`'s comment a few lines above
+`fieldDisplayText` in the same file: these system-value constants "have
+no data-type column of their own" (type `''`), and per real DDS,
+`EDTCDE`/`EDTWRD` can still apply to them (e.g. slashes inserted into a
+`DATE` placeholder) — I-SDA's `displayLength` already accounts for this;
+check whether I-RLU's own display-length logic in `src/prtfLayout.js`
+needs the same accounting once these fields render with real content
+instead of an empty string.
+
+**What to do in I-RLU:**
+1. **Parsing:** confirm/extend `src/prtfParser.ts` already correctly
+   recognizes `DATE`/`TIME`/`USER`/`SYSNAME` keywords on a constant
+   entry with no literal (the model comment suggests this was
+   anticipated but not necessarily fully wired through the parser —
+   verify against a real DDS source sample, don't assume).
+2. **Design-time placeholder text:** add the I-SDA-mirrored fallback
+   logic to `src/prtfLayout.js` (or wherever `entry.literal || ""` is
+   read — grep that exact string) for each of the five keywords.
+   `PAGNBR` is already keyword-validated as constant-only per Batch A/
+   `docs/KEYWORD-INVENTORY.md` (same for `DATE`/`TIME`), but check
+   whether that validation logic overlaps or needs to be shared with
+   this new rendering path rather than duplicated. `USER`/`SYSNAME`
+   aren't in `docs/KEYWORD-INVENTORY.md` at all — confirm their exact
+   keyword syntax against the IBM DDS reference before assuming they
+   take no parameters the way I-SDA's fallback implies.
+3. **Add-UI:** add an "Add system constant" option (or a
+   keyword-picker alongside the existing literal-text "Add constant"
+   flow) in `media/webviewClient.js`, wiring a new
+   `WebviewEdit` kind (or reusing `addConstant` with a keyword
+   parameter, whichever fits I-RLU's existing message shape better —
+   check `webviewProtocol.ts`) through to `src/prtfEdits.js`, and
+   confirm `src/prtfWriter.js` emits the keyword correctly (no literal
+   text token, just the bare keyword name) on write-back.
+
+**Verification:** cover all five keywords in a new/extended
+`prtfLayoutGeometry.test.ts`-style unit test (parse → layout → design-
+time text, for each), plus a round-trip parse→write test confirming a
+system-constant field written back to source doesn't gain a spurious
+literal-text token. Run the full suite afterward, not just the new
+tests.
 
 ## Adding a new batch
 

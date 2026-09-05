@@ -173,7 +173,13 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
 As of the RLU screen-capture review (`docs/KEYWORD-INVENTORY.md`), the
 remaining work is re-organized into the parallel-session task batches in
 `docs/TASKS.md` — each batch is scoped to be pickable up independently
-without stepping on another in-progress session. Summary (see TASKS.md for
+without stepping on another in-progress session. Batches W–Z (open as of
+this writing) were filed after comparing against I-SDA's own designer:
+configurable open-location setting, source-modification tracking, "add
+fields from database file" via Code for i, and system-constant
+(`DATE`/`TIME`/`USER`/`SYSNAME`/`PAGNBR`) design-time rendering + add-UI
+— see `docs/TASKS.md`'s Batch W/X/Y/Z detail sections for the full
+I-SDA-reference writeups. Summary of everything else (see TASKS.md for
 full detail, acceptance criteria, and file-level ownership per batch):
 
 - [x] **Batch A — general properties-panel keywords — done.**
