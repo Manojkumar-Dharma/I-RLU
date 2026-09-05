@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import { parseSource } from "./prtfParser";
 import { ParsedSource, FieldEntry } from "./prtfModel";
 import { WebviewEdit, WebviewMessage } from "./webviewProtocol";
-import { findEntryById, applyEditToModel } from "./prtfEdits";
+import { findEntryById, applyEditToModel, nextAvailableFieldName } from "./prtfEdits";
 import {
   CompileTarget,
   targetFromMemberUri,
@@ -203,6 +203,12 @@ class PrtfDesignerProvider implements vscode.CustomTextEditorProvider {
       }
       if (msg.type === "browseReferencedField") {
         await handleBrowseReferencedField(document, currentModel, msg, { enabled: modTrackingEnabled, tag: modTrackingTag });
+        currentModel = parseSource(document.getText());
+        postModel();
+        await sendCodeForIStatus();
+      }
+      if (msg.type === "addFieldsFromDatabase") {
+        await handleAddFieldsFromDatabase(document, currentModel, msg, { enabled: modTrackingEnabled, tag: modTrackingTag });
         currentModel = parseSource(document.getText());
         postModel();
         await sendCodeForIStatus();
@@ -446,6 +452,79 @@ async function fetchDatabaseFileFields(
 }
 
 /**
+ * Consolidation (docs/TASKS.md Batch H/Batch Y — code review follow-up):
+ * `handleBrowseReferencedField` (Batch H — picks ONE field, to set REFFLD
+ * on an existing field) and `handleAddFieldsFromDatabase` (Batch Y — picks
+ * one-or-more fields, to add as new fields) each carried their own copy of
+ * the exact same "fetch -> disambiguate record format if the file has more
+ * than one -> re-fetch scoped to the chosen format -> show a QuickPick of
+ * the resulting field list" sequence, down to identical QuickPick item
+ * shapes — a direct instance of this project's own documented lesson
+ * ("duplicate logic across parallel sessions accumulates fast" — see
+ * README.md/docs/TASKS.md), landed here because Batch Y (written in a
+ * separate session) reused `fetchDatabaseFileFields` itself but not the
+ * surrounding picker flow built around it in Batch H's earlier
+ * `handleBrowseReferencedField`. Both handlers below now call this
+ * instead of carrying their own copy.
+ *
+ * Returns `undefined` if the person cancelled any step (format picker,
+ * field picker) or a request failed — an error/info message has already
+ * been shown to the person in that case, so callers just need to return.
+ * Otherwise returns the field(s) picked: exactly one for
+ * `canPickMany: false` (VS Code's own `showQuickPick` enforces
+ * single-selection there), one-or-more for `canPickMany: true`.
+ */
+async function pickDatabaseFileFields(
+  library: string | null,
+  file: string,
+  options: { canPickMany: boolean }
+): Promise<DatabaseFileField[] | undefined> {
+  const qualifiedForDisplay = (library ? library + "/" : "") + file;
+  let outcome = await fetchDatabaseFileFields(library, file);
+  if ("error" in outcome) {
+    vscode.window.showErrorMessage(`I-RLU: ${outcome.error}`);
+    return undefined;
+  }
+  if ("formats" in outcome) {
+    const formatChoice = await vscode.window.showQuickPick(outcome.formats, {
+      placeHolder: `${file} has multiple record formats — pick one to browse its fields`,
+    });
+    if (!formatChoice) return undefined;
+    outcome = await fetchDatabaseFileFields(library, file, formatChoice);
+    if ("error" in outcome) {
+      vscode.window.showErrorMessage(`I-RLU: ${outcome.error}`);
+      return undefined;
+    }
+  }
+  if (!("fields" in outcome) || outcome.fields.length === 0) {
+    vscode.window.showInformationMessage(`I-RLU: no fields found in ${qualifiedForDisplay}.`);
+    return undefined;
+  }
+
+  const items = outcome.fields.map((f) => ({
+    label: f.name,
+    description: f.text || undefined,
+    detail: `${f.dataType || "A"}, length ${f.length}${f.decimalPositions ? ", " + f.decimalPositions + " decimals" : ""}`,
+    field: f,
+  }));
+
+  if (options.canPickMany) {
+    const picks = await vscode.window.showQuickPick(items, {
+      canPickMany: true,
+      placeHolder: `Pick fields to add from ${qualifiedForDisplay}`,
+    });
+    if (!picks || picks.length === 0) return undefined;
+    return picks.map((p) => p.field);
+  }
+
+  const pick = await vscode.window.showQuickPick(items, {
+    placeHolder: `Pick a field from ${qualifiedForDisplay}`,
+  });
+  if (!pick) return undefined;
+  return [pick.field];
+}
+
+/**
  * Handles a 'browseReferencedField' message from the designer's webview —
  * the "Browse..." button next to REFFLD's field-name input (Batch H
  * "remaining" piece). Resolves the SAME library/file
@@ -487,41 +566,115 @@ async function handleBrowseReferencedField(
   await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: `I-RLU: Browsing fields in ${target.library ? target.library + "/" : ""}${target.file} via Code for IBM i` },
     async () => {
-      let outcome = await fetchDatabaseFileFields(target.library, target.file);
-      if ("error" in outcome) {
-        vscode.window.showErrorMessage(`I-RLU: ${outcome.error}`);
-        return;
-      }
-      if ("formats" in outcome) {
-        const formatChoice = await vscode.window.showQuickPick(outcome.formats, {
-          placeHolder: `${target.file} has multiple record formats — pick one to browse its fields`,
-        });
-        if (!formatChoice) return;
-        outcome = await fetchDatabaseFileFields(target.library, target.file, formatChoice);
-        if ("error" in outcome) {
-          vscode.window.showErrorMessage(`I-RLU: ${outcome.error}`);
-          return;
-        }
-      }
-      if (!("fields" in outcome) || outcome.fields.length === 0) {
-        vscode.window.showInformationMessage(`I-RLU: no fields found in ${target.library ? target.library + "/" : ""}${target.file}.`);
-        return;
-      }
+      const picked = await pickDatabaseFileFields(target.library, target.file, { canPickMany: false });
+      if (!picked) return;
+      const dbField = picked[0];
 
-      const fieldChoice = await vscode.window.showQuickPick(
-        outcome.fields.map((f) => ({
-          label: f.name,
-          description: f.text || undefined,
-          detail: `${f.dataType || "A"}, length ${f.length}${f.decimalPositions ? ", " + f.decimalPositions + " decimals" : ""}`,
-          field: f,
-        })),
-        { placeHolder: `Pick a field from ${target.library ? target.library + "/" : ""}${target.file}` }
-      );
-      if (!fieldChoice) return;
-
-      entry.keywords = upsertReffldKeyword(entry.keywords, { fieldName: fieldChoice.field.name, library: target.library, file: target.file });
+      entry.keywords = upsertReffldKeyword(entry.keywords, { fieldName: dbField.name, library: target.library, file: target.file });
       await applyTrackedDocumentEdit(document, model, modTracking);
-      vscode.window.showInformationMessage(`I-RLU: Set REFFLD to ${fieldChoice.field.name}.`);
+      vscode.window.showInformationMessage(`I-RLU: Set REFFLD to ${dbField.name}.`);
+    }
+  );
+}
+
+/**
+ * Batch Y (docs/TASKS.md) — "Add fields from database file": browse EVERY
+ * field in a PF/LF and add several as new named fields in one go, distinct
+ * from handleBrowseReferencedField above (which sets REFFLD on ONE
+ * already-existing field). Mirrors I-SDA's own Task L14
+ * (fetchDatabaseFileFields/`addFieldsFromDatabase`) at that task's own
+ * scope — not its later Task L53 click-to-place refinement, which is a
+ * separate, out-of-scope enhancement (see docs/TASKS.md Batch Y's own
+ * detail section for why that line was drawn).
+ *
+ * Unlike handleBrowseReferencedField (which reads an already-saved REF/
+ * REFFLD off the field being browsed FOR), there's no existing field to
+ * read a library/file from here — this is how one gets chosen in the
+ * first place — so both are prompted via showInputBox, same shape and
+ * validation (`validateIbmIObjectName`) promptForCompileTarget already
+ * uses for the same kind of library/file entry.
+ *
+ * Applies every selected field's `addField` edit against the SAME
+ * in-memory `model` via `applyEditToModel` before regenerating source
+ * once at the end (via applyTrackedDocumentEdit, Batch X) — unlike
+ * I-SDA's own `handleAddFieldsFromDatabase` (which re-parses the document
+ * TEXT after each field, since its DspfWriter.insertField works at the
+ * line-text level), I-RLU's `applyEditToModel` mutates model objects
+ * directly (record.fields/model.sequence), so each successive `addField`
+ * call already sees the previous one's result with no text round-trip
+ * needed in between — one `regenerateSource` + one WorkspaceEdit for the
+ * whole batch, so VS Code's undo stack sees it as a single action.
+ */
+async function handleAddFieldsFromDatabase(
+  document: vscode.TextDocument,
+  model: ParsedSource,
+  msg: { recordName: string },
+  modTracking: ModTrackingOptions
+): Promise<void> {
+  const record = model.records.find((r) => r.name === msg.recordName);
+  if (!record) {
+    vscode.window.showErrorMessage("I-RLU: record not found.");
+    return;
+  }
+
+  const library = await vscode.window.showInputBox({
+    prompt: "Library containing the file to browse (blank searches *LIBL)",
+    placeHolder: "blank = *LIBL",
+    validateInput: (v) => (v.trim() ? validateIbmIObjectName(v) : undefined),
+  });
+  if (library === undefined) return;
+
+  const file = await vscode.window.showInputBox({
+    prompt: "Physical or logical file to add fields from",
+    validateInput: validateIbmIObjectName,
+  });
+  if (file === undefined || !file.trim()) return;
+
+  const libraryValue = library.trim() || null;
+  const fileValue = file.trim();
+
+  await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: `I-RLU: Browsing fields in ${libraryValue ? libraryValue + "/" : ""}${fileValue} via Code for IBM i` },
+    async () => {
+      const fieldChoices = await pickDatabaseFileFields(libraryValue, fileValue, { canPickMany: true });
+      if (!fieldChoices) return;
+
+      const qualifiedFile = (libraryValue ? libraryValue.toUpperCase() + "/" : "") + fileValue.toUpperCase();
+      // One row below the record's current lowest field/constant (or row 1
+      // if it has none yet), same fixed starting column ("+ Field"'s own
+      // click-to-place aside, 2 is this codebase's existing default — see
+      // media/webviewClient.js's renderNewEntryPanel) — a starting point,
+      // not a final layout; each field is individually draggable/editable
+      // afterward like any other, same framing I-SDA's own Task L14 uses.
+      let nextLine = 1;
+      record.fields.forEach((f) => {
+        if (typeof f.line === "number" && f.line >= nextLine) nextLine = f.line + 1;
+      });
+      const PLACEMENT_COLUMN = 2;
+
+      for (const dbField of fieldChoices) {
+        const fieldName = nextAvailableFieldName(record, dbField.name.toUpperCase().slice(0, 10));
+        const reffldParams = "(" + dbField.name.toUpperCase() + " " + qualifiedFile + ")";
+        applyEditToModel(model, {
+          kind: "addField",
+          recordName: msg.recordName,
+          line: nextLine,
+          position: PLACEMENT_COLUMN,
+          name: fieldName,
+          length: dbField.length,
+          dataType: dbField.dataType || "A",
+          decimalPositions: dbField.decimalPositions === null || dbField.decimalPositions === undefined ? undefined : dbField.decimalPositions,
+          usage: "O",
+          reference: true,
+          sourceKeywords: [{ name: "REFFLD", params: reffldParams }],
+        });
+        nextLine++;
+      }
+
+      await applyTrackedDocumentEdit(document, model, modTracking);
+      vscode.window.showInformationMessage(
+        `I-RLU: Added ${fieldChoices.length} field${fieldChoices.length === 1 ? "" : "s"} from ${libraryValue ? libraryValue + "/" : ""}${fileValue}.`
+      );
     }
   );
 }

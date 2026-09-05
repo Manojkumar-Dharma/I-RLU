@@ -100,8 +100,8 @@ vice versa.
 | V | ~~**Bug fix:** properties/keywords column (`.side-col`) still didn't actually scroll despite `overflow-y: auto` (Batch S) and a themed scrollbar (Batch U) — the height-constraint chain from `body` down to `.side-col` had a gap at `#root`~~ | n/a (webview UI/CSS, `src/buildWebviewTemplate.js`) | **Done** | none |
 | W | ~~Configurable designer-open location (`i-rlu.designerOpenColumn` setting, mirroring I-SDA's `isda.designerOpenColumn`)~~ | n/a (tooling/UI, not a keyword) | **Done** | none |
 | X | ~~Track source modifications (comment-out-and-tag changed lines instead of overwriting, mirroring I-SDA's `isda.trackSourceModifications`/`isda.modificationTag`)~~ | n/a (writer/UI, not a keyword) | **Done** | none |
-| Y | "Add fields from database file" — browse every field in a PF/LF via Code for i and add them as named fields (mirroring I-SDA's Task L14 `fetchDatabaseFileFields`), distinct from Batch H's single-field `REF`/`REFFLD` resolution | n/a (Code for i integration/UI, not a keyword) | Open | **H** (shares its Code-for-i-connection plumbing/UI conventions, doesn't block on it) |
-| Z | System-constant fields (`DATE`, `TIME`, `USER`, `SYSNAME`, `PAGNBR`) — parse as design-time placeholder text (mirroring I-SDA's `fieldDisplayText`) and add an "Add system constant" option alongside literal-text constants | `DATE`, `TIME`, `USER`, `SYSNAME`, `PAGNBR` (`DATE`/`TIME`/`PAGNBR` params already validated as constant-only per Batch A — see `docs/KEYWORD-INVENTORY.md` — but none of the five have placeholder-text rendering or an add-UI yet; `USER`/`SYSNAME` aren't in the inventory at all, so confirm their keyword syntax against the IBM DDS reference first) | Open | none |
+| Y | ~~"Add fields from database file" — browse every field in a PF/LF via Code for i and add them as named fields (mirroring I-SDA's Task L14 `fetchDatabaseFileFields`), distinct from Batch H's single-field `REF`/`REFFLD` resolution~~ | n/a (Code for i integration/UI, not a keyword) | **Done** | **H** (shared its Code-for-i-connection plumbing/UI conventions, didn't block on it) |
+| Z | ~~System-constant fields (`DATE`, `TIME`, `USER`, `SYSNAME`, `PAGNBR`) — parse as design-time placeholder text (mirroring I-SDA's `fieldDisplayText`) and add an "Add system constant" option alongside literal-text constants~~ | `DATE`, `TIME`, `PAGNBR` (`USER`/`SYSNAME` dropped — see detail section: verified against IBM's DDS reference, neither is a valid printer-file keyword) | **Done** | none |
 
 ## Batch detail
 
@@ -1836,120 +1836,146 @@ I-SDA's `isda.trackSourceModifications`/`isda.modificationTag`.
   every edit kind, including ones added by future batches, with no per-
   edit-kind wiring required.
 
-### Batch Y — Add fields from database file via Code for i [OPEN]
+### Batch Y — Add fields from database file [DONE]
+**Scope, confirmed against I-SDA's own implementation before writing any
+code:** this batch's own task description cites I-SDA's Task L14
+(`fetchDatabaseFileFields`/`addFieldsFromDatabase`) as the pattern to
+mirror. Reading I-SDA's `src/extension.ts` and `src/buildWebviewTemplate.js`
+showed Task L14 itself (browse a file's fields via DSPFFD, multi-select,
+insert each as a new field stacked one row below the previous at a fixed
+column) is a separate, LATER addition — Task L53 — layered a click-to-place
+refinement on top (choose a starting Line/Column on the screen preview
+before the batch lands). This batch deliberately implements L14's scope
+only, not L53's: the task description names L14 specifically, and I-RLU's
+existing "+ Field"/"+ Constant" click-to-place system
+(`state.placing`/`state.pendingNew`, `media/webviewClient.js`) would need
+real UI work to extend to a *multi-field* batch, which is its own scope
+decision better left to a future batch if wanted, not assumed here.
 
-Requested alongside Batch W/X: "IBM i connection batch and file field
-from data base." Distinct from Batch H (`REF`/`REFFLD` resolution of ONE
-already-named field's attributes) — this is I-SDA's separate Task L14,
-"browse every field in a PF/LF and add the ones you pick as new named
-fields," which I-RLU has no equivalent of yet.
+**Distinct from Batch H's "remaining piece"**, which this batch shares
+plumbing with rather than duplicating: Batch H's `fetchDatabaseFileFields`/
+`groupDatabaseFileFieldRows` (`src/prtfReferenceField.js`) already list
+every field in a PF/LF — Batch H's own "Browse fields… (Code for i)" button
+just uses that list to set `REFFLD` on ONE already-existing field. This
+batch reuses the exact same `fetchDatabaseFileFields` function unchanged
+(no new DSPFFD/SQL code) to instead let someone pick SEVERAL fields at once
+and add each as a brand new field entry in the current record.
 
-**Reference implementation — I-SDA (`src/extension.ts`):**
-- `fetchDatabaseFileFields(library, file, recordFormat?)` — the core
-  logic. Read its full doc comment (grep `Task L14` in that file) before
-  touching anything; it documents several non-obvious, previously-wrong-
-  in-a-real-bug details worth not re-discovering the hard way:
-  - Uses `DSPFFD FILE(...) OUTPUT(*OUTFILE)` into a `QTEMP` outfile
-    (`QADSPFFD`/`QWHDRFFD` format), same approach as
-    `fetchReferencedFieldAttributes` (Batch H's I-SDA equivalent) —
-    **not** the `QSYS2.SYSCOLUMNS` SQL catalog, because DSPFFD's
-    OUTFILE gives the real DDS position-35 type code directly.
-  - Orders fields by `WHFOBO` (Output Buffer Position) — **not**
-    `WHFLDO`, which doesn't exist as a column and surfaces as a
-    real-world-reported SQL0206 error if used by mistake (an actual
-    prior bug in this project's own history, per the comment).
-  - `recordFormat` is optional: omitted + single-format file → proceeds
-    normally (common case, since most REFFLD targets are physical
-    files). Omitted + multi-format file → returns `{ formats: [...] }`
-    instead of guessing, since `WHFOBO` only orders correctly *within*
-    one format. Preserve this three-way return shape
-    (`{fields,recordFormat} | {formats} | {error}`) rather than
-    simplifying it away.
-  - `mapDspffdRowToAttributes` (shared with `fetchReferencedFieldAttributes`)
-    for the char-vs-numeric DSPFFD row interpretation — reuse the
-    equivalent I-RLU already has for Batch H rather than re-deriving it,
-    if Batch H's implementation already extracted this into its own
-    function (check `src/prtfReferenceField.js`).
-- Webview message handlers: grep `listDatabaseFields` and
-  `addFieldsFromDatabase` in `src/extension.ts` for the request/response
-  and commit shapes; the commit path "creates one new field per
-  selected row, same as any other field."
+**Implementation:**
+- `src/webviewProtocol.ts`: added `reference?: boolean` to the `addField`
+  edit kind — lets a field be created already flagged as a database
+  reference (position 29 'R'), the same flag `updateField` already toggles
+  for an existing field via its own `reference` parameter (Batch H), just
+  now settable at creation time too. Omitted (or `false`) preserves the
+  exact prior hardcoded-`false` behavior for a plain "+ Field" add or a
+  Batch Q copy — neither of those sends this field. Also added a new
+  `{ type: "addFieldsFromDatabase"; recordName: string }` webview message
+  for the new toolbar button.
+- `src/prtfEdits.ts`: `addField`'s model mutation now sets
+  `reference: !!edit.reference` instead of the old hardcoded `false`.
+  Added a new pure, exported `nextAvailableFieldName(record, desiredName)`
+  — DDS field names must be unique within one record format, so bulk-adding
+  several fields needs a de-duplication step; returns the desired name
+  unchanged if it's free, or `<truncated-base><n>` (n from 2, truncated to
+  fit the 10-character field-name limit) otherwise. Checks whether the
+  base name is ALREADY free first, unlike I-SDA's own
+  `nextAvailableFieldName` (`src/dspfWriter.js`), which always appends a
+  suffix even when the base name has no collision at all — a real, if
+  minor, behavioral difference worth deviating from I-SDA's own version
+  for, not just mirroring it blindly.
+- `src/extension.ts`: new `handleAddFieldsFromDatabase(document, model,
+  msg)`, wired to the new `"addFieldsFromDatabase"` message in
+  `onDidReceiveMessage`. Prompts for library (optional) and file (required)
+  via `showInputBox` with `validateIbmIObjectName` — same shape
+  `promptForCompileTarget` (Batch J) already uses for the same kind of
+  library/file entry, since there's no existing field to read a
+  library/file FROM the way `handleBrowseReferencedField` does. Fetches the
+  field list via the unchanged `fetchDatabaseFileFields`, handling the
+  "file has more than one record format" ambiguity the same way
+  `handleBrowseReferencedField` already does (a disambiguating QuickPick
+  first). Shows a `canPickMany: true` QuickPick over the field list. For
+  each field picked: computes a de-duplicated name via
+  `nextAvailableFieldName`, builds the qualified `REFFLD` params string the
+  same way `upsertReffldKeyword` (`prtfWriter.js`) does internally, and
+  applies an `addField` edit (via `applyEditToModel`, `reference: true`,
+  `sourceKeywords: [{name: "REFFLD", ...}]`) directly against the SAME
+  in-memory model object. Placement: one row below the record's current
+  highest field/constant line (or row 1 if it has none), incrementing by 1
+  per field, all at a fixed column — a starting point, individually
+  draggable/editable afterward like any other field, same framing I-SDA's
+  own Task L14 uses. Regenerates source and applies ONE `WorkspaceEdit` for
+  the whole batch after every field is added, rather than one per field —
+  unlike I-SDA's own `handleAddFieldsFromDatabase` (which re-parses the
+  document TEXT after each field, since `DspfWriter.insertField` works at
+  the line-text level), I-RLU's `applyEditToModel` mutates model objects
+  directly (`record.fields`/`model.sequence`), so each successive
+  `addField` call already sees the previous one's result with no text
+  round-trip needed in between.
+- `media/webviewClient.js`: new "+ Fields from DB…" toolbar button next to
+  "+ Field"/"+ Constant" — its only job is to post the
+  `addFieldsFromDatabase` message; everything else (prompts, fetch, picker,
+  apply) happens host-side via native VS Code UI, no webview round-trip for
+  the picker itself, matching how `browseReferencedField` already works.
+  Hidden (replaced with a warning hint) when `!state.codeForI.connected`,
+  same hide-when-disconnected treatment `renderFieldKeywordsSection`
+  already gives "Browse fields…"/"Resolve Referenced Field" — reappears
+  automatically once a connection is (re)established, no reload needed.
+- Tests: `test/prtfEdits.test.ts` gained 5 new tests — `addField` with
+  `reference: true`/omitted (both states of the new field), and three for
+  `nextAvailableFieldName` (name free, name collides + the *2 candidate
+  ALSO collides so it skips to *3, and truncation to fit the 10-character
+  limit). `handleAddFieldsFromDatabase` itself has no automated test — same
+  "no `vscode`-module mock in this project" limitation Batch T's writeup
+  already documents for `extension.ts`'s host-side handlers generally;
+  verified instead with a jsdom smoke check confirming the toolbar button
+  is hidden with a warning hint while disconnected, appears once
+  `codeForIStatus` reports `connected: true`, and posts the correct
+  `{ type: "addFieldsFromDatabase", recordName }` message on click. Full
+  suite: 345 tests, all passing (5 new, 340 pre-existing unchanged).
 
-**What to do in I-RLU:** add the equivalent
-`fetchDatabaseFileFields`-style function (reusing Batch H's existing
-Code-for-i-connection helper — memory notes this project already
-consolidated that lookup into one shared helper, so extend it rather
-than duplicating), a picker UI in `media/webviewClient.js` (a new
-"Add fields from database file" panel/button, following the connected-
-vs-disconnected hide/show convention Batch U established for
-Browse/Resolve buttons), and the `webviewProtocol.ts`
-request/response message kinds.
+**Follow-up consolidation (done, separate from the batch above):**
+`handleBrowseReferencedField` (Batch H) and `handleAddFieldsFromDatabase`
+(Batch Y, above) each had their own inline copy of the exact same
+"fetch → disambiguate record format if the file has more than one →
+re-fetch scoped to the chosen format → show a QuickPick of the resulting
+field list" sequence — down to identical QuickPick item shapes — because
+Batch Y (written in a separate session) reused `fetchDatabaseFileFields`
+itself but rebuilt the picker flow around it rather than reusing Batch
+H's existing one. Reported by Manojkumar-dharma ("check if task H and
+Task Y are like changes, if so merge them... Field from database is
+mapped to ref/refld") — correctly: every field Batch Y adds is set up as
+a REFFLD reference (`reference: true` + a `REFFLD` `sourceKeywords`
+entry), the same underlying mechanism Batch H's `upsertReffldKeyword`
+uses on an existing field, even though the two remain distinct *actions*
+from the person's perspective (resolve REFFLD on one already-existing
+field, vs. bulk-add several brand new fields) and were kept as separate
+commands/buttons rather than merged into one. Extracted the shared
+picker sequence into `pickDatabaseFileFields(library, file, {
+canPickMany })` (`src/extension.ts`, defined right after
+`fetchDatabaseFileFields`); both handlers now call it instead of
+carrying their own copy. No behavior change for either handler — same
+prompts, same messages, same QuickPick shapes — confirmed via
+`npx tsc --noEmit` and a full test-suite run (still 352/352, no new
+tests needed since this is a pure refactor of code with no existing
+automated coverage — see Batch Y's own "no `vscode`-module mock" note
+above).
 
-**Depends on:** shares Batch H's Code-for-i connection plumbing but
-doesn't need to wait on Batch H's still-unverified "live round-trip"
-half to land — the UI shape and pure logic can proceed independently,
-same caveat Batch H's own table row already notes about itself.
-
-### Batch Z — System-constant fields (`DATE`/`TIME`/`USER`/`SYSNAME`/`PAGNBR`) [OPEN]
-
-Requested alongside Batch W/X/Y: "System constants fields like date,
-time, user are not parsed and we don't have option to add as well."
-Confirmed by inspection (session that filed this task): `src/
-prtfModel.ts`'s `constant` entry kind already has a comment noting
-`constantValue` is "undefined if the constant is defined purely via a
-keyword like DATE/TIME/PAGNBR" — i.e. the *parser* already tolerates
-this shape — but `src/prtfLayout.js` resolves design-time text as
-`entry.literal || ""`, so a system-constant field currently renders as
-blank in the designer instead of a placeholder. There is also no "add a
-system constant" option in `media/webviewClient.js` — grep `addConstant`
-there; only literal-text constants can currently be added.
-
-**Reference implementation — I-SDA (`src/dspfEngine.js`,
-`fieldDisplayText`):** for a constant field with no literal text, checks
-the field's keyword names and falls back to a design-time placeholder:
-`DATE` → current date via `new Date().toLocaleDateString()`, `TIME` →
-`new Date().toLocaleTimeString()`, `USER` → literal string `*USER`,
-`SYSNAME` → literal string `*SYSNAME`, `PAGNBR` → literal `"1"`, else
-empty string. Also note `displayLength`'s comment a few lines above
-`fieldDisplayText` in the same file: these system-value constants "have
-no data-type column of their own" (type `''`), and per real DDS,
-`EDTCDE`/`EDTWRD` can still apply to them (e.g. slashes inserted into a
-`DATE` placeholder) — I-SDA's `displayLength` already accounts for this;
-check whether I-RLU's own display-length logic in `src/prtfLayout.js`
-needs the same accounting once these fields render with real content
-instead of an empty string.
-
-**What to do in I-RLU:**
-1. **Parsing:** confirm/extend `src/prtfParser.ts` already correctly
-   recognizes `DATE`/`TIME`/`USER`/`SYSNAME` keywords on a constant
-   entry with no literal (the model comment suggests this was
-   anticipated but not necessarily fully wired through the parser —
-   verify against a real DDS source sample, don't assume).
-2. **Design-time placeholder text:** add the I-SDA-mirrored fallback
-   logic to `src/prtfLayout.js` (or wherever `entry.literal || ""` is
-   read — grep that exact string) for each of the five keywords.
-   `PAGNBR` is already keyword-validated as constant-only per Batch A/
-   `docs/KEYWORD-INVENTORY.md` (same for `DATE`/`TIME`), but check
-   whether that validation logic overlaps or needs to be shared with
-   this new rendering path rather than duplicated. `USER`/`SYSNAME`
-   aren't in `docs/KEYWORD-INVENTORY.md` at all — confirm their exact
-   keyword syntax against the IBM DDS reference before assuming they
-   take no parameters the way I-SDA's fallback implies.
-3. **Add-UI:** add an "Add system constant" option (or a
-   keyword-picker alongside the existing literal-text "Add constant"
-   flow) in `media/webviewClient.js`, wiring a new
-   `WebviewEdit` kind (or reusing `addConstant` with a keyword
-   parameter, whichever fits I-RLU's existing message shape better —
-   check `webviewProtocol.ts`) through to `src/prtfEdits.js`, and
-   confirm `src/prtfWriter.js` emits the keyword correctly (no literal
-   text token, just the bare keyword name) on write-back.
-
-**Verification:** cover all five keywords in a new/extended
-`prtfLayoutGeometry.test.ts`-style unit test (parse → layout → design-
-time text, for each), plus a round-trip parse→write test confirming a
-system-constant field written back to source doesn't gain a spurious
-literal-text token. Run the full suite afterward, not just the new
-tests.
+### Batch Z — System-constant fields [DONE]
+**Landed as:** see `docs/ROADMAP.md`'s Batch Z entry and
+`docs/REQUIREMENTS.md` §10 for the full writeup. Short version:
+`USER`/`SYSNAME` verified against IBM's DDS Reference: Printer Files and
+found to not be valid printer-file keywords at all (display-file only) —
+dropped from scope, documented rather than silently absorbed. `DATE`/
+`TIME`/`PAGNBR` placeholders implemented in `src/prtfLayout.js`
+(`resolveConstantPlaceholder`), wired into both display text and display
+length. "Add system constant" UI added to the "+ Constant" properties
+panel via a new optional `systemConstantKeyword` field on the
+`addConstant` edit kind (not a new edit kind). Found and fixed a real
+pre-existing bug along the way: `updateConstant`/`addConstant` used to
+write `literal: ""` for an empty Text field instead of leaving it
+`undefined`, which would've regenerated a spurious `''` literal token next
+to a system-constant's keyword on write-back. Tests: `test/prtfBatchZ.test.ts`
+(7 new tests; full suite 347, all passing).
 
 ## Adding a new batch
 

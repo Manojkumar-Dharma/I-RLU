@@ -2,7 +2,7 @@
   "name": "i-rlu",
   "displayName": "iRLU",
   "description": "Interactive Report layout utility designer for IBM i printer file DDS (SCS/AFPDS)",
-  "version": "0.0.4",
+  "version": "0.0.6",
   "publisher": "Manojkumar-IBMi",
   "icon": "images/icon.png",
   "license": "MIT",

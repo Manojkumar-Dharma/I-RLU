@@ -48,6 +48,15 @@ export type WebviewEdit =
       dataType: string;
       decimalPositions?: number;
       usage: string;
+      // Batch Y — "Add fields from database file" sets this true for a
+      // field brought in via DSPFFD browse (position 29 'R', paired with
+      // the REFFLD keyword already carried via sourceKeywords below) —
+      // same flag updateField's own `reference` already toggles for an
+      // EXISTING field, just settable at creation time too. Omitted (or
+      // false) for a plain "+ Field" add or a Batch Q copy, matching the
+      // hardcoded `reference: false` this replaces — see prtfEdits.ts's
+      // "addField" case.
+      reference?: boolean;
       // Batch Q — carries the source field/constant's keywords along on a
       // copy (media/webviewClient.js's "Copy" button, renderEditPanel).
       // name/params only (not the full Keyword shape) — prtfEdits.ts
@@ -64,6 +73,14 @@ export type WebviewEdit =
       literal: string;
       // Batch Q — see addField's own comment on this field, same shape and purpose.
       sourceKeywords?: { name: string; params: string }[];
+      // Batch Z — "Add system constant" alternative to a literal-text
+      // constant (see renderNewEntryPanel's constant branch). When set,
+      // `literal` is ignored by prtfEdits.ts's addConstant case — the new
+      // constant carries the bare keyword only (matching real DDS: DATE/
+      // TIME/PAGNBR constants take no literal text token at all — see
+      // "Constant fields in printer files" in IBM's DDS Reference:
+      // Printer Files), not an empty-string literal.
+      systemConstantKeyword?: "DATE" | "TIME" | "PAGNBR";
     }
   // Batch P — record-format container operations. Unlike field/constant
   // edits, record formats are identified by NAME (there's no stable `id`
@@ -93,5 +110,15 @@ export type WebviewMessage =
   // Sent whenever the checkbox or tag box changes, and once right after
   // receiving "modTrackingConfig" on init so the host's own session state
   // starts in sync with whatever the webview's controls actually show.
-  | { type: "setModTracking"; enabled: boolean; tag: string };
-
+  | { type: "setModTracking"; enabled: boolean; tag: string }
+  // Batch Y — "Add fields from database file" toolbar button
+  // (media/webviewClient.js). Deliberately carries only `recordName`, not
+  // a library/file — unlike browseReferencedField (which reads an
+  // already-saved REF/REFFLD off an EXISTING field), this is how a
+  // library/file gets chosen in the first place, since there's no
+  // existing field to read one from; extension.ts's handler prompts for
+  // both itself via showInputBox, then a multi-select QuickPick for which
+  // fields to add — same "ask via native VS Code UI, apply directly, no
+  // webview round-trip for the picker itself" shape browseReferencedField
+  // already uses.
+  | { type: "addFieldsFromDatabase"; recordName: string };

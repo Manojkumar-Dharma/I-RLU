@@ -343,6 +343,28 @@
       toolbar.appendChild(el("span", { class: "hint" }, ["Click on the page to place " + what + "."]));
     }
 
+    // Batch Y (docs/TASKS.md) — "Add fields from database file". Unlike
+    // "+ Field"/"+ Constant" above, this doesn't use the click-to-place
+    // flow at all: the extension host prompts for library/file and which
+    // fields to add via native VS Code UI (showInputBox/showQuickPick)
+    // and applies the result directly, so this button's only job is to
+    // fire the request — see extension.ts's handleAddFieldsFromDatabase.
+    // Same hide-when-disconnected treatment as "Browse fields…"/"Resolve
+    // Referenced Field" in renderFieldKeywordsSection below (state.codeForI
+    // reappears the moment a connection is (re)established — no reload
+    // needed, render() rebuilds the toolbar from state every time).
+    if (state.codeForI.connected) {
+      const addDbFieldsBtn = el("button", { class: "btn" }, ["+ Fields from DB…"]);
+      addDbFieldsBtn.addEventListener("click", () => {
+        vscode.postMessage({ type: "addFieldsFromDatabase", recordName: state.recordName });
+      });
+      toolbar.appendChild(addDbFieldsBtn);
+    } else {
+      toolbar.appendChild(
+        el("span", { class: "hint warning" }, ["Add Fields from DB needs a live Code for i connection."])
+      );
+    }
+
     const indicators = PrtfEngine.collectIndicators(record);
     if (indicators.length) {
       // Batch G (docs/TASKS.md) — INDTXT (documentation-only, no compile
@@ -1014,7 +1036,7 @@
       );
     }
 
-    let nameInput, litInput, lenInput, typeSelect, decInput, usageSelect;
+    let nameInput, litInput, lenInput, typeSelect, decInput, usageSelect, constTypeSelect;
 
     if (pending.kind === "field") {
       const nameRow = labeledInput("Name", { type: "text", maxlength: "10", value: pending.name || "" });
@@ -1037,9 +1059,42 @@
       usageSelect = usageRow.input;
       panel.appendChild(usageRow.row);
     } else {
+      // Batch Z (docs/TASKS.md) — "Add system constant": an alternative to
+      // literal text for the three real DDS constant-field keywords that
+      // define a constant purely by keyword, no literal at all (DATE/TIME/
+      // PAGNBR — see prtfLayout.js's resolveConstantPlaceholder for the
+      // design-time placeholder each one renders, and its own comment for
+      // why USER/SYSNAME are deliberately NOT offered here: verified
+      // against IBM's DDS Reference: Printer Files, neither is a valid
+      // printer-file keyword — display-file only).
+      const constTypeRow = labeledSelect(
+        "Constant type",
+        ["", "DATE", "TIME", "PAGNBR"],
+        ""
+      );
+      constTypeSelect = constTypeRow.input;
+      // Override the generic labeledSelect option text (which just echoes
+      // the value, "(blank)" for "") with labels that actually explain
+      // the choice.
+      const optionLabels = { "": "Literal text", DATE: "System constant: Date", TIME: "System constant: Time", PAGNBR: "System constant: Page number" };
+      Array.from(constTypeSelect.options).forEach((o) => {
+        o.textContent = optionLabels[o.value];
+      });
+      panel.appendChild(constTypeRow.row);
+
       const litRow = labeledInput("Text", { type: "text", value: pending.literal || "" });
       litInput = litRow.input;
       panel.appendChild(litRow.row);
+
+      const constHint = el("div", { class: "hint" }, ["Shown at design time only — the real value comes from the system when the report prints."]);
+      constHint.style.display = "none";
+      panel.appendChild(constHint);
+
+      constTypeSelect.addEventListener("change", () => {
+        const isSystemConstant = !!constTypeSelect.value;
+        litRow.row.style.display = isSystemConstant ? "none" : "";
+        constHint.style.display = isSystemConstant ? "" : "none";
+      });
     }
 
     const btnRow = el("div", { class: "prop-buttons" });
@@ -1062,6 +1117,7 @@
           },
         });
       } else {
+        const systemConstantKeyword = constTypeSelect.value || undefined;
         vscode.postMessage({
           type: "edit",
           edit: {
@@ -1069,7 +1125,8 @@
             recordName: state.recordName,
             line: pending.line,
             position: pending.position,
-            literal: litInput.value || "",
+            literal: systemConstantKeyword ? "" : litInput.value || "",
+            systemConstantKeyword,
             sourceKeywords: pending.sourceKeywords,
           },
         });

@@ -200,10 +200,11 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       never interleaved, so a continuation chain between two new lines
       is never split apart by an unrelated old-line comment landing
       between them). `extension.ts` gained one shared choke point,
-      `applyTrackedDocumentEdit`, replacing three separate inline
+      `applyTrackedDocumentEdit`, replacing separate inline
       regenerate-then-WorkspaceEdit blocks, so every document-writing
-      path (a plain edit, and both REF/REFFLD resolution handlers) gets
-      tracking for free. A toolbar checkbox + 10-char tag input
+      path (a plain edit, both REF/REFFLD resolution handlers, and
+      Batch Y's "Add fields from database file" below) gets tracking for
+      free. A toolbar checkbox + 10-char tag input
       (`media/webviewClient.js`) drives per-session state via a new
       `"setModTracking"` message — plain controls rather than the
       P-field-style toggle component, since a P-field toggle is for
@@ -213,8 +214,82 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       continuation-character/tokenization history) was verified
       explicitly with an end-to-end parse → edit → regenerate → track →
       reparse test against a continuation-wrapped constant. See
-      `docs/TASKS.md` Batch X for the full writeup. Full suite now 352
+      `docs/TASKS.md` Batch X for the full writeup. **Merged with
+      upstream Batch Y/Z work (already done by the time this batch's
+      writer/settings/message-protocol pieces were ready to push) —
+      both REF/REFFLD-picker write paths were reconciled so
+      `handleAddFieldsFromDatabase`'s own write also goes through the
+      new `applyTrackedDocumentEdit` choke point rather than a bare
+      `WorkspaceEdit`.** Full suite now 352 tests, all passing.
+- [x] **Batch Y — Add fields from database file.** Browse every field in a
+      PF/LF via Code for i and add several as new named fields in one go —
+      distinct from Batch H's own "Browse fields…" (which sets `REFFLD` on
+      ONE already-existing field), though it reuses that same batch's
+      `fetchDatabaseFileFields` unchanged. New "+ Fields from DB…" toolbar
+      button (hidden with a warning hint while disconnected, same treatment
+      as Batch H's own buttons) prompts for library/file, fetches the field
+      list, and shows a multi-select QuickPick; each pick becomes a new
+      field (auto-`REFFLD`'d, position 29 'R' set via a new `reference`
+      flag on the `addField` edit kind) stacked one row below the previous.
+      Deliberately scoped to I-SDA's Task L14 only, not its later Task L53
+      click-to-place refinement — see `docs/TASKS.md` Batch Y for why that
+      line was drawn. New `nextAvailableFieldName` helper in
+      `prtfEdits.ts` de-duplicates field names across the batch. No
+      automated coverage for the host-side handler itself (same
+      no-`vscode`-mock gap Batches T/U/V/W already document); the pure
+      model-mutation and name-deduplication logic got 5 new unit tests, and
+      the toolbar button's hide/show/message-posting behavior was verified
+      with a jsdom smoke check. **Please verify against a real, connected
+      IBM i in a real Extension Development Host.** Full suite now 345
       tests, all passing.
+- [x] **Follow-up consolidation (Batch H + Batch Y) — done.** Reported by
+      Manojkumar-dharma: Batch H's `handleBrowseReferencedField` and
+      Batch Y's `handleAddFieldsFromDatabase` (above) each carried their
+      own copy of the identical "fetch → disambiguate multi-format file →
+      show a QuickPick of the resulting fields" sequence, and Batch Y's
+      added fields are indeed just REFFLD references under the hood —
+      same mechanism Batch H already uses, confirming the report.
+      Extracted the shared sequence into `pickDatabaseFileFields()`
+      (`src/extension.ts`); both handlers now call it instead of
+      duplicating it. The two remain separate commands/buttons (resolve
+      REFFLD on one existing field vs. bulk-add several new ones are
+      still genuinely different actions from the person's perspective) —
+      only the shared internal picker logic was merged, not the features
+      themselves. Pure refactor, no behavior change; full suite still
+      352/352.
+- [x] **Batch Z — System-constant fields (`DATE`/`TIME`/`PAGNBR`) —
+      done.** Design-time placeholder text for constants defined purely
+      via keyword (no literal) — mirrors I-SDA's `fieldDisplayText`:
+      `DATE` → current date, `TIME` → current time, `PAGNBR` → `"1"` (see
+      `src/prtfLayout.js`'s `resolveConstantPlaceholder`), wired into both
+      the rendered text AND the display length (previously a
+      system-constant field always measured `entry.length || 1`, wrong
+      once real placeholder text is shown instead of blank). New
+      "Constant type" selector on the "+ Constant" properties panel
+      (`media/webviewClient.js`) lets a system constant be added directly,
+      alongside the existing literal-text flow — a new optional
+      `systemConstantKeyword` field on the `addConstant` edit kind
+      (`src/webviewProtocol.ts`/`src/prtfEdits.ts`), rather than a whole
+      new edit kind, following this codebase's established
+      "extend, don't duplicate" pattern for `addField`/`addConstant`.
+      **Correction found during this batch** (see
+      `docs/REQUIREMENTS.md` §10 for the full writeup): the task as
+      originally filed named `USER`/`SYSNAME` alongside `DATE`/`TIME`/
+      `PAGNBR`, mirroring I-SDA's own five-keyword `fieldDisplayText` —
+      but verification against IBM's DDS Reference: Printer Files found
+      `USER`/`SYSNAME` aren't valid printer-file keywords at all
+      (display-file only). Deliberately not implemented; same
+      honesty-over-silent-scope-drop treatment as the earlier fictitious
+      `DRAW` keyword correction. **Bug fixed along the way:** saving an
+      existing constant's properties panel with the Text field left blank
+      used to write `literal: ""` unconditionally (`updateConstant`),
+      which for a system-constant field turned "no literal" into an
+      explicit empty one — regenerating a spurious `''` token next to the
+      keyword on next write-back. Both `updateConstant` and
+      `addConstant` now treat an empty Text field as "no literal"
+      (`undefined`), matching what the parser itself produces for a
+      freshly-parsed system-constant. 7 new tests
+      (`test/prtfBatchZ.test.ts`); full suite now 347 tests, all passing.
 
 ## Next up
 
@@ -224,11 +299,13 @@ remaining work is re-organized into the parallel-session task batches in
 without stepping on another in-progress session. Batches W–Z were filed
 after comparing against I-SDA's own designer: configurable open-location
 setting (W, done), source-modification tracking (X, done), "add fields
-from database file" via Code for i (Y), and system-constant
-(`DATE`/`TIME`/`USER`/`SYSNAME`/`PAGNBR`) design-time rendering + add-UI
-(Z) — see `docs/TASKS.md`'s Batch W/X/Y/Z detail sections for the full
-I-SDA-reference writeups. Summary of everything else (see TASKS.md for
-full detail, acceptance criteria, and file-level ownership per batch):
+from database file" via Code for i (Y, done), and system-constant
+(`DATE`/`TIME`/`PAGNBR`) design-time rendering + add-UI (Z, done — see
+`docs/REQUIREMENTS.md` §10 for why `USER`/`SYSNAME` were dropped from the
+original five-keyword scope) — see `docs/TASKS.md`'s Batch W/X/Y/Z detail
+sections for the full I-SDA-reference writeups. Summary of everything else
+(see TASKS.md for full detail, acceptance criteria, and file-level
+ownership per batch):
 
 - [x] **Batch A — general properties-panel keywords — done.**
       `EDTCDE`/`EDTWRD`/`DATFMT`/`DATSEP`/`TIMFMT`/`TIMSEP`/`DFT`

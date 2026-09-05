@@ -26,6 +26,36 @@ export function findEntryById(
 }
 
 /**
+ * Batch Y — DDS field names within one record format must be unique.
+ * Given a desired name (typically a database field's own name, when
+ * bringing several fields in at once via "Add fields from database
+ * file"), returns it unchanged if nothing in `record` already uses it, or
+ * the shortest `<truncated-base><n>` (n starting at 2, incrementing until
+ * free) that fits within DDS's 10-character field-name limit otherwise —
+ * e.g. adding a field named CUSTNO into a record that already has one
+ * yields CUSTNO2, not a collision the writer would silently accept. Pure
+ * and pre-existing-record-aware (unlike I-SDA's own
+ * nextAvailableFieldName, which always appends a numeric suffix even when
+ * the base name is already free — checked here first, since re-adding the
+ * SAME field twice from two different source files should still just be
+ * named after itself the first time).
+ */
+export function nextAvailableFieldName(record: RecordFormatEntry, desiredName: string): string {
+  const MAX_LEN = 10;
+  const used = new Set(record.fields.filter((f) => f.kind === "field").map((f) => (f as FieldEntry).name.toUpperCase()));
+  const base = (desiredName || "FLD").toUpperCase().slice(0, MAX_LEN);
+  if (!used.has(base)) return base;
+  let n = 2;
+  while (true) {
+    const suffix = String(n);
+    const truncated = (desiredName || "FLD").toUpperCase().slice(0, Math.max(1, MAX_LEN - suffix.length));
+    const candidate = truncated + suffix;
+    if (!used.has(candidate)) return candidate;
+    n++;
+  }
+}
+
+/**
  * Mutates `model` in place to apply one structured edit from the webview.
  * Every edit kind follows the same shape: find the target by id/recordName,
  * mutate it, and (for delete/addField/addConstant) keep model.sequence in
@@ -88,7 +118,17 @@ export function applyEditToModel(model: ParsedSource, edit: WebviewEdit): boolea
     case "updateConstant": {
       const found = findEntryById(model, edit.id);
       if (!found || found.entry.kind !== "constant") return false;
-      Object.assign(found.entry, { literal: edit.literal, line: edit.line, position: edit.position });
+      // Batch Z (docs/TASKS.md) fix: an empty Text input used to write
+      // literal: "" unconditionally, which — for a system-constant field
+      // (DATE/TIME/PAGNBR, no literal at all in real DDS — see prtfWriter.js's
+      // emit, which treats `entry.literal !== undefined` as "there IS a
+      // literal token to emit") — regenerated a spurious `''` token next
+      // to the keyword on next write-back. An empty Text field now means
+      // "no literal", same as a freshly-parsed system-constant's entry.literal
+      // being undefined in the first place (see prtfParser.ts's constant
+      // branch, which only sets .literal when a quoted token is actually
+      // present).
+      Object.assign(found.entry, { literal: edit.literal || undefined, line: edit.line, position: edit.position });
       return true;
     }
     case "delete": {
@@ -211,6 +251,17 @@ export function applyEditToModel(model: ParsedSource, edit: WebviewEdit): boolea
         raw: k.params ? k.name + k.params : k.name,
         sourceLineIndex: -1,
       }));
+      // Batch Z (docs/TASKS.md) — "Add system constant": a bare DATE/TIME/
+      // PAGNBR keyword, no literal text token, appended alongside whatever
+      // Batch Q copy-keywords (if any) already populated copiedKeywords.
+      if (edit.kind === "addConstant" && edit.systemConstantKeyword) {
+        copiedKeywords.push({
+          name: edit.systemConstantKeyword,
+          params: "",
+          raw: edit.systemConstantKeyword,
+          sourceLineIndex: -1,
+        });
+      }
       const newEntry: FieldEntry | ConstantEntry =
         edit.kind === "addField"
           ? {
@@ -218,7 +269,13 @@ export function applyEditToModel(model: ParsedSource, edit: WebviewEdit): boolea
               id: "tmp" + Date.now(),
               sourceLineIndex: -1,
               name: edit.name,
-              reference: false,
+              // Batch Y — see webviewProtocol.ts's comment on this field:
+              // true for a field added via "Add fields from database
+              // file" (position 29 'R'), false for a plain "+ Field" add
+              // or a Batch Q copy (edit.reference omitted in both those
+              // cases, so this keeps their prior hardcoded-false
+              // behavior unchanged).
+              reference: !!edit.reference,
               length: edit.length,
               dataType: edit.dataType,
               decimalPositions: edit.decimalPositions,
@@ -232,7 +289,14 @@ export function applyEditToModel(model: ParsedSource, edit: WebviewEdit): boolea
               kind: "constant",
               id: "tmp" + Date.now(),
               sourceLineIndex: -1,
-              literal: edit.literal,
+              // Batch Z — a system-constant add carries no literal at all
+              // (real DDS constant fields defined via DATE/TIME/PAGNBR take
+              // no literal text token — see the systemConstantKeyword
+              // comment on this edit kind in webviewProtocol.ts); an empty
+              // Text field on a plain literal-text add means the same
+              // thing a freshly-parsed blank constant would (undefined,
+              // not ""), matching the updateConstant fix above.
+              literal: edit.systemConstantKeyword ? undefined : edit.literal || undefined,
               line: edit.line,
               position: edit.position,
               conditions: [],
