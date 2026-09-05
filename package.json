@@ -99,6 +99,17 @@
           ],
           "default": "active",
           "description": "Where I-RLU opens the Report Designer, for \"I-RLU: Open Report Designer\" and when opening a .pf/.prtf/.rlu file via the editor selector."
+        },
+        "i-rlu.trackSourceModifications": {
+          "type": "boolean",
+          "default": false,
+          "description": "Report Designer: when a keyword/field/record edit changes an existing source line, comment out the original line instead of overwriting it (so its history stays in the file), and tag the new/changed line with the Modification tag (columns 81-90, past what the DDS compiler reads). This is the DEFAULT for newly opened designer sessions - it can also be toggled per-session from the Properties panel without changing this setting."
+        },
+        "i-rlu.modificationTag": {
+          "type": "string",
+          "default": "",
+          "maxLength": 10,
+          "description": "Report Designer: default 10-character tag written to columns 81-90 of any new/changed source line when modification tracking is on. Only used as the STARTING value for the Properties panel's own session-only Modification tag box - editing it there doesn't change this setting."
         }
       }
     }

@@ -99,7 +99,7 @@ vice versa.
 | U | ~~Hide Compile/Resolve/Browse-Referenced-Field UI when Code for i isn't connected + themed scrollbar on the properties column~~ | n/a (webview UI + activation, `src/extension.ts`, `media/webviewClient.js`, `src/buildWebviewTemplate.js`, `package.json`) | **Done** | none |
 | V | ~~**Bug fix:** properties/keywords column (`.side-col`) still didn't actually scroll despite `overflow-y: auto` (Batch S) and a themed scrollbar (Batch U) — the height-constraint chain from `body` down to `.side-col` had a gap at `#root`~~ | n/a (webview UI/CSS, `src/buildWebviewTemplate.js`) | **Done** | none |
 | W | ~~Configurable designer-open location (`i-rlu.designerOpenColumn` setting, mirroring I-SDA's `isda.designerOpenColumn`)~~ | n/a (tooling/UI, not a keyword) | **Done** | none |
-| X | Track source modifications (comment-out-and-tag changed lines instead of overwriting, mirroring I-SDA's `isda.trackSourceModifications`/`isda.modificationTag`) | n/a (writer/UI, not a keyword) | Open | none |
+| X | ~~Track source modifications (comment-out-and-tag changed lines instead of overwriting, mirroring I-SDA's `isda.trackSourceModifications`/`isda.modificationTag`)~~ | n/a (writer/UI, not a keyword) | **Done** | none |
 | Y | "Add fields from database file" — browse every field in a PF/LF via Code for i and add them as named fields (mirroring I-SDA's Task L14 `fetchDatabaseFileFields`), distinct from Batch H's single-field `REF`/`REFFLD` resolution | n/a (Code for i integration/UI, not a keyword) | Open | **H** (shares its Code-for-i-connection plumbing/UI conventions, doesn't block on it) |
 | Z | System-constant fields (`DATE`, `TIME`, `USER`, `SYSNAME`, `PAGNBR`) — parse as design-time placeholder text (mirroring I-SDA's `fieldDisplayText`) and add an "Add system constant" option alongside literal-text constants | `DATE`, `TIME`, `USER`, `SYSNAME`, `PAGNBR` (`DATE`/`TIME`/`PAGNBR` params already validated as constant-only per Batch A — see `docs/KEYWORD-INVENTORY.md` — but none of the five have placeholder-text rendering or an add-UI yet; `USER`/`SYSNAME` aren't in the inventory at all, so confirm their keyword syntax against the IBM DDS reference first) | Open | none |
 
@@ -1737,50 +1737,104 @@ normalization logic in `designerOpenMode.ts` is unit-tested. **Please
 verify all three enum values in a real Extension Development Host**,
 same as I-SDA's own manual-verification note for this feature.
 
-### Batch X — Track source modifications [OPEN]
+### Batch X — Track source modifications [DONE]
 
 Requested alongside Batch W: "I have added track modification changes in
 display designer, similar feature required here as well." Mirrors
 I-SDA's `isda.trackSourceModifications`/`isda.modificationTag`.
 
-**Reference implementation — I-SDA:**
-- `package.json`: `isda.trackSourceModifications` (`boolean`, default
-  `false`) — "when a keyword/field/record edit changes an existing
-  source line, comment out the original line instead of overwriting it
-  (so its history stays in the file), and tag the new/changed line with
-  the Modification tag (columns 81-90, past what the DDS compiler
-  reads)." Also `isda.modificationTag` (`string`, `maxLength: 10`) — the
-  default starting value for a **session-only** Properties-panel box
-  that can override the tag (and the on/off toggle itself) per-session
-  without touching the setting. Read both descriptions verbatim in that
-  file before implementing — the exact column range (81-90) and the
-  "session-only override, doesn't write back to the setting" behavior
-  are both load-bearing details, not incidental wording.
-- Find the actual write-path logic (grep I-SDA's writer/engine files for
-  `trackSourceModifications`/`modificationTag`) to see exactly how an
-  existing line gets commented out (what comment-marker convention DDS
-  source uses at column 1, presumably `*` per standard DDS comment
-  rules — verify against `docs/REQUIREMENTS.md`/IBM DDS reference rather
-  than assuming) versus how the tag gets written into columns 81-90 of
-  the new line.
+**[DONE] — Implemented as follows:**
 
-**What to do in I-RLU:** add the equivalent pair of settings (`i-rlu.`
-prefix), a session-only Properties-panel toggle + tag box (mirrors
-Batch B/G's existing P-field-style toggle components in
-`media/webviewClient.js` — reuse that shared component rather than
-building a new one), and thread the comment-out-instead-of-overwrite
-behavior through `src/prtfWriter.js` (`prtfEdits.js`'s mutations
-presumably need to carry enough information for the writer to know a
-line changed rather than was newly added — check how `prtfEdits.js`
-currently distinguishes those cases, if at all).
-
-**Note:** this interacts with `prtfWriter.js`'s existing continuation-
-character handling (see Batch M's bug fix — "writer emits wrong
-continuation character when wrapping mid-token") and Batch R's
-quote-aware tokenization fix; a commented-out original line still needs
-to round-trip correctly if the file is reopened, so re-run the full
-suite (particularly `prtfWriter.test.ts`) after implementing, not just
-whatever new tests this batch adds.
+- **Settings** (`package.json`): `i-rlu.trackSourceModifications`
+  (`boolean`, default `false`) and `i-rlu.modificationTag` (`string`,
+  `maxLength: 10`) — wording adapted from I-SDA's own two settings for
+  "Report Designer" instead of "Screen Designer". Same relationship as
+  I-SDA's: these are only ever the STARTING values a designer session's
+  own toolbar checkbox/tag box initialize from; toggling them in the
+  panel is session-only and never writes back to the setting.
+- **`src/prtfWriter.js`** gained `commentOutLine`, `buildModTag`,
+  `appendModTag`, and `applyModificationTracking` — ported from I-SDA's
+  `dspfWriter.js` (same function names/shapes, including its Task L52
+  fix: every changed/removed OLD line is commented out first, in its own
+  original order, THEN every changed/added NEW line is tagged and
+  appended, in its own new order — never interleaved, since an unrelated
+  commented-out line landing between a new line and its own continuation
+  would corrupt it). `LINE_WIDTH = 80` — I-RLU's own DDS source is the
+  same 80-column layout I-SDA's is, and `commentOutLine`'s column-7
+  convention was verified against I-RLU's OWN `regenerateSource` (the
+  `"      *" + text` comment format already used there — see the parser's
+  `col(line, 7) === "*"` check in `prtfParser.ts`) rather than assumed
+  identical to I-SDA's on faith.
+- **`src/extension.ts`**: `getModTrackingConfig()` reads the two
+  settings; a new shared choke point, `applyTrackedDocumentEdit(document,
+  model, modTracking)`, replaces what used to be three separate inline
+  "regenerate → build a WorkspaceEdit → apply" blocks (`applyEdit`,
+  `handleResolveReferencedField`, `handleBrowseReferencedField`) — it
+  captures `document.getText()` as the "before" state, regenerates the
+  "after" state via `regenerateSource`, and (when tracking is enabled)
+  wraps the pair with `applyModificationTracking` before building the
+  single `WorkspaceEdit`, so every document-writing path in this file
+  gets tracking for free rather than three separate copies of the same
+  logic. Per-panel session state (`modTrackingEnabled`/`modTrackingTag`)
+  starts at the global settings' values and from then on is owned by the
+  webview's own toolbar controls via a new `"setModTracking"` message
+  (session-only: no model mutation, no re-render — just updates what the
+  NEXT edit's `applyTrackedDocumentEdit` call will read). A
+  `modTrackingConfigSub` config-change subscription pushes updated global
+  defaults to the webview (`"modTrackingConfig"` message) if either
+  setting changes while a panel is open, mirroring I-SDA's
+  `sendModTrackingConfig`/Task L38 exactly.
+- **`src/webviewProtocol.ts`**: new `{ type: "setModTracking"; enabled;
+  tag }` message kind.
+- **`media/webviewClient.js`**: a "Track modifications" checkbox + a
+  10-char tag input in the toolbar, next to the Code for i badge — NOT
+  built as a P-field-style toggle (the original task description's own
+  suggestion), since a P-field toggle is for "literal value vs. `&FIELD`
+  reference" on a single DDS keyword parameter, a completely different
+  shape than an on/off tracking flag plus a free-text tag; a plain
+  checkbox + text input matches I-SDA's own toolbar controls for this
+  exact feature more closely. `state.modTracking`/
+  `state.modTrackingSessionTouched` track the session's own effective
+  values; touching either control posts `"setModTracking"` immediately
+  (same "changes apply immediately" convention as Batch F/G's own
+  record-/field-keyword panels) and marks the session as
+  self-owned, so a later `"modTrackingConfig"` push (e.g. a live
+  `settings.json` edit elsewhere) no longer overwrites what the person
+  already set for this session.
+- **Verified the "multi-line constant" interaction explicitly** (a
+  concern the task's own "Note" flagged, given Batch M/R's continuation-
+  character/tokenization history): a constant whose keyword area wraps
+  across a continuation line (mirroring `test/fixtures/sample-afpds.pf`'s
+  own `1 40'CUSTOMER STATEMENT' CDEFNT(920 *CURLIB) COLOR(*BLU)` entry)
+  was edited end-to-end through `parseSource` → mutate → `regenerateSource`
+  → `applyModificationTracking` → `parseSource` again, confirming: both
+  old physical lines get commented out (verbatim except column 7); both
+  new physical lines get tagged; the edited constant's own two NEW
+  physical lines stay adjacent to each other in the output (so the
+  continuation between them survives intact) even though the OLD-line
+  comments are grouped separately ahead of them, per the ported Task L52
+  fix; and the reparsed result reproduces the edited literal plus both
+  keywords (`CDEFNT`'s value, which spans the continuation join, and
+  `COLOR`, which lives entirely on the continuation line) correctly,
+  while an unrelated, untouched field elsewhere in the same record stays
+  untagged and unaffected.
+- Tests: `test/prtfWriter.test.ts` gained 12 new tests — unit coverage
+  for `commentOutLine`/`buildModTag`/`appendModTag` individually, prefix/
+  suffix trimming, the Task L52 grouping behavior (ported from I-SDA,
+  verified here rather than assumed to still hold after porting), the
+  blank-old-line-dropped-by-a-shrink case, the "sandwiched unchanged line
+  within an otherwise-differing middle" case, and the full multi-line-
+  constant round trip described above.
+- Full suite: 352 tests, all passing (340 prior + 12 new); `tsc --noEmit`
+  clean.
+- **Not attempted, out of scope per the task's own framing**: threading
+  "changed vs. newly added" information through `prtfEdits.ts`'s
+  mutations themselves — turned out to be unnecessary. Since
+  `applyTrackedDocumentEdit` compares the full before/after document text
+  (not per-edit-kind metadata), it needs no cooperation from
+  `prtfEdits.ts` at all; the same single choke point transparently covers
+  every edit kind, including ones added by future batches, with no per-
+  edit-kind wiring required.
 
 ### Batch Y — Add fields from database file via Code for i [OPEN]
 

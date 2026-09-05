@@ -141,6 +141,11 @@ body { font-family: var(--vscode-editor-font-family, monospace); color: var(--vs
 .ind-text { color: var(--vscode-descriptionForeground); font-style: italic; }
 .hint { font-size: 11px; color: var(--vscode-descriptionForeground); font-style: italic; }
 .hint.warning { color: var(--vscode-inputValidation-warningForeground, #b89500); font-style: normal; margin: 4px 0; }
+/* Batch X — "Track source modifications" toggle + tag box, in the
+   toolbar next to the Code for i badge (see renderToolbar in
+   media/webviewClient.js). */
+.mod-tracking-row { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; }
+.mod-tracking-row input[type="text"] { width: 90px; font-size: 11px; }
 /* Two-column workspace: report preview (left, grows/shrinks, scrolls
    both ways) + properties/keywords stack (right, fixed width, scrolls
    vertically only) — see the header comment above for why. */

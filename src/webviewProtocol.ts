@@ -86,5 +86,12 @@ export type WebviewMessage =
   // PrtfEngine.resolveReferenceTarget's already-saved library/file (same
   // source resolveReferencedField itself reads) rather than trusting
   // whatever's currently typed into the (possibly unsaved) webview inputs.
-  | { type: "browseReferencedField"; id: string };
+  | { type: "browseReferencedField"; id: string }
+  // Batch X — the Properties panel's session-only "Track modifications"
+  // checkbox + tag box (see media/webviewClient.js's renderModTrackingRow
+  // and extension.ts's per-session modTrackingEnabled/modTrackingTag).
+  // Sent whenever the checkbox or tag box changes, and once right after
+  // receiving "modTrackingConfig" on init so the host's own session state
+  // starts in sync with whatever the webview's controls actually show.
+  | { type: "setModTracking"; enabled: boolean; tag: string };
 

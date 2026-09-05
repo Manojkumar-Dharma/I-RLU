@@ -189,6 +189,33 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       Extension Development Host.** Full suite now 340 tests, all
       passing.
 
+- [x] **Batch X — Track source modifications.** Added
+      `i-rlu.trackSourceModifications`/`i-rlu.modificationTag` settings
+      and the comment-out-and-tag behavior they drive, mirroring I-SDA's
+      `isda.trackSourceModifications`/`isda.modificationTag` closely —
+      `src/prtfWriter.js` gained `commentOutLine`/`buildModTag`/
+      `appendModTag`/`applyModificationTracking` ported from I-SDA's
+      `dspfWriter.js` (same shapes, including its Task L52 grouping fix:
+      old lines commented out together, then new lines tagged together,
+      never interleaved, so a continuation chain between two new lines
+      is never split apart by an unrelated old-line comment landing
+      between them). `extension.ts` gained one shared choke point,
+      `applyTrackedDocumentEdit`, replacing three separate inline
+      regenerate-then-WorkspaceEdit blocks, so every document-writing
+      path (a plain edit, and both REF/REFFLD resolution handlers) gets
+      tracking for free. A toolbar checkbox + 10-char tag input
+      (`media/webviewClient.js`) drives per-session state via a new
+      `"setModTracking"` message — plain controls rather than the
+      P-field-style toggle component, since a P-field toggle is for
+      "literal vs. `&FIELD`" on one keyword parameter, a different shape
+      than an on/off flag plus a free-text tag. The multi-line-constant
+      interaction this task's own notes flagged (given Batch M/R's
+      continuation-character/tokenization history) was verified
+      explicitly with an end-to-end parse → edit → regenerate → track →
+      reparse test against a continuation-wrapped constant. See
+      `docs/TASKS.md` Batch X for the full writeup. Full suite now 352
+      tests, all passing.
+
 ## Next up
 
 As of the RLU screen-capture review (`docs/KEYWORD-INVENTORY.md`), the
@@ -196,8 +223,8 @@ remaining work is re-organized into the parallel-session task batches in
 `docs/TASKS.md` — each batch is scoped to be pickable up independently
 without stepping on another in-progress session. Batches W–Z were filed
 after comparing against I-SDA's own designer: configurable open-location
-setting (W, done), source-modification tracking (X), "add fields from
-database file" via Code for i (Y), and system-constant
+setting (W, done), source-modification tracking (X, done), "add fields
+from database file" via Code for i (Y), and system-constant
 (`DATE`/`TIME`/`USER`/`SYSNAME`/`PAGNBR`) design-time rendering + add-UI
 (Z) — see `docs/TASKS.md`'s Batch W/X/Y/Z detail sections for the full
 I-SDA-reference writeups. Summary of everything else (see TASKS.md for

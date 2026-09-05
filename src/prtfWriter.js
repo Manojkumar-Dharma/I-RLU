@@ -15,6 +15,8 @@
  * matters for round-trip safety.
  */
 
+const LINE_WIDTH = 80; // last column the DDS compiler itself ever reads
+
 function padRight(str, len) {
   str = str == null ? "" : String(str);
   return str.length >= len ? str.slice(0, len) : str + " ".repeat(len - str.length);
@@ -253,4 +255,141 @@ function upsertReffldKeyword(keywords, target) {
   return withoutReffld.concat([{ name: "REFFLD", params: "(" + params + ")", raw, sourceLineIndex: -1 }]);
 }
 
-module.exports = { regenerateSource, buildPositional, emitWithKeywords, keywordsToText, upsertReffldKeyword, tokenizeKeywordText };
+/**
+ * Batch X (docs/TASKS.md) — track source modifications, mirroring I-SDA's
+ * isda.trackSourceModifications/isda.modificationTag feature
+ * (I-SDA/src/dspfWriter.js). Ported rather than re-derived from scratch —
+ * same shape, same column conventions — since PRTF and DSPF DDS source
+ * share the exact same 80-column layout and comment convention this
+ * project's own regenerateSource already uses (`"      *" + text`, i.e.
+ * column 7 is `*`; see the "comment" case above).
+ */
+
+function commonPrefixLen(a, b) {
+  const n = Math.min(a.length, b.length);
+  let i = 0;
+  while (i < n && a[i] === b[i]) i++;
+  return i;
+}
+
+function commonSuffixLen(a, b, maxLen) {
+  const n = Math.min(a.length, b.length, maxLen == null ? Infinity : maxLen);
+  let i = 0;
+  while (i < n && a[a.length - 1 - i] === b[b.length - 1 - i]) i++;
+  return i;
+}
+
+/**
+ * Turns an existing line into a plain DDS comment — column 7 set to '*'
+ * (the same flag regenerateSource's own freshly-written comment lines
+ * use), every other column (sequence number/form type in 1-6, the line's
+ * own original content from 8 on) left exactly as it was, so the line
+ * reads as history rather than being reworded into a synthetic note. A
+ * too-short line is padded (never truncated) before columns 1-6/7 are
+ * addressed by index.
+ */
+function commentOutLine(line) {
+  let s = line == null ? "" : String(line);
+  if (s.length < 7) s = s + " ".repeat(7 - s.length);
+  return (s.slice(0, 6) + "*" + s.slice(7)).replace(/\s+$/, "");
+}
+
+/**
+ * Normalizes whatever the person typed into the properties panel's
+ * modification-tag box into the fixed 10-character payload that gets
+ * written to columns 81-90 — stripped of newlines (a tag is always one
+ * line) and capped at 10 characters; no particular format is imposed
+ * beyond that, matching I-SDA's own buildModTag.
+ */
+function buildModTag(rawTag) {
+  return (rawTag || "").replace(/[\r\n]/g, "").slice(0, 10);
+}
+
+/**
+ * Appends `tag` starting at column 81 — past LINE_WIDTH (80), i.e. past
+ * every column DDS's own compiler ever reads — padding the line out to
+ * exactly 80 columns first (never truncating real column 1-80 content)
+ * so the tag always lands in the same fixed column no matter how short
+ * the line's own compiled content is. A blank/empty tag is a no-op
+ * (nothing appended, line returned unchanged).
+ */
+function appendModTag(line, tag) {
+  if (!tag) return line;
+  let s = line == null ? "" : String(line);
+  if (s.length < LINE_WIDTH) s = s + " ".repeat(LINE_WIDTH - s.length);
+  return (s + tag).replace(/\s+$/, "");
+}
+
+/**
+ * Wraps a completed edit's (oldLines -> newLines) pair with modification
+ * tracking, when `options.enabled` is true: the common prefix/suffix
+ * between the two arrays is trimmed off first (untouched lines, which can
+ * dwarf the actually-edited range in a large file), then every position
+ * within the remaining differing range is classified:
+ *   - present in both, identical -> left alone, no tag
+ *   - present in both, different -> the OLD line is commented out
+ *     (commentOutLine) immediately before the NEW line, which itself
+ *     gets the inline tag (appendModTag)
+ *   - only in the new range (the edit grew the line count) -> tagged,
+ *     nothing to comment out
+ *   - only in the old range (the edit shrank the line count) -> kept,
+ *     commented out, rather than silently dropped — this is what keeps a
+ *     deletion's history in the file too, not just an in-place edit's
+ *   - a genuinely blank old line dropped by a shrinking edit is NOT
+ *     preserved as an empty comment — there is no content worth a history
+ *     entry for
+ * `options.enabled` false (the common case — feature is off) returns
+ * `newLines` completely unchanged, so this is always safe to call
+ * unconditionally from a single choke point.
+ *
+ * Ported from I-SDA's dspfWriter.js (same function name/shape), including
+ * its Task L52 fix: every changed/removed OLD line is commented out
+ * first, in its own original order, THEN every changed/added NEW line is
+ * tagged and appended, in its own new order — not interleaved — since DDS
+ * requires a continuation line ('-'/'+' in column 80) to immediately
+ * follow the line it continues, and an unrelated commented-out line
+ * landing between a new line and its own continuation would corrupt it.
+ */
+function applyModificationTracking(oldLines, newLines, options) {
+  options = options || {};
+  if (!options.enabled) return newLines;
+  const tag = buildModTag(options.tag);
+  if (!tag) return newLines;
+
+  const prefix = commonPrefixLen(oldLines, newLines);
+  const maxSuffix = Math.min(oldLines.length, newLines.length) - prefix;
+  const suffix = commonSuffixLen(oldLines, newLines, maxSuffix);
+
+  const oldMid = oldLines.slice(prefix, oldLines.length - suffix);
+  const newMid = newLines.slice(prefix, newLines.length - suffix);
+  if (oldMid.length === 0 && newMid.length === 0) return newLines;
+
+  const outMid = [];
+  const maxLen = Math.max(oldMid.length, newMid.length);
+  for (let i = 0; i < maxLen; i++) {
+    const oi = i < oldMid.length ? oldMid[i] : null;
+    const ni = i < newMid.length ? newMid[i] : null;
+    if (oi != null && oi !== ni && oi.trim() !== "") outMid.push(commentOutLine(oi));
+  }
+  for (let j = 0; j < maxLen; j++) {
+    const oj = j < oldMid.length ? oldMid[j] : null;
+    const nj = j < newMid.length ? newMid[j] : null;
+    if (nj == null) continue;
+    outMid.push(oj === nj ? nj : appendModTag(nj, tag));
+  }
+
+  return newLines.slice(0, prefix).concat(outMid, newLines.slice(newLines.length - suffix));
+}
+
+module.exports = {
+  regenerateSource,
+  buildPositional,
+  emitWithKeywords,
+  keywordsToText,
+  upsertReffldKeyword,
+  tokenizeKeywordText,
+  commentOutLine,
+  buildModTag,
+  appendModTag,
+  applyModificationTracking,
+};

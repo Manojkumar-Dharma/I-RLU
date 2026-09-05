@@ -54,6 +54,15 @@
     // start in the safe "not usable yet" state rather than assuming a
     // connection that hasn't been confirmed.
     codeForI: { installed: false, connected: false },
+    // Batch X — "Track source modifications" (mirrors I-SDA's
+    // isda.trackSourceModifications/isda.modificationTag). Starts at
+    // whatever the i-rlu.trackSourceModifications/i-rlu.modificationTag
+    // settings say (pushed via the "modTrackingConfig" message on
+    // "ready"), then becomes session-owned the moment the person touches
+    // the checkbox/tag box in the toolbar — see modTrackingSessionTouched
+    // below and the "modTrackingConfig" handler at the bottom of this file.
+    modTracking: { enabled: false, tag: "" },
+    modTrackingSessionTouched: false,
     selectedId: null, // id of the currently selected cell, if any
     placing: null, // null | "field" | "constant" — armed "click to place" mode
     pendingNew: null, // { kind, line, position } — set right after a placement click, before Save
@@ -233,6 +242,34 @@
         : "IBM i: Not connected";
     const badgeClass = state.codeForI.connected ? "hint" : "hint warning";
     toolbar.appendChild(el("span", { class: badgeClass, title: "Status of the Code for IBM i (halcyontechltd.code-for-ibmi) extension \u2014 needed for Resolve/Browse Referenced Field and Compile." }, [badgeText]));
+
+    // Batch X — "Track source modifications" toggle + tag box. Session-
+    // only: touching either control here marks
+    // state.modTrackingSessionTouched so a later "modTrackingConfig" push
+    // (e.g. a live settings.json edit) no longer overwrites what the
+    // person has already set for this designer session — see this file's
+    // own "modTrackingConfig" message handler below.
+    const modTrackingRow = el("div", { class: "mod-tracking-row" });
+    const modTrackingToggle = el("input", { type: "checkbox", id: "modTrackingToggle" });
+    if (state.modTracking.enabled) modTrackingToggle.setAttribute("checked", "checked");
+    const modTrackingLabel = el("label", { title: "When on, an edit that changes an existing source line comments out the original instead of overwriting it, and tags the new/changed line (columns 81-90) with the Modification tag below." }, [modTrackingToggle, " Track modifications"]);
+    const modTrackingTagInput = el("input", { type: "text", id: "modTrackingTagInput", placeholder: "Tag (10 chars)", maxlength: "10", autocomplete: "off", value: state.modTracking.tag || "" });
+    function postModTracking() {
+      vscode.postMessage({ type: "setModTracking", enabled: state.modTracking.enabled, tag: state.modTracking.tag });
+    }
+    modTrackingToggle.addEventListener("change", () => {
+      state.modTracking = { enabled: modTrackingToggle.checked, tag: state.modTracking.tag };
+      state.modTrackingSessionTouched = true;
+      postModTracking();
+    });
+    modTrackingTagInput.addEventListener("input", () => {
+      state.modTracking = { enabled: state.modTracking.enabled, tag: modTrackingTagInput.value.replace(/[\r\n]/g, "").slice(0, 10) };
+      state.modTrackingSessionTouched = true;
+      postModTracking();
+    });
+    modTrackingRow.appendChild(modTrackingLabel);
+    modTrackingRow.appendChild(modTrackingTagInput);
+    toolbar.appendChild(modTrackingRow);
 
     // Batch P — reorder buttons act on the currently-selected record
     // format; simple up/down (rather than drag-to-reorder) per this
@@ -2068,6 +2105,17 @@
     } else if (msg.type === "codeForIStatus") {
       state.codeForI = { installed: !!msg.installed, connected: !!msg.connected };
       render();
+    } else if (msg.type === "modTrackingConfig") {
+      // Batch X — only apply the pushed global defaults as long as the
+      // person hasn't touched the toolbar's own checkbox/tag box yet this
+      // session; once they have, this designer session owns those values
+      // and a settings.json edit made elsewhere shouldn't silently
+      // override what's already showing (same relationship I-SDA's own
+      // equivalent handler has with its two settings).
+      if (!state.modTrackingSessionTouched) {
+        state.modTracking = { enabled: !!msg.enabled, tag: msg.tag || "" };
+        render();
+      }
     }
   });
 
