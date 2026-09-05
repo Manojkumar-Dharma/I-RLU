@@ -88,6 +88,17 @@
           "enum": ["inch", "cm"],
           "default": "inch",
           "description": "Unit of measure to assume when converting LINE/BOX/BARCODE physical measurements to the preview's character grid. There is no UOM keyword in DDS source — UOM is set on the CRTPRTF command that compiles this file, so I-RLU can't detect it from the source alone. Set this to match what your shop actually passes to CRTPRTF (its own default is *INCH); if you don't know, leave this as inch."
+        },
+        "i-rlu.designerOpenColumn": {
+          "type": "string",
+          "enum": ["active", "beside", "newWindow"],
+          "enumDescriptions": [
+            "Open the designer full-width in the same tab, replacing the split (default) - less cramped, since you don't need the source visible at the same time.",
+            "Open the designer in a split column next to the DDS source - lets you see the source and the visual designer side by side.",
+            "Open the designer and automatically pop it out into its own window."
+          ],
+          "default": "active",
+          "description": "Where I-RLU opens the Report Designer, for \"I-RLU: Open Report Designer\" and when opening a .pf/.prtf/.rlu file via the editor selector."
         }
       }
     }

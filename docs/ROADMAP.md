@@ -168,17 +168,38 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       Extension Development Host.** Full suite now 336 tests, all
       passing.
 
+- [x] **Batch W — Configurable designer-open location.** Added
+      `i-rlu.designerOpenColumn` setting (`active`/`beside`/`newWindow`,
+      default `active`), mirroring I-SDA's `isda.designerOpenColumn`
+      almost exactly. New `src/designerOpenMode.ts` holds the pure
+      value-normalization logic (unit-tested, no `vscode` import — same
+      "pure logic module `extension.ts` calls into" split this project
+      already uses for `prtfCompileTarget.ts`); `extension.ts`'s
+      `getDesignerOpenMode()`/`openInDesigner()` do the actual
+      `vscode.workspace.getConfiguration`/`vscode.commands.executeCommand`
+      work and have no automated coverage (same documented gap as
+      Batches T/U/V). The existing `i-rlu.openDesigner` command (Batch T)
+      now delegates to `openInDesigner()` instead of always opening in
+      `vscode.ViewColumn.Active` with no way to configure that.
+      Deliberately does NOT apply to the `customEditors` `priority:
+      "option"` double-click-in-Explorer path — matches I-SDA's own
+      scope, which has the same limitation (no public VS Code API to
+      influence that path's column). See `docs/TASKS.md` Batch W for
+      the full writeup. **Please verify all three enum values in a real
+      Extension Development Host.** Full suite now 340 tests, all
+      passing.
+
 ## Next up
 
 As of the RLU screen-capture review (`docs/KEYWORD-INVENTORY.md`), the
 remaining work is re-organized into the parallel-session task batches in
 `docs/TASKS.md` — each batch is scoped to be pickable up independently
-without stepping on another in-progress session. Batches W–Z (open as of
-this writing) were filed after comparing against I-SDA's own designer:
-configurable open-location setting, source-modification tracking, "add
-fields from database file" via Code for i, and system-constant
+without stepping on another in-progress session. Batches W–Z were filed
+after comparing against I-SDA's own designer: configurable open-location
+setting (W, done), source-modification tracking (X), "add fields from
+database file" via Code for i (Y), and system-constant
 (`DATE`/`TIME`/`USER`/`SYSNAME`/`PAGNBR`) design-time rendering + add-UI
-— see `docs/TASKS.md`'s Batch W/X/Y/Z detail sections for the full
+(Z) — see `docs/TASKS.md`'s Batch W/X/Y/Z detail sections for the full
 I-SDA-reference writeups. Summary of everything else (see TASKS.md for
 full detail, acceptance criteria, and file-level ownership per batch):
 

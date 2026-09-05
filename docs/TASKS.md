@@ -98,7 +98,7 @@ vice versa.
 | T | ~~**Bug fix:** no right-click "open designer" option for `.pf`/`.prtf`/`.rlu` files~~ | n/a (packaging/activation, `package.json` + `src/extension.ts`) | **Done** | none |
 | U | ~~Hide Compile/Resolve/Browse-Referenced-Field UI when Code for i isn't connected + themed scrollbar on the properties column~~ | n/a (webview UI + activation, `src/extension.ts`, `media/webviewClient.js`, `src/buildWebviewTemplate.js`, `package.json`) | **Done** | none |
 | V | ~~**Bug fix:** properties/keywords column (`.side-col`) still didn't actually scroll despite `overflow-y: auto` (Batch S) and a themed scrollbar (Batch U) — the height-constraint chain from `body` down to `.side-col` had a gap at `#root`~~ | n/a (webview UI/CSS, `src/buildWebviewTemplate.js`) | **Done** | none |
-| W | Configurable designer-open location (`i-rlu.designerOpenColumn` setting, mirroring I-SDA's `isda.designerOpenColumn`) | n/a (tooling/UI, not a keyword) | **In progress** | none |
+| W | ~~Configurable designer-open location (`i-rlu.designerOpenColumn` setting, mirroring I-SDA's `isda.designerOpenColumn`)~~ | n/a (tooling/UI, not a keyword) | **Done** | none |
 | X | Track source modifications (comment-out-and-tag changed lines instead of overwriting, mirroring I-SDA's `isda.trackSourceModifications`/`isda.modificationTag`) | n/a (writer/UI, not a keyword) | Open | none |
 | Y | "Add fields from database file" — browse every field in a PF/LF via Code for i and add them as named fields (mirroring I-SDA's Task L14 `fetchDatabaseFileFields`), distinct from Batch H's single-field `REF`/`REFFLD` resolution | n/a (Code for i integration/UI, not a keyword) | Open | **H** (shares its Code-for-i-connection plumbing/UI conventions, doesn't block on it) |
 | Z | System-constant fields (`DATE`, `TIME`, `USER`, `SYSNAME`, `PAGNBR`) — parse as design-time placeholder text (mirroring I-SDA's `fieldDisplayText`) and add an "Add system constant" option alongside literal-text constants | `DATE`, `TIME`, `USER`, `SYSNAME`, `PAGNBR` (`DATE`/`TIME`/`PAGNBR` params already validated as constant-only per Batch A — see `docs/KEYWORD-INVENTORY.md` — but none of the five have placeholder-text rendering or an add-UI yet; `USER`/`SYSNAME` aren't in the inventory at all, so confirm their keyword syntax against the IBM DDS reference first) | Open | none |
@@ -1672,50 +1672,70 @@ Development Host** with a record format that has enough field/keyword
 panels to overflow the properties column, confirming both that it
 scrolls and that the themed scrollbar from Batch U appears as expected.
 
-### Batch W — Configurable designer-open location [OPEN]
+### Batch W — Configurable designer-open location ([DONE])
 
 Requested by Manojkumar-dharma: "open RLU design like how the display
 design in iSDA...also we have setting for the same." I-RLU already
-registers a custom editor (`i-rlu.designer` in `package.json`,
+registered a custom editor (`i-rlu.designer` in `package.json`,
 `PrtfDesignerProvider` in `src/extension.ts`) the same way I-SDA does, and
-already has an `i-rlu.openDesigner` command (added in Batch T) — what's
-missing is I-SDA's `isda.designerOpenColumn` setting and the column logic
-that reads it.
+already had an `i-rlu.openDesigner` command (added in Batch T) — the only
+thing missing was I-SDA's `isda.designerOpenColumn` setting and the
+column logic that reads it.
 
-**Reference implementation — I-SDA:**
-- `package.json`'s `contributes.configuration.properties`:
-  `isda.designerOpenColumn`, `type: "string"`, `enum: ["active", "beside",
-  "newWindow"]`, `default: "active"`. Read each option's
-  `enumDescriptions` entry in that file for the exact user-facing wording
-  to mirror.
-- `src/extension.ts`: `getDesignerOpenMode()` reads the setting;
-  `openInDesigner(uri, viewType)` (grep for it) maps `"beside"` to
-  `vscode.ViewColumn.Beside` and everything else to
-  `vscode.ViewColumn.Active`, calls `vscode.commands.executeCommand
-  ("vscode.openWith", uri, viewType, column)`, then for `"newWindow"`
-  additionally calls `workbench.action.moveEditorToNewWindow` afterward
-  (see that function's own doc comment for exactly why — operates on
-  "whichever editor is currently active", which the preceding
-  `openWith` call just made the designer).
+**What shipped, mirroring I-SDA's `src/extension.ts` almost exactly:**
+- `package.json`: `i-rlu.designerOpenColumn` (`type: "string"`,
+  `enum: ["active", "beside", "newWindow"]`, `default: "active"`),
+  reusing I-SDA's `enumDescriptions` wording verbatim except substituting
+  "Report Designer" for "Screen/Menu Designer".
+- `src/designerOpenMode.ts` (new file): `DesignerOpenMode` type +
+  `normalizeDesignerOpenMode(value: string | undefined)`, the pure
+  fallback-to-`"active"` logic, split out of `extension.ts` specifically
+  so it's unit-testable without a real VS Code host — same
+  "pure logic module `extension.ts` calls into" pattern this project
+  already uses for `prtfCompileTarget.ts` and `prtfEdits.ts`. Covered by
+  `test/designerOpenMode.test.ts` (4 tests: both non-default values,
+  explicit `"active"`, `undefined` — setting absent — and an
+  unrecognized/malformed string).
+- `src/extension.ts`: `getDesignerOpenMode()` reads
+  `vscode.workspace.getConfiguration("i-rlu").get("designerOpenColumn")`
+  and defers to `normalizeDesignerOpenMode`; `openInDesigner(uri,
+  viewType)` maps `"beside"` to `vscode.ViewColumn.Beside` and everything
+  else to `vscode.ViewColumn.Active`, calls
+  `vscode.commands.executeCommand("vscode.openWith", uri, viewType,
+  column)`, then for `"newWindow"` additionally calls
+  `workbench.action.moveEditorToNewWindow` afterward — identical
+  approach to I-SDA's own function of the same name, including its doc
+  comment's reasoning for why the `newWindow` follow-up call is safe
+  (operates on "whichever editor is currently active", which the
+  preceding `openWith` call just made the designer). The existing
+  `i-rlu.openDesigner` command handler (Batch T) now delegates to
+  `openInDesigner()` instead of a plain, column-less
+  `vscode.commands.executeCommand("vscode.openWith", ...)` call.
 
-**What to do in I-RLU:** add an `i-rlu.designerOpenColumn` setting
-(same three enum values; reuse I-SDA's `enumDescriptions` wording,
-substituting "Report Designer" for "Screen/Menu Designer") to
-`package.json`, add the equivalent `getDesignerOpenMode()`/column logic,
-and thread it through the existing `i-rlu.openDesigner` command handler
-in `src/extension.ts` (currently a plain `vscode.commands.executeCommand
-("vscode.openWith", target, PrtfDesignerProvider.viewType)` with no
-column argument — see that command's registration). Also apply it
-wherever a `.prtf`/`.pf`/`.rlu` file might be opened via the
-`customEditors` `priority: "option"` selector path (double-click in
-Explorer), not just the explicit command, if VS Code's API allows
-influencing that (I-SDA's own comment on `supportsMultipleEditorsPerDocument:
-false` is relevant background — check if that applies here too).
+**Deliberately NOT done — left for a future batch if it turns out to
+matter:** applying this setting to the `customEditors` `priority:
+"option"` selector path (double-click in Explorer / VS Code's own
+"Reopen Editor With..." picker) rather than only the explicit
+`i-rlu.openDesigner` command. I-SDA itself doesn't do this either — its
+`openInDesigner`/`getDesignerOpenMode` pair is likewise only wired
+through its own explicit `dspfDesigner.openPreview`-style commands, not
+through VS Code's own editor-selector affordance — and there's no
+public VS Code API to influence which column a `CustomEditorProvider`
+opens into when VS Code itself drives that path rather than an
+extension-issued `vscode.openWith` call. Matching I-SDA's own scope
+here rather than inventing unproven API usage beyond what its reference
+implementation actually does.
 
-**Verification:** no automated test coverage expected (same documented
-gap as Batch T/U — no `vscode`-module mock in this project); manually
-verify each of the three enum values in a real Extension Development
-Host, same as I-SDA's own manual-verification note for this feature.
+**Verification:** `npx tsc --noEmit` clean; full suite 340/340 passing
+(the pre-existing 336 plus 4 new in `test/designerOpenMode.test.ts`);
+`vsce package` validates the new `package.json` configuration schema
+with no warnings. **`extension.ts`'s own `getDesignerOpenMode()`/
+`openInDesigner()` wiring (the parts that actually call the `vscode`
+API) has no automated coverage** — same documented gap as Batches
+T/U/V, this project has no `vscode`-module mock — only the pure
+normalization logic in `designerOpenMode.ts` is unit-tested. **Please
+verify all three enum values in a real Extension Development Host**,
+same as I-SDA's own manual-verification note for this feature.
 
 ### Batch X — Track source modifications [OPEN]
 

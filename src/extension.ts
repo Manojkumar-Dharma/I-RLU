@@ -10,6 +10,7 @@ import {
   validateIbmIObjectName,
   buildCrtprtfCommand,
 } from "./prtfCompileTarget";
+import { DesignerOpenMode, normalizeDesignerOpenMode } from "./designerOpenMode";
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { regenerateSource, upsertReffldKeyword } = require("./prtfWriter.js");
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -669,6 +670,42 @@ function watchCodeForIConnectedContext(context: vscode.ExtensionContext): void {
   context.subscriptions.push({ dispose: () => clearInterval(poll) }, extChangeSub);
 }
 
+/**
+ * Batch W — where "I-RLU: Open Report Designer" (and opening a
+ * .pf/.prtf/.rlu file via the editor selector) puts the designer.
+ * The actual value-normalization decision lives in designerOpenMode.ts
+ * (unit-testable there without a real VS Code host); this just reads
+ * the setting and defers to it.
+ */
+function getDesignerOpenMode(): DesignerOpenMode {
+  return normalizeDesignerOpenMode(
+    vscode.workspace.getConfiguration("i-rlu").get<string>("designerOpenColumn")
+  );
+}
+
+/**
+ * Opens the visual designer via the standard "open with a specific
+ * custom editor" command (same `vscode.openWith` approach the previous,
+ * column-less version of this command already used — see
+ * PrtfDesignerProvider for why a real CustomTextEditorProvider is used
+ * at all rather than a plain WebviewPanel). Where exactly it opens is
+ * governed by getDesignerOpenMode() above. Mirrors I-SDA's identical
+ * openInDesigner (see that project's src/extension.ts).
+ */
+async function openInDesigner(uri: vscode.Uri, viewType: string): Promise<void> {
+  const mode = getDesignerOpenMode();
+  const column = mode === "beside" ? vscode.ViewColumn.Beside : vscode.ViewColumn.Active;
+  await vscode.commands.executeCommand("vscode.openWith", uri, viewType, column);
+  if (mode === "newWindow") {
+    // Operates on whichever editor is currently active - the openWith
+    // above just made the designer webview that editor, so this pops IT
+    // out (not the original source tab, which is left behind in the
+    // original window). Identical to I-SDA's own openInDesigner, see
+    // that function's comment for the same reasoning.
+    await vscode.commands.executeCommand("workbench.action.moveEditorToNewWindow");
+  }
+}
+
 export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(PrtfDesignerProvider.register(context));
   watchCodeForIConnectedContext(context);
@@ -685,14 +722,14 @@ export function activate(context: vscode.ExtensionContext): void {
     // and there was no menu contribution wiring it into a right-click
     // menu in the first place (see package.json), so in practice it was
     // reachable only via the Command Palette.
+    //
+    // Batch W: previously always opened in vscode.ViewColumn.Active with
+    // no way to configure that — now delegates to openInDesigner(), which
+    // reads the i-rlu.designerOpenColumn setting.
     vscode.commands.registerCommand("i-rlu.openDesigner", async (uri?: vscode.Uri) => {
       const target = uri ?? vscode.window.activeTextEditor?.document.uri;
       if (!target) return;
-      await vscode.commands.executeCommand(
-        "vscode.openWith",
-        target,
-        PrtfDesignerProvider.viewType
-      );
+      await openInDesigner(target, PrtfDesignerProvider.viewType);
     })
   );
   context.subscriptions.push(vscode.commands.registerCommand("i-rlu.compilePrtf", () => compilePrtf(context)));
