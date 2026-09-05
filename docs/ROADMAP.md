@@ -142,11 +142,31 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       button like I-SDA's, so it needed a VS Code-wide toggle instead of
       a per-panel one). Also gave the properties/keywords column an
       explicit, VS Code-themed scrollbar (`scrollbar-width`/-`color` +
-      `::-webkit-scrollbar` rules) — it already scrolled (Batch S), but
-      the default was thin enough to miss. See `docs/TASKS.md` Batch U
-      for the full writeup. No automated test coverage for the new
-      behavior itself (same documented gap as Batch T); full suite still
-      334 tests, all passing.
+      `::-webkit-scrollbar` rules), believing at the time it already
+      scrolled (Batch S) and just needed to be more visible — **this
+      premise turned out to be wrong, see Batch V below.** See
+      `docs/TASKS.md` Batch U for the full writeup. No automated test
+      coverage for the new behavior itself (same documented gap as Batch
+      T); full suite still 334 tests, all passing.
+
+- [x] **Batch V — Bug fix: properties/keywords column still didn't
+      scroll.** Reported after installing the Batch U build. Root cause
+      was one level up from where Batch S/U looked: `#root` (the div
+      `render()` in `media/webviewClient.js` actually populates) had no
+      CSS sizing rule at all, so as a flex child of `body` it sized to
+      its own content instead of being capped at `body`'s fixed
+      `100vh` — breaking the height-constraint chain `.side-col`'s
+      `overflow-y: auto` depends on before it ever reached `.side-col`.
+      Added `#root { display: flex; flex-direction: column; flex: 1;
+      min-height: 0; overflow: hidden; }`. See `docs/TASKS.md` Batch V
+      for the full root-cause writeup, including why I-SDA's own
+      similar-looking column shell never hit this (no intermediate
+      `#root`-equivalent wrapper there). No real-browser verification
+      was possible in the fixing session (sandbox has no usable headless
+      browser); `test/webviewLayout.test.ts` added instead to lock in the
+      specific CSS rules the fix depends on. **Please verify in a real
+      Extension Development Host.** Full suite now 336 tests, all
+      passing.
 
 ## Next up
 

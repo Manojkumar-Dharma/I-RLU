@@ -97,6 +97,7 @@ vice versa.
 | S | ~~**Bug fix:** wide record formats (e.g. 130/132-position) pushed the properties/keywords panels below the fold instead of alongside the report~~ | n/a (webview UI/CSS, `media/webviewClient.js` + `src/buildWebviewTemplate.js`) | **Done** | none |
 | T | ~~**Bug fix:** no right-click "open designer" option for `.pf`/`.prtf`/`.rlu` files~~ | n/a (packaging/activation, `package.json` + `src/extension.ts`) | **Done** | none |
 | U | ~~Hide Compile/Resolve/Browse-Referenced-Field UI when Code for i isn't connected + themed scrollbar on the properties column~~ | n/a (webview UI + activation, `src/extension.ts`, `media/webviewClient.js`, `src/buildWebviewTemplate.js`, `package.json`) | **Done** | none |
+| V | ~~**Bug fix:** properties/keywords column (`.side-col`) still didn't actually scroll despite `overflow-y: auto` (Batch S) and a themed scrollbar (Batch U) — the height-constraint chain from `body` down to `.side-col` had a gap at `#root`~~ | n/a (webview UI/CSS, `src/buildWebviewTemplate.js`) | **Done** | none |
 
 ## Batch detail
 
@@ -1567,11 +1568,11 @@ command is actually surfaced.
 
 **Part 3 — themed scrollbar on `.side-col`:** the properties/keywords
 column (`.side-col` in `src/buildWebviewTemplate.js`) already had
-`overflow-y: auto` (from Batch S) and did already scroll — but VS Code's
-default webview scrollbar renders thin/near-invisible against a themed
-background, so with several stacked panels (field properties + every
-keyword section) it was easy to miss that the column scrolls at all
-rather than being cut off. Added explicit `scrollbar-width: thin` /
+`overflow-y: auto` (from Batch S) and *appeared* to already scroll from
+reading the CSS — but see Batch V below: it turned out `.side-col` never
+actually scrolled at all in a real webview, so this part's premise was
+wrong and the visibility styling below, while harmless, wasn't fixing the
+reported problem. Added explicit `scrollbar-width: thin` /
 `scrollbar-color` (Firefox-style) plus `::-webkit-scrollbar`/`-track`/
 `-thumb`/`-thumb:hover` rules (Chromium, which is what VS Code's webview
 actually uses) styled from the same `--vscode-scrollbarSlider-*` theme
@@ -1603,6 +1604,69 @@ Resolve buttons appear only once connected, `i-rlu.compilePrtf` drops out
 of the Command Palette while disconnected, and the properties column's
 scrollbar is visibly themed and doesn't jump content sideways when it
 appears.
+
+### Batch V — Bug fix: `.side-col` still didn't scroll ([DONE])
+
+Reported by Manojkumar-dharma after installing the Batch U build: the
+properties/keywords column still had no visible or working vertical
+scroll, even though Batch S added `overflow-y: auto` to `.side-col` and
+Batch U layered a themed, always-visible scrollbar on top of it. Both of
+those batches read the CSS and reasoned it should scroll; neither was
+verified against a real rendered webview, so both missed that it didn't.
+
+**Root cause:** `render()` in `media/webviewClient.js` does
+`document.getElementById("root")` and appends the toolbar and
+`.workspace` as children of that literal `#root` div from the HTML shell
+in `src/buildWebviewTemplate.js` — not directly to `body`. `body` already
+had a correct, fixed `height: 100vh` and `display: flex; flex-direction:
+column`, but `#root` (`body`'s only child, and therefore its only flex
+item) had **no CSS rule at all**. A flex item with no rules defaults to
+`flex-basis: auto` (size to content) and `flex-grow: 0` (don't fill
+remaining space), so `#root` sized itself to the full height of
+whatever `.workspace`/`.side-col` needed to show ALL their content —
+never shorter than its content in the first place. `body`'s `overflow:
+hidden` then silently clipped whatever of `#root` fell outside the
+100vh viewport, with nothing left to scroll it into view. `.side-col`'s
+own `overflow-y: auto` was therefore never wrong, and never had a chance
+to engage either — its box was never smaller than its content, because
+nothing above it in the ancestor chain was actually bounded.
+
+This is exactly why I-SDA's near-identical two/three-column shell never
+hit this: I-SDA's columns are direct grid-item children of `body`
+(`body { display: grid; grid-template-columns: ...; }`, see that
+project's `src/buildWebviewTemplate.js`) — no intermediate wrapper div to
+forget to size. I-RLU's `#root` wrapper (needed because `render()`
+rebuilds it via `innerHTML = ""` on every state change, rather than
+diffing) is the one extra link Batch S/U's "constrain the column's own
+height, then overflow-y:auto on it actually works" fix never accounted
+for.
+
+**Fix:** added `#root { display: flex; flex-direction: column; flex: 1;
+min-height: 0; overflow: hidden; }` in `src/buildWebviewTemplate.js`.
+`flex: 1` lets `#root` actually fill the remaining space in `body` (its
+only sibling being nothing — it's `body`'s only child); `min-height: 0`
+overrides flex's default content-based minimum, the same escape hatch
+`.workspace` already relies on one level down, so the bound genuinely
+reaches all the way down to `.side-col` this time.
+
+**Verification:** `npx tsc --noEmit` clean; full suite 336/336 passing
+(the pre-existing 334 plus 2 new in `test/webviewLayout.test.ts`).
+**No real-browser verification was possible in the session that made
+this fix** — same sandbox limitation as elsewhere in this project's test
+suite (no `vscode`-module mock, and this environment additionally has no
+usable headless browser: `chromium-browser` is a transitional snap
+package here and `snapd` isn't installable in this sandbox either). The
+new `test/webviewLayout.test.ts` locks in the specific CSS rules the fix
+depends on (`#root`'s `flex: 1`/`min-height: 0`/`display: flex`, and that
+`min-height: 0` is present on every link in the `#root` →
+`.workspace` → `.side-col` chain) so a future "simplification" that
+silently drops one of them fails a test instead of shipping a third
+silent regression of this same bug — but this is a CSS-string check, not
+a real layout assertion, precisely because no layout engine was
+available to write one against. **Please verify in a real Extension
+Development Host** with a record format that has enough field/keyword
+panels to overflow the properties column, confirming both that it
+scrolls and that the themed scrollbar from Batch U appears as expected.
 
 ## Adding a new batch
 

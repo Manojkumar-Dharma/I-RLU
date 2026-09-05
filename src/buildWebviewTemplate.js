@@ -112,6 +112,28 @@ const css = `
    for its own aside/main/.props-panel three-column shell. */
 html, body { height: 100vh; overflow: hidden; }
 body { font-family: var(--vscode-editor-font-family, monospace); color: var(--vscode-editor-foreground); background: var(--vscode-editor-background); margin: 0; padding: 0; display: flex; flex-direction: column; }
+/* Bug fix: render() in media/webviewClient.js appends the toolbar AND
+   .workspace as children of the literal #root div from the HTML shell
+   below (not directly to body), so #root — not body — is the actual flex
+   item that needs to fill the fixed 100vh and hand a bounded height down
+   to .workspace/.side-col. Unlike I-SDA (whose three columns are direct
+   grid-item children of body, so body's own height:100vh/display:grid
+   already bounds them — see that project's src/buildWebviewTemplate.js),
+   #root here had no sizing rule at all: as a plain flex child of body with
+   default flex-basis:auto and no min-height:0, it sized to its OWN
+   content's height instead of filling/being capped by body's 100vh, so
+   everything below it (including .side-col) grew to full content height
+   too. That's why .side-col's overflow-y:auto (added when .workspace/
+   .canvas-col/.side-col were introduced) never actually engaged — its box
+   was never shorter than its content in the first place; the excess was
+   silently clipped by body's overflow:hidden with nothing to scroll it
+   into view, which is indistinguishable from "no scrollbar" to the user.
+   #root must itself be a height-bounded flex container (flex:1 to fill
+   the remaining space after nothing else — it's body's only child —
+   plus min-height:0 to override flex's default content-based minimum,
+   same escape hatch already used one level down on .workspace) so the
+   height constraint actually reaches .side-col. */
+#root { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
 .toolbar { display: flex; align-items: center; gap: 8px; padding: 8px; font-size: 12px; flex-wrap: wrap; flex-shrink: 0; border-bottom: 1px solid var(--vscode-panel-border); }
 .indicators { display: inline-flex; gap: 8px; flex-wrap: wrap; }
 .indicators-wrap { display: inline-flex; align-items: center; gap: 4px; }
