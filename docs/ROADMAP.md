@@ -189,6 +189,40 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       Extension Development Host.** Full suite now 340 tests, all
       passing.
 
+- [x] **Batch Z — System-constant fields (`DATE`/`TIME`/`PAGNBR`) —
+      done.** Design-time placeholder text for constants defined purely
+      via keyword (no literal) — mirrors I-SDA's `fieldDisplayText`:
+      `DATE` → current date, `TIME` → current time, `PAGNBR` → `"1"` (see
+      `src/prtfLayout.js`'s `resolveConstantPlaceholder`), wired into both
+      the rendered text AND the display length (previously a
+      system-constant field always measured `entry.length || 1`, wrong
+      once real placeholder text is shown instead of blank). New
+      "Constant type" selector on the "+ Constant" properties panel
+      (`media/webviewClient.js`) lets a system constant be added directly,
+      alongside the existing literal-text flow — a new optional
+      `systemConstantKeyword` field on the `addConstant` edit kind
+      (`src/webviewProtocol.ts`/`src/prtfEdits.ts`), rather than a whole
+      new edit kind, following this codebase's established
+      "extend, don't duplicate" pattern for `addField`/`addConstant`.
+      **Correction found during this batch** (see
+      `docs/REQUIREMENTS.md` §10 for the full writeup): the task as
+      originally filed named `USER`/`SYSNAME` alongside `DATE`/`TIME`/
+      `PAGNBR`, mirroring I-SDA's own five-keyword `fieldDisplayText` —
+      but verification against IBM's DDS Reference: Printer Files found
+      `USER`/`SYSNAME` aren't valid printer-file keywords at all
+      (display-file only). Deliberately not implemented; same
+      honesty-over-silent-scope-drop treatment as the earlier fictitious
+      `DRAW` keyword correction. **Bug fixed along the way:** saving an
+      existing constant's properties panel with the Text field left blank
+      used to write `literal: ""` unconditionally (`updateConstant`),
+      which for a system-constant field turned "no literal" into an
+      explicit empty one — regenerating a spurious `''` token next to the
+      keyword on next write-back. Both `updateConstant` and
+      `addConstant` now treat an empty Text field as "no literal"
+      (`undefined`), matching what the parser itself produces for a
+      freshly-parsed system-constant. 7 new tests
+      (`test/prtfBatchZ.test.ts`); full suite now 347 tests, all passing.
+
 ## Next up
 
 As of the RLU screen-capture review (`docs/KEYWORD-INVENTORY.md`), the
@@ -198,10 +232,12 @@ without stepping on another in-progress session. Batches W–Z were filed
 after comparing against I-SDA's own designer: configurable open-location
 setting (W, done), source-modification tracking (X), "add fields from
 database file" via Code for i (Y), and system-constant
-(`DATE`/`TIME`/`USER`/`SYSNAME`/`PAGNBR`) design-time rendering + add-UI
-(Z) — see `docs/TASKS.md`'s Batch W/X/Y/Z detail sections for the full
-I-SDA-reference writeups. Summary of everything else (see TASKS.md for
-full detail, acceptance criteria, and file-level ownership per batch):
+(`DATE`/`TIME`/`PAGNBR`) design-time rendering + add-UI (Z, done — see
+`docs/REQUIREMENTS.md` §10 for why `USER`/`SYSNAME` were dropped from the
+original five-keyword scope) — see `docs/TASKS.md`'s Batch W/X/Y/Z detail
+sections for the full I-SDA-reference writeups. Summary of everything else
+(see TASKS.md for full detail, acceptance criteria, and file-level
+ownership per batch):
 
 - [x] **Batch A — general properties-panel keywords — done.**
       `EDTCDE`/`EDTWRD`/`DATFMT`/`DATSEP`/`TIMFMT`/`TIMSEP`/`DFT`
