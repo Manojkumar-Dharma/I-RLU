@@ -171,7 +171,7 @@ export function parseSource(text: string): ParsedSource {
 
     const commentFlag = col(line, 7);
     if (commentFlag === "*") {
-      const entry = { kind: "comment" as const, sourceLineIndex: idx, text: line.slice(7) };
+      const entry = { kind: "comment" as const, sourceLineIndex: idx, text: line.slice(7), formType: col(line, 6) };
       sequence.push(entry);
       continue;
     }
@@ -189,6 +189,7 @@ export function parseSource(text: string): ParsedSource {
         conditions,
         keywords: [],
         fields: [],
+        formType: col(line, 6),
       };
       records.push(record);
       currentRecord = record;
@@ -229,7 +230,15 @@ export function parseSource(text: string): ParsedSource {
       // File-level keyword line (no record format opened yet).
       target = fileLevel.keywords;
       entry = fileLevel; // not pushed to sequence more than once; see below
-      if (sequence.indexOf(fileLevel) === -1) sequence.push(fileLevel);
+      if (sequence.indexOf(fileLevel) === -1) {
+        // Batch AA — capture the form-type char from the FIRST file-level
+        // line only: every file-level line's keywords get merged into
+        // this one entry (and one regenerated physical block) regardless
+        // of how many original lines contributed, so there's no single
+        // "this entry's own line" beyond the first to prefer.
+        fileLevel.formType = col(line, 6);
+        sequence.push(fileLevel);
+      }
     } else if (name) {
       const field: FieldEntry = {
         kind: "field",
@@ -245,6 +254,7 @@ export function parseSource(text: string): ParsedSource {
         position,
         conditions,
         keywords: [],
+        formType: col(line, 6),
       };
       currentRecord.fields.push(field);
       sequence.push(field);
@@ -259,6 +269,7 @@ export function parseSource(text: string): ParsedSource {
         position,
         conditions,
         keywords: [],
+        formType: col(line, 6),
       };
       currentRecord.fields.push(constant);
       sequence.push(constant);

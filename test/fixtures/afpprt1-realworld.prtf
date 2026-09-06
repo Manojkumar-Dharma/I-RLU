@@ -1,0 +1,71 @@
+     A*==========================================================
+     A* AFPPRT1 - SAMPLE AFPDS PRINTER FILE (DDS)
+     A* Customer Master Listing (AFPDS) - demonstrates BOX, LINE
+     A* and BARCODE, plus DATE, TIME, PAGNBR, EDTCDE, EDTWRD,
+     A* DATFMT, DATSEP, UNDERLINE, FONT, CHRSIZ and POSITION.
+     A*
+     A* IMPORTANT - HDRREC uses BOX and LINE. Per IBM DDS rules,
+     A* any record format that carries BOX, LINE, ENDPAGE, GDF,
+     A* OVERLAY or PAGSEG MUST position every field in that record
+     A* with the POSITION keyword (down across), in inches/cm as
+     A* set by the CRTPRTF UOM parameter - positions 39-44 (line/
+     A* column) must stay blank on those fields, and SPACEA/SPACEB/
+     A* SKIPA/SKIPB cannot be combined with BOX or LINE on the same
+     A* record. Other records in this file (CHDREC, DTLREC, TOTREC)
+     A* do not use BOX/LINE, so they use ordinary line/column or
+     A* SPACEB-driven placement instead.
+     A*
+     A* Create with (UOM(*INCH) governs the BOX/LINE/POSITION units
+     A* used below):
+     A*   CRTPRTF FILE(MYLIB/AFPPRT1) SRCFILE(MYLIB/QDDSSRC) +
+     A*           SRCMBR(AFPPRT1) DEVTYPE(*AFPDS) +
+     A*           PAGESIZE(66 132) UOM(*INCH)
+     A* (The target printer device description needs AFP(*YES)
+     A* for BOX/LINE/BARCODE to render; otherwise Host Print
+     A* Transform (HPT) or PSF renders the AFPDS spooled file.)
+     A*==========================================================
+     A*
+     A* FILE-LEVEL KEYWORDS
+     A                                      INDARA
+     A*
+     A* HEADER RECORD FORMAT - boxed banner with a separator LINE.
+     A* All fields use POSITION(down across) in inches because this
+     A* record carries BOX and LINE.
+     A          R HDRREC                    BOX(0.30 0.30 1.50 8.00 0.02)      -
+     A                                      LINE(*HORIZONTAL 0.90 0.30 7.70    -
+     A                                      0.015)
+     A                                      'ABC MANUFACTURING CO.'            -
+     A                                      POSITION(0.45 0.50)
+     A                                      'CUSTOMER MASTER LISTING (AFPDS)'  -
+     A                                      POSITION(0.65 0.50)
+     A                                      DATE EDTCDE(Y) POSITION(0.45 6.50)
+     A                                      TIME POSITION(0.65 6.50)
+     A                                      'PAGE' POSITION(1.10 6.50)
+     A                                      PAGNBR EDTCDE(Z) POSITION(1.10     -
+     A                                      7.00)
+     A*
+     A* COLUMN-HEADING RECORD FORMAT (plain text, below the box)
+     A          R CHDREC                    SKIPB(11)
+     A                                     5'CUST NO' UNDERLINE
+     A                                    15'CUSTOMER NAME' UNDERLINE
+     A                                    42'ORDER DATE' UNDERLINE
+     A                                    58'AMOUNT DUE' UNDERLINE
+     A                                    75'ITEM BARCODE' UNDERLINE
+     A*
+     A* DETAIL RECORD FORMAT - includes the BARCODE field.
+     A* FONT(011) selects a 10-pitch Courier font for the record;
+     A* BARCODE may not be combined with DATE, EDTCDE, EDTWRD,
+     A* FONT, HIGHLIGHT, PAGNBR, TIME, UNDERLINE, CHRSIZ or CHRID
+     A* on the SAME field, so CUSTBC below carries no other
+     A* keywords.
+     A          R DTLREC                    SPACEB(1) FONT(011)
+     A            CUSTNO         6S 0      5
+     A            CUSTNAME      25A       +2
+     A            ORDDATE         L       +2DATFMT(*ISO) DATSEP('-')
+     A            AMOUNT         7S 2     +3EDTWRD('  ,   .  CR')
+     A            CUSTBC        12A       +3BARCODE(CODE3OF9 1 *NOHRI)
+     A*
+     A* TOTAL RECORD FORMAT
+     A          R TOTREC                    SKIPB(2)
+     A                                    30'TOTAL AMOUNT DUE . . . . :'
+     A            TOTAMT         9S 2     +1EDTCDE(J) CHRSIZ(1.5 1.0)

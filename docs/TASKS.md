@@ -102,8 +102,9 @@ vice versa.
 | X | ~~Track source modifications (comment-out-and-tag changed lines instead of overwriting, mirroring I-SDA's `isda.trackSourceModifications`/`isda.modificationTag`)~~ | n/a (writer/UI, not a keyword) | **Done** | none |
 | Y | ~~"Add fields from database file" — browse every field in a PF/LF via Code for i and add them as named fields (mirroring I-SDA's Task L14 `fetchDatabaseFileFields`), distinct from Batch H's single-field `REF`/`REFFLD` resolution~~ | n/a (Code for i integration/UI, not a keyword) | **Done** | **H** (shared its Code-for-i-connection plumbing/UI conventions, didn't block on it) |
 | Z | ~~System-constant fields (`DATE`, `TIME`, `USER`, `SYSNAME`, `PAGNBR`) — parse as design-time placeholder text (mirroring I-SDA's `fieldDisplayText`) and add an "Add system constant" option alongside literal-text constants~~ | `DATE`, `TIME`, `PAGNBR` (`USER`/`SYSNAME` dropped — see detail section: verified against IBM's DDS reference, neither is a valid printer-file keyword) | **Done** | none |
-| AA | **Bug fix:** `regenerateSource` unconditionally blanks out each line's optional column-6 form-type marker (`A`) instead of preserving whatever was already there, and rebuilds every line fresh on every edit regardless of whether it changed — the two combine to make Batch X's "Track source modifications" flag nearly the entire file as changed from a single one-field edit, on any source written in the (very common) `A`-in-column-6 style | n/a (writer correctness, `src/prtfWriter.js`) | Open | **X** (this is specifically what makes X's diff-based tracking unreliable on this style of source — fix this first, or re-verify X against it afterward) |
+| AA | ~~**Bug fix:** `regenerateSource` unconditionally blanks out each line's optional column-6 form-type marker (`A`) instead of preserving whatever was already there, and rebuilds every line fresh on every edit regardless of whether it changed — the two combine to make Batch X's "Track source modifications" flag nearly the entire file as changed from a single one-field edit, on any source written in the (very common) `A`-in-column-6 style~~ | n/a (writer correctness, `src/prtfWriter.js`) | **Done** | **X** (was specifically what made X's diff-based tracking unreliable on this style of source — re-verified against it as part of this batch) |
 | BB | **Bug fix:** a constant's quoted literal is only recognized when it's the *first* token in the keyword area (`prtfParser.ts`'s literal-extraction regex is anchored with `^`) — a literal preceded by another keyword (e.g. `SPACEB(1) 'CUSTOMER MASTER LISTING'`, a common real-world pattern) parses with `entry.literal` left `undefined`, so the Properties panel shows blank Text for a constant that has real display text | n/a (parser correctness, `src/prtfParser.ts`) | Open | none |
+| DD | **Bug fix:** a field's `+n` relative-position notation (DDS positions 42-44, e.g. `+2` = "2 spaces after the previous field ends" — see IBM's own RELPOS keyword reference) is read by `parseInt` as a plain absolute number, silently discarding the "this is relative, not absolute" semantic — round-tripping such a field through I-RLU relocates it to a fixed, usually-wrong absolute column | n/a (parser/model/writer correctness, `src/prtfParser.ts`/`src/prtfModel.ts`/`src/prtfWriter.js`, plus any UI that edits a field's line/position) | Open | none |
 
 ## Batch detail
 
@@ -1979,7 +1980,7 @@ write `literal: ""` for an empty Text field instead of leaving it
 to a system-constant's keyword on write-back. Tests: `test/prtfBatchZ.test.ts`
 (7 new tests; full suite 347, all passing).
 
-### Batch AA — Bug fix: `regenerateSource` drops the optional column-6 form-type marker on every line, breaking Batch X's tracking [OPEN]
+### Batch AA — Bug fix: `regenerateSource` drops the optional column-6 form-type marker on every line, breaking Batch X's tracking [DONE]
 
 Found while reviewing two real-world sample files supplied for keyword-usage
 reference (`SCSPRT1.prtf`, `AFPPRT1.prtf` — both use the common convention
@@ -1987,44 +1988,64 @@ of `A` in column 6 throughout, which IBM's own DDS reference confirms is
 optional and "for documentation purposes only," so its absence never
 affects compilation on its own).
 
-**Root cause:** `src/prtfWriter.js`'s `buildPositional` hardcodes column 6
-to a single blank (`s += " "; // 6 form type`), and the `"comment"` case in
-`regenerateSource` hardcodes it the same way (`"      *" + entry.text`).
-Since `regenerateSource` rebuilds **every** line in `model.sequence` fresh
-on **every** call — not just the entry(ies) actually touched by the edit
-in progress — this blanks out column 6 across the entire file on any
-single edit, not just the edited line.
+**Root cause:** `src/prtfWriter.js`'s `buildPositional` hardcoded column 6
+to a single blank, and the `"comment"` case in `regenerateSource` hardcoded
+it the same way. Since `regenerateSource` rebuilds **every** line in
+`model.sequence` fresh on **every** call — not just the entry(ies) actually
+touched by the edit in progress — this blanked out column 6 across the
+entire file on any single edit, not just the edited line.
 
-**Why this matters beyond cosmetics:** confirmed by parsing `SCSPRT1.prtf`,
-adding one `COLOR` keyword to one field, then running the result through
-Batch X's `applyModificationTracking` — **67 of the file's 93 lines** came
-back flagged as "changed" (commented-out-and-tagged), including the
-header comment block nowhere near the actual edit. Batch X's tracking
-works by comparing raw line text before/after, so a writer that
-rewrites unrelated lines for a formatting reason unrelated to the actual
-edit makes that comparison meaningless on this style of file. Beyond
-Batch X specifically, silently reformatting hundreds of untouched lines
-on every save is also bad behavior on its own (destroys the file's diff
-history in the person's own source control on every edit).
+**Confirmed impact before the fix:** parsing `SCSPRT1.prtf`, adding one
+`COLOR` keyword to one field, then running the result through Batch X's
+`applyModificationTracking` flagged **67 of the file's 93 lines** as
+"changed" (commented-out-and-tagged), including the header comment block
+nowhere near the actual edit.
 
-**What to do:** preserve each entry's own original column 6 rather than
-hardcoding blank — `prtfParser.ts` already knows what character was in
-column 6 for any impacted line via `col(line, 6)` (mirroring
-`col(line, 7)`'s comment check next to it), so thread it onto each parsed
-entry (`ParsedSource`'s `comment`/`fileLevel`/`record`/`field`/`constant`
-entry shapes in `src/prtfModel.ts`) at parse time, then have
-`buildPositional`/the comment case in `regenerateSource` emit that
-captured character back at column 6 instead of a hardcoded blank. A
-freshly-*added* entry (no original source line to capture from) should
-still default to blank, matching current behavior and every existing
-fixture/test.
+**[DONE] — Implemented as follows:**
 
-**Re-verify against Batch X afterward:** re-run the exact repro above
-(parse `SCSPRT1.prtf`/`AFPPRT1.prtf`, make one small edit, enable
-tracking, confirm only the actually-changed line(s) get commented/tagged)
-as part of this batch's own test additions, not just whatever new
-unit tests get added for the column-6 preservation itself — the whole
-point of this batch is fixing that specific interaction.
+- **`src/prtfModel.ts`**: `BaseEntry` gained an optional `formType?: string`
+  — the raw column-6 character captured from an entry's own first physical
+  source line. Undefined for a freshly-added entry (no original line to
+  capture from), in which case the writer still defaults to blank, matching
+  every existing fixture/test exactly.
+- **`src/prtfParser.ts`**: captures `col(line, 6)` at each entry-creation
+  point — comment, record, field, constant. The file-level entry is a
+  special case: since every file-level keyword line (there can be several
+  in the original source) gets merged into ONE `fileLevel` entry and
+  regenerated as a single block, its `formType` is captured only from the
+  **first** contributing line — there's no single "this entry's own line"
+  beyond that to prefer.
+- **`src/prtfWriter.js`**: `buildPositional` takes a `formType` param and
+  emits it at column 6 instead of a hardcoded blank. `emitWithKeywords` also
+  takes `formType`, used for **continuation lines**' own column 6 (not just
+  the first physical line) — real-world source keeps this column filled
+  uniformly across every physical line of an entry, continuation lines
+  included, so a wrapped multi-line entry needed the same char on every
+  line it emits, not just its first. Every `regenerateSource` case
+  (`comment`/`fileLevel`/`record`/`field`/`constant`) now passes the
+  entry's own `formType` through.
+- **Tests**: new `test/prtfBatchAA.test.ts` — unit coverage for
+  `buildPositional`/`emitWithKeywords` honoring an explicit `formType`
+  (including on continuation lines) and defaulting to blank when omitted;
+  parser coverage for capturing column 6 on each entry kind, including the
+  file-level "first contributing line" rule; and two end-to-end tests
+  against the real-world sample files (copied into `test/fixtures/` as
+  `scsprt1-realworld.prtf`/`afpprt1-realworld.prtf`) — one confirming the
+  column-6 `A` count survives parse+regenerate on the actual `SCSPRT1.prtf`
+  content, and one reproducing the original Batch X repro on a clean,
+  hand-verified fixture (deliberately NOT the messy real-world file, which
+  has two other, separately-tracked, unrelated quirks — see Batch DD below
+  and the file-level-merge note above — that would otherwise muddy a
+  full-file diff): editing one field now tags exactly that field's own
+  line and comments out exactly its own old line, with every unrelated
+  line (including the header comment block) surviving byte-identical.
+- Full suite: 372 tests, all passing (364 prior + 8 new); `tsc --noEmit`
+  and `npm run compile` both clean.
+- **Found along the way, logged separately rather than folded in:** the
+  same real-file round-trip testing that drove this batch also surfaced
+  DDS's `+n` relative-position notation being silently absolutized — see
+  Batch DD below. That's a distinct, separately-scoped bug, not something
+  this batch's fix touches or needs to touch.
 
 ### Batch BB — Bug fix: a constant's literal is only recognized when it's the first keyword-area token [OPEN]
 
@@ -2068,6 +2089,63 @@ token as an ordinary keyword in original order. Add a test fixture based
 directly on the `SPACEB(1) 'literal'` pattern from `SCSPRT1.prtf` (and the
 `'TIME:'` variant) to `prtfParser.test.ts`, and confirm the round trip
 (parse → regenerate) still reproduces the original source for both.
+
+### Batch DD — Bug fix: DDS's `+n` relative-position notation is silently absolutized [OPEN]
+
+Found during Batch AA's own real-world round-trip testing against
+`SCSPRT1.prtf` (see `test/fixtures/scsprt1-realworld.prtf`) — once column 6
+was no longer the dominant source of diff noise, several genuinely
+different lines remained, e.g.:
+
+```
+orig: "     A            CUSTNAME      25A       +2"
+new : "     A            CUSTNAME      25A        2"
+```
+
+That `+2` isn't a stray formatting quirk — it's DDS's documented relative
+positioning: per IBM's own reference for the `RELPOS` keyword, "the `+n`
+positioning means that... you can specify the location of subsequent
+fields within that record by leaving the line number blank and specifying
+a plus value (`+n`) for position entry 42 through 44. The plus value
+indicates the number of spaces to be left between the end of the previous
+field and the beginning of the field you are defining." A field positioned
+this way is meant to shift automatically if an earlier field on the same
+line changes — that's the entire point of using it over an absolute
+column number (see the Broadcom coding-standards citation this task was
+verified against: "Use relative positioning for device file field
+positioning... this makes changing code easier").
+
+**Root cause:** `src/prtfParser.ts` reads the position field (columns
+42-44) via `sub(line, 42, 44).trim()` then `parseInt(posRaw, 10)` —
+`parseInt("+2", 10)` returns `2`, silently discarding the fact that this
+was relative-to-the-previous-field notation, not an absolute column
+number. `entry.position` ends up holding a plain number indistinguishable
+from a field that was always meant to sit at literal column 2.
+`src/prtfWriter.js`'s `buildPositional`/`padLeftNum` then writes that
+number back out as a plain absolute value with no `+` — so a field
+authored with `+2` (likely resolving to some column well to the right,
+depending on what preceded it) gets relocated to literal column 2 the
+moment I-RLU round-trips the file, even without the person touching that
+field's own line/position at all.
+
+**What to do:** thread a "this was relative" flag through alongside the
+existing `line`/`position` numbers — likely `relativePosition?: boolean`
+(and, per IBM's reference above, note that DDS also allows the *line*
+number field (39-41) to carry a `+n`/relative marker in the same way,
+worth confirming against the reference before assuming position-only) —
+on `FieldEntry`/`ConstantEntry` in `src/prtfModel.ts`, captured by the
+parser instead of blindly `parseInt`-ing away the sign, and re-emitted
+by `buildPositional`/`padLeftNum` as `+n` rather than a bare number when
+set. Consider whether the "move field" / position-editing UI in
+`media/webviewClient.js` needs to expose or preserve this distinction too
+(e.g. does dragging a field to a new spot silently convert it to
+absolute, and if so, is that acceptable or does it need its own
+confirmation/toggle) — check what I-SDA does with the equivalent
+(display files support the same `+n` positional convention) before
+deciding. Add fixture-based round-trip tests using
+`test/fixtures/scsprt1-realworld.prtf`/`afpprt1-realworld.prtf` (both
+already contain real `+n` fields) alongside whatever synthetic cases get
+added, since those are what caught this in the first place.
 
 ## Adding a new batch
 

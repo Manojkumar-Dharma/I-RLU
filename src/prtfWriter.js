@@ -38,11 +38,11 @@ function conditionSlots(conditions) {
   return slots;
 }
 
-function buildPositional({ nameType, name, reference, length, dataType, decimalPositions, usage, lineNo, position, conditions }) {
+function buildPositional({ nameType, name, reference, length, dataType, decimalPositions, usage, lineNo, position, conditions, formType }) {
   const [c1, c2, c3] = conditionSlots(conditions);
   let s = "";
   s += "     "; // 1-5 sequence number (left blank; most shops let the editor/compiler ignore it)
-  s += " "; // 6 form type
+  s += formType || " "; // 6 form type — Batch AA: reproduces the source's own char (usually blank, sometimes 'A') rather than always blanking it
   s += " "; // 7 comment/AND-OR (blank = normal AND of the three slots below when present)
   s += c1;
   s += c2;
@@ -124,8 +124,12 @@ function tokenizeKeywordText(text) {
 
 /**
  * Wraps keyword text into one or more 80-column physical lines, given a
- * 44-char positional prefix for the first line (continuation lines get a
- * blank 44-char prefix).
+ * pre-built 44-char positional prefix for the FIRST line. Continuation
+ * lines get a blank 44-char prefix — except column 6 (index 5), which
+ * (Batch AA) carries the same `formType` character as the first line
+ * rather than always being blank, since real-world source commonly keeps
+ * that column filled ('A') uniformly across every physical line of an
+ * entry, continuation lines included.
  *
  * Continuation character: real DDS distinguishes '-' (a single space is
  * implied at the join when the line is reassembled) from '+' (no space is
@@ -146,14 +150,17 @@ function tokenizeKeywordText(text) {
  * See docs/TASKS.md Batch M and test/prtfFixtures.test.ts's
  * sample-afpds.pf round-trip test, which is what caught this.)
  */
-function emitWithKeywords(positional44, keywordText) {
+function emitWithKeywords(positional44, keywordText, formType) {
   const KEYWORD_WIDTH = 34; // columns 45-78; col 79 unused, col 80 reserved for +/-
   const lines = [];
   const tokens = keywordText.trim() === "" ? [] : tokenizeKeywordText(keywordText.trim());
   let current = "";
   let firstLine = true;
+  const contPrefixChars = new Array(44).fill(" ");
+  if (formType) contPrefixChars[5] = formType;
+  const contPrefix = contPrefixChars.join("");
   const flush = (hasMore) => {
-    const prefix = firstLine ? positional44 : " ".repeat(44);
+    const prefix = firstLine ? positional44 : contPrefix;
     const body = padRight(current, KEYWORD_WIDTH) + " "; // col 79 blank
     lines.push(prefix + body + (hasMore ? "-" : " "));
     firstLine = false;
@@ -185,16 +192,16 @@ function regenerateSource(model) {
         outLines.push("");
         break;
       case "comment":
-        outLines.push("      *" + entry.text);
+        outLines.push("     " + (entry.formType || " ") + "*" + entry.text);
         break;
       case "fileLevel": {
-        const positional = buildPositional({});
-        outLines.push(...emitWithKeywords(positional, keywordsToText(entry.keywords)));
+        const positional = buildPositional({ formType: entry.formType });
+        outLines.push(...emitWithKeywords(positional, keywordsToText(entry.keywords), entry.formType));
         break;
       }
       case "record": {
-        const positional = buildPositional({ nameType: "R", name: entry.name, conditions: entry.conditions });
-        outLines.push(...emitWithKeywords(positional, keywordsToText(entry.keywords)));
+        const positional = buildPositional({ nameType: "R", name: entry.name, conditions: entry.conditions, formType: entry.formType });
+        outLines.push(...emitWithKeywords(positional, keywordsToText(entry.keywords), entry.formType));
         break;
       }
       case "field": {
@@ -208,18 +215,19 @@ function regenerateSource(model) {
           lineNo: entry.line,
           position: entry.position,
           conditions: entry.conditions,
+          formType: entry.formType,
         });
-        outLines.push(...emitWithKeywords(positional, keywordsToText(entry.keywords)));
+        outLines.push(...emitWithKeywords(positional, keywordsToText(entry.keywords), entry.formType));
         break;
       }
       case "constant": {
-        const positional = buildPositional({ lineNo: entry.line, position: entry.position, conditions: entry.conditions });
+        const positional = buildPositional({ lineNo: entry.line, position: entry.position, conditions: entry.conditions, formType: entry.formType });
         let kwText = keywordsToText(entry.keywords);
         if (entry.literal !== undefined) {
           const litToken = "'" + String(entry.literal).replace(/'/g, "''") + "'";
           kwText = kwText ? litToken + " " + kwText : litToken;
         }
-        outLines.push(...emitWithKeywords(positional, kwText));
+        outLines.push(...emitWithKeywords(positional, kwText, entry.formType));
         break;
       }
       default:

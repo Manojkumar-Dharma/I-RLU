@@ -291,6 +291,27 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       freshly-parsed system-constant. 7 new tests
       (`test/prtfBatchZ.test.ts`); full suite now 347 tests, all passing.
 
+- [x] **Batch AA — Bug fix: `regenerateSource` dropped the optional
+      column-6 form-type marker on every line, breaking Batch X's
+      tracking.** Found reviewing two real-world sample files supplied for
+      keyword-usage reference (both use `A` in column 6 throughout, a
+      common, IBM-documented-as-optional convention). `regenerateSource`
+      rebuilds every line fresh on every call, and previously hardcoded
+      column 6 to blank — so on real source written in this style, a
+      single one-field edit combined with Batch X's tracking flagged 67 of
+      93 lines as "changed." `BaseEntry` (`src/prtfModel.ts`) gained an
+      optional `formType`; `prtfParser.ts` captures it per entry (comment/
+      record/field/constant, plus the file-level entry's first
+      contributing line); `prtfWriter.js`'s `buildPositional`/
+      `emitWithKeywords` reproduce it — including on continuation lines,
+      not just an entry's first physical line — instead of hardcoding
+      blank. New `test/prtfBatchAA.test.ts`; the two real-world files are
+      now `test/fixtures/scsprt1-realworld.prtf`/`afpprt1-realworld.prtf`.
+      Full suite now 372 tests, all passing. **Found along the way, logged
+      separately as Batch DD rather than folded in:** DDS's `+n`
+      relative-position notation (columns 42-44) is silently read as a
+      plain absolute number — a distinct, differently-scoped bug.
+
 ## Next up
 
 As of the RLU screen-capture review (`docs/KEYWORD-INVENTORY.md`), the
@@ -303,8 +324,14 @@ from database file" via Code for i (Y, done), and system-constant
 (`DATE`/`TIME`/`PAGNBR`) design-time rendering + add-UI (Z, done — see
 `docs/REQUIREMENTS.md` §10 for why `USER`/`SYSNAME` were dropped from the
 original five-keyword scope) — see `docs/TASKS.md`'s Batch W/X/Y/Z detail
-sections for the full I-SDA-reference writeups. Summary of everything else
-(see TASKS.md for full detail, acceptance criteria, and file-level
+sections for the full I-SDA-reference writeups. Batches AA–CC were filed
+from reviewing two real-world sample PRTF files supplied for keyword-usage
+reference: the column-6 form-type/Batch-X interaction above (AA, done), a
+constant literal not recognized when preceded by a keyword (BB, open), and
+DDS's `+n` relative-position notation being silently absolutized (CC,
+open) — see `docs/TASKS.md`'s Batch AA/BB/CC detail sections. Summary of
+everything else (see TASKS.md for full detail, acceptance criteria, and
+file-level
 ownership per batch):
 
 - [x] **Batch A — general properties-panel keywords — done.**

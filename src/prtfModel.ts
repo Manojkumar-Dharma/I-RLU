@@ -54,6 +54,19 @@ export interface BaseEntry {
   kind: EntryKind;
   /** Index into ParsedSource.rawLines where this entry's positional portion begins. */
   sourceLineIndex: number;
+  /**
+   * Batch AA (docs/TASKS.md) — the raw column-6 "form type" character
+   * captured from this entry's own first physical source line (IBM's DDS
+   * reference: optional, "for documentation purposes only" — most shops
+   * leave it blank, but some fill it with 'A' throughout). Undefined for
+   * an entry that was never parsed from real source (freshly added via an
+   * edit), in which case the writer defaults to blank, matching prior
+   * behavior exactly. When present, prtfWriter.js reproduces this same
+   * character on every physical line this entry emits — including
+   * continuation lines — rather than hardcoding blank, so an edit
+   * elsewhere in the file doesn't strip it from untouched entries.
+   */
+  formType?: string;
 }
 
 export interface CommentEntry extends BaseEntry {

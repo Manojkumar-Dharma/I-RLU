@@ -1,0 +1,46 @@
+     A*==========================================================
+     A* SCSPRT1 - SAMPLE SCS PRINTER FILE (DDS)
+     A* Customer Master Listing - a broad, mutually-compatible
+     A* set of SCS-valid DDS keywords: INDARA, PRTQLTY, SKIPB,
+     A* SPACEB, DRAWER, DFT (implicit/explicit), DATE, TIME,
+     A* PAGNBR, EDTCDE, EDTWRD, UNDERLINE, COLOR, DATFMT, DATSEP,
+     A* TIMFMT, TIMSEP.
+     A* Create with:
+     A*   CRTPRTF FILE(MYLIB/SCSPRT1) SRCFILE(MYLIB/QDDSSRC) +
+     A*           SRCMBR(SCSPRT1) DEVTYPE(*SCS) PAGESIZE(66 132)
+     A*==========================================================
+     A*
+     A* FILE-LEVEL KEYWORDS
+     A                                      INDARA
+     A                                      PRTQLTY(*STD)
+     A*
+     A* HEADER RECORD FORMAT
+     A* (record has SKIPB -> fields use position-only placement plus
+     A* field-level SPACEB to advance to a new print line)
+     A          R HDRREC                    SKIPB(1) DRAWER(1)
+     A                                     2'ABC MANUFACTURING CO.'
+     A                                    98'PAGE'
+     A                                    +2PAGNBR EDTCDE(Z)
+     A                                     2SPACEB(1) 'CUSTOMER MASTER LISTING'
+     A                                    98DATE EDTCDE(Y)
+     A                                    92SPACEB(1) 'TIME:'
+     A                                    +1TIME
+     A                                     2SPACEB(2) 'CUST NO' UNDERLINE
+     A                                    12'CUSTOMER NAME' UNDERLINE
+     A                                    40'ORDER DATE' UNDERLINE
+     A                                    58'AMOUNT DUE' UNDERLINE
+     A                                    75'ST' UNDERLINE
+     A*
+     A* DETAIL RECORD FORMAT
+     A          R DTLREC                    SPACEB(1)
+     A            CUSTNO         6S 0      2
+     A            CUSTNAME      25A       +2
+     A            ORDDATE         L       +2DATFMT(*ISO) DATSEP('-')
+     A            ORDTIME         T       +1TIMFMT(*USA) TIMSEP(':')
+     A            AMOUNT         7S 2     +2EDTWRD('  ,   .  CR')
+     A            CUSTSTAT       1A       +2DFT('A') COLOR(BLU)
+     A*
+     A* TOTAL RECORD FORMAT
+     A          R TOTREC                    SKIPB(2)
+     A                                    30'TOTAL AMOUNT DUE . . . . :'
+     A            TOTAMT         9S 2     +1EDTCDE(J)
