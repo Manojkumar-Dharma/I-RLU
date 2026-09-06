@@ -46,6 +46,26 @@ export interface Keyword {
   raw: string;
   /** Index (into ParsedSource.rawLines) of the first physical line this keyword started on. */
   sourceLineIndex: number;
+  /**
+   * Real DDS conditioning is per PHYSICAL LINE, not per entry: a field or
+   * constant's own definition line has ONE set of conditioning columns
+   * (mirrored by FieldEntry/ConstantEntry/RecordFormatEntry's own
+   * `conditions` above) governing the field/constant/record AS A WHOLE,
+   * but an *additional* keyword-only continuation line attached to that
+   * same entry (blank name/type/position columns, just conditioning +
+   * keyword text) carries its OWN, independent conditioning — the classic
+   * RLU technique for e.g. two mutually-exclusive COLOR keywords on the
+   * same field, each active under a different indicator. Undefined (or
+   * empty) here means this keyword came from the entry's own header line
+   * (or a plain +/- text-wrap continuation of it) and has no conditioning
+   * of its own beyond the entry's — the overwhelmingly common case, and
+   * the only one until this field existed. Only set when prtfParser.ts
+   * recognizes a genuine attached-keyword-only line (see its own
+   * "attached keyword line" comment) — never inferred or defaulted from
+   * the owning entry's `conditions`, since the two are independent by
+   * design in real DDS.
+   */
+  conditions?: ConditioningIndicator[];
 }
 
 export type EntryKind = "fileLevel" | "record" | "field" | "constant" | "comment" | "blank";

@@ -291,6 +291,26 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       freshly-parsed system-constant. 7 new tests
       (`test/prtfBatchZ.test.ts`); full suite now 347 tests, all passing.
 
+- [x] **Batch CC — Per-keyword conditioning indicators.** Real DDS/RLU
+      lets a keyword-only continuation line (blank name/type/position,
+      just its own conditioning) attach ADDITIONAL, independently-
+      conditioned keyword(s) to an existing field/constant — e.g. two
+      mutually-exclusive `COLOR` keywords on one field, each active under
+      a different indicator. `Keyword` had no `conditions` field at all,
+      and the parser was misparsing every such line as a bogus phantom
+      constant. `Keyword.conditions` added (independent of the owning
+      entry's own conditions), parser now correctly attaches these lines
+      to the preceding entry, and the writer (`groupKeywordsByConditions`/
+      `emitEntryWithConditionedKeywords`) now round-trips per-keyword
+      conditioning instead of silently flattening/losing it. Indicator
+      toggling in the toolbar now also correctly switches `DATE`/`TIME`/
+      `PAGNBR`, `SKIPB`/`SPACEB`/`SKIPA`/`SPACEA`/`BARCODE`, and the FONT
+      cascade when conditioned this way. NOT yet done: threading indicator
+      state through `PAGSIZE`/`LINE`/`BOX`/`OVERLAY`/`PAGSEG`/`AFPRSC`/
+      page-group geometry, and — separately, pre-existing — `COLOR`/
+      `DSPATR` still aren't visually rendered in the preview at all. See
+      `docs/TASKS.md` Batch CC for the full writeup. 11 new tests; full
+      suite now 375, all passing.
 - [x] **Batch AA — Bug fix: `regenerateSource` dropped the optional
       column-6 form-type marker on every line, breaking Batch X's
       tracking.** Found reviewing two real-world sample files supplied for
@@ -307,7 +327,11 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       not just an entry's first physical line — instead of hardcoding
       blank. New `test/prtfBatchAA.test.ts`; the two real-world files are
       now `test/fixtures/scsprt1-realworld.prtf`/`afpprt1-realworld.prtf`.
-      Full suite now 372 tests, all passing. **Found along the way, logged
+      **Merged with the concurrently-landed Batch CC above** — its new
+      `emitEntryWithConditionedKeywords` also needed `formType` threaded
+      through, including onto each attached conditioned-keyword line's own
+      separate physical line(s), not just an entry's header line. Full
+      suite now 377 tests, all passing. **Found along the way, logged
       separately as Batch DD rather than folded in:** DDS's `+n`
       relative-position notation (columns 42-44) is silently read as a
       plain absolute number — a distinct, differently-scoped bug.
@@ -324,14 +348,16 @@ from database file" via Code for i (Y, done), and system-constant
 (`DATE`/`TIME`/`PAGNBR`) design-time rendering + add-UI (Z, done — see
 `docs/REQUIREMENTS.md` §10 for why `USER`/`SYSNAME` were dropped from the
 original five-keyword scope) — see `docs/TASKS.md`'s Batch W/X/Y/Z detail
-sections for the full I-SDA-reference writeups. Batches AA–CC were filed
-from reviewing two real-world sample PRTF files supplied for keyword-usage
-reference: the column-6 form-type/Batch-X interaction above (AA, done), a
-constant literal not recognized when preceded by a keyword (BB, open), and
-DDS's `+n` relative-position notation being silently absolutized (CC,
-open) — see `docs/TASKS.md`'s Batch AA/BB/CC detail sections. Summary of
-everything else (see TASKS.md for full detail, acceptance criteria, and
-file-level
+sections for the full I-SDA-reference writeups. Batches AA/BB/DD were
+filed from reviewing two real-world sample PRTF files supplied for
+keyword-usage reference: the column-6 form-type/Batch-X interaction above
+(AA, done), a constant literal not recognized when preceded by a keyword
+(BB, open), and DDS's `+n` relative-position notation being silently
+absolutized (DD, open — renumbered from CC to avoid colliding with the
+concurrently-landed, unrelated per-keyword-conditioning-indicators batch
+above, which claimed CC first) — see `docs/TASKS.md`'s Batch AA/BB/DD
+detail sections. Summary of everything else (see TASKS.md for full detail,
+acceptance criteria, and file-level
 ownership per batch):
 
 - [x] **Batch A — general properties-panel keywords — done.**
