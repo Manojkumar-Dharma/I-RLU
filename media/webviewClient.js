@@ -510,6 +510,19 @@
           (cell.font.weight ? `font-weight:${cell.font.weight};` : "") +
           (cell.font.style ? `font-style:${cell.font.style};` : "")
         : "";
+      // Batch EE (docs/TASKS.md) — COLOR/HIGHLIGHT/UNDERLINE, resolved by
+      // prtfLayout.js's resolveStyle. Appended after fontCss so HIGHLIGHT's
+      // font-weight:bold wins over a lighter weight the resolved FONT might
+      // otherwise carry (this tool doesn't cross-check HIGHLIGHT against
+      // CDEFNT/FNTCHRSET the way real print-time behavior would — see
+      // resolveStyle's own comment on why that's out of this batch's scope;
+      // the existing fieldWarnings conflict message already tells the
+      // person HIGHLIGHT is ignored at print time in that case).
+      const styleCss = cell.style
+        ? (cell.style.color && cell.style.color.css ? `color:${cell.style.color.css};` : "") +
+          (cell.style.highlight ? "font-weight:bold;" : "") +
+          (cell.style.underline ? "text-decoration:underline;" : "")
+        : "";
       // Batch L (continued): cell.font.fgid is only set when the font was
       // resolved via FONT/FGID — CDEFNT/FNTCHRSET/FONTNAME resolutions
       // (see prtfLayout.js's resolveFontDisplay) have no FGID at all, and
@@ -525,6 +538,14 @@
             (cell.font.isPlaceholderMetrics && !cell.font.resolutionNote ? " — proportional widths are an approximation, not verified font metrics." : "") +
             (cell.font.approximate ? " Font is set by a program-to-system field; shown using the default font." : "")
           : "";
+      // Batch EE (docs/TASKS.md) — flags COLOR(*CMYK)/COLOR(*CIELAB) (not
+      // rendered — see prtfLayout.js's resolveColorStyle) so the person
+      // knows the cell's real color isn't shown, rather than silently
+      // leaving it black with no explanation.
+      const colorTitle =
+        cell.style && cell.style.color && cell.style.color.approximate
+          ? " COLOR(" + cell.style.color.model + ") isn't rendered — its numeric ranges aren't independently confirmed against IBM's DDS reference."
+          : "";
       const div = el(
         "div",
         {
@@ -533,7 +554,7 @@
             (cell.kind === "constant" ? " constant" : " field") +
             (cell.barcode ? (barcodeSymbol ? " barcode rendered" : " barcode") : "") +
             (cell.id === state.selectedId ? " selected" : ""),
-          style: `position:absolute;left:${(cell.position - 1) * CELL_W}px;top:${(cell.line - 1) * CELL_H}px;width:${w}px;height:${h}px;${fontCss}`,
+          style: `position:absolute;left:${(cell.position - 1) * CELL_W}px;top:${(cell.line - 1) * CELL_H}px;width:${w}px;height:${h}px;${fontCss}${styleCss}`,
           title: cell.barcode
             ? (barcodeSymbol
                 ? "Barcode preview — " + cell.barcode.barCodeId + " (" + cell.barcode.direction + "). Rendered with placeholder sample data; actual bars depend on the field's runtime value, which I-RLU can't know at design time."
@@ -543,7 +564,7 @@
                   cell.barcode.direction +
                   "). Actual bar symbol not rendered — this bar-code-ID isn't one of the symbologies I-RLU can preview (see src/prtfBarcodeRender.js).") +
               (cell.barcode.approximateHeight ? " Height shown is a default estimate." : "")
-            : fontTitle,
+            : fontTitle + colorTitle,
           draggable: "true",
         },
         cell.barcode

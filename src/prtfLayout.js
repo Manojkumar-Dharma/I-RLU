@@ -208,6 +208,122 @@ function resolveFontDisplay(font) {
 }
 
 /**
+ * Batch EE (docs/TASKS.md) — CSS equivalents for COLOR's named-color set,
+ * confirmed against IBM's DDS reference for printer files (the same eight
+ * names Batch A's own NAMED_COLORS picklist in media/webviewClient.js
+ * already offers). CSS's own "turquoise" keyword is a genuinely close
+ * match to the AS/400 IPDS color of the same name; the rest are ordinary
+ * CSS color keywords chosen as reasonable renderings of the names IBM
+ * uses, not independently confirmed against a specific device's actual
+ * ink/phosphor values (no such per-color-value confirmation is possible
+ * without a physical *IPDS-capable color printer) — same "reasonable
+ * rendering, not verified hardware colorimetry" caveat every font-metrics
+ * resolution in this file already carries for AFM/FGID substitutes.
+ */
+const NAMED_COLOR_CSS = {
+  "*BLK": "black",
+  "*BLU": "blue",
+  "*BRN": "brown",
+  "*GRN": "green",
+  "*PNK": "deeppink",
+  "*RED": "red",
+  "*TRQ": "turquoise",
+  "*YLW": "#c8c800", // a mid-value yellow — pure CSS "yellow" reads as unreadably pale on the white page background this tool renders against
+};
+
+/**
+ * Resolves COLOR's parameters (already round-tripped verbatim as raw
+ * keyword params, e.g. "(*BLU)" or "(*RGB 0 0 0)") into a CSS color plus an
+ * `approximate` flag. COLOR is a field-level-only printer-file keyword
+ * (verified against IBM's DDS reference: "You use this field-level keyword
+ * to specify the color for a field") — unlike resolveFont's FONT, it does
+ * NOT cascade to the record or file level, so this only ever looks at the
+ * entry's own keywords, not `record`/`fileLevel`.
+ *
+ * Named colors and *RGB (three literal 0-255 component tokens) are exact.
+ * *CMYK/*CIELAB stay `approximate: true` with no `css` value — per Batch
+ * A's own documented caveat, their exact special-value names and numeric
+ * ranges were never independently confirmed against IBM's DDS reference,
+ * so this deliberately doesn't guess a color for them rather than risk
+ * rendering a wrong one. (docs/TASKS.md's own Batch EE entry describes
+ * *RGB as equally unconfirmed/approximate alongside *CMYK/*CIELAB — that's
+ * an overstatement of Batch A's actual, more precise finding: *RGB's
+ * three-literal-integer form is confirmed against this project's own
+ * `sample-afpds.pf` fixture, only *CMYK/*CIELAB are the unconfirmed ones.)
+ */
+function resolveColorStyle(entry, indicatorState) {
+  const colorKw = findActiveKeyword(entry.keywords, "COLOR", indicatorState);
+  if (!colorKw) return undefined;
+  const tokens = paramTokens(colorKw);
+  const model = tokens[0];
+  if (Object.prototype.hasOwnProperty.call(NAMED_COLOR_CSS, model)) {
+    return { css: NAMED_COLOR_CSS[model], model: "Named", approximate: false };
+  }
+  if (model === "*RGB") {
+    const r = toNumber(tokens[1]);
+    const g = toNumber(tokens[2]);
+    const b = toNumber(tokens[3]);
+    if (r !== undefined && g !== undefined && b !== undefined) {
+      return { css: `rgb(${r}, ${g}, ${b})`, model: "*RGB", approximate: false };
+    }
+  }
+  // *CMYK, *CIELAB, an *RGB with a non-literal (program-to-system field)
+  // component, or anything else unrecognized: flagged, not guessed.
+  return { css: undefined, model: model || "unknown", approximate: true };
+}
+
+/**
+ * Batch EE (docs/TASKS.md) — resolves a per-cell rendering style from
+ * COLOR/HIGHLIGHT/UNDERLINE, the same "resolve once here, apply in
+ * webviewClient.js's renderPage" split resolveFont/resolveFontDisplay
+ * already established for FONT.
+ *
+ * DSPATR is deliberately absent — checked against IBM's DDS reference for
+ * printer files (the full "the following keywords are valid for printer
+ * files" list) and confirmed NOT a valid printer-file keyword at all (it's
+ * display-file only), the same kind of finding Batch Z made for
+ * USER/SYSNAME. docs/TASKS.md's own Batch EE entry assumed DSPATR was in
+ * scope; dropped here, documented the same way Batch Z documented its own
+ * scope correction.
+ *
+ * HIGHLIGHT cascades record -> field with OR semantics, NOT
+ * nearest-wins-and-stops like resolveFont's cascade — confirmed against
+ * IBM's own wording: "If you specify HIGHLIGHT at the record level, the
+ * keyword applies to all fields in that record. Thus, if both the record-
+ * and field-level HIGHLIGHT keywords are specified and either indicator
+ * condition is met, the HIGHLIGHT keyword is used." So this checks both
+ * levels and highlights if EITHER is currently active, rather than
+ * stopping at the first level that has the keyword at all.
+ *
+ * COLOR and UNDERLINE are field-level-only printer-file keywords (verified
+ * against IBM's DDS reference for each — see resolveColorStyle's own
+ * comment for COLOR; UNDERLINE's own keyword description opens the same
+ * way, "You use this field-level keyword...") — neither cascades from
+ * `record`/`fileLevel` the way FONT or HIGHLIGHT do, so only `entry.keywords`
+ * is ever checked for them.
+ *
+ * Not attempted here: HIGHLIGHT's own already-existing "ignored if CDEFNT
+ * or FNTCHRSET is also coded" conflict (surfaced today only as a
+ * fieldWarnings validation message — see prtfKeywordValidation.js) isn't
+ * cross-checked against the resolved FONT mode to suppress the bold
+ * styling below. Scoped out to keep this batch to "resolve + render", the
+ * same boundary docs/TASKS.md's own Batch EE entry draws ("no model/
+ * parser/writer change expected") — the existing warning already tells the
+ * person HIGHLIGHT won't actually apply at print time in that case.
+ */
+function resolveStyle(entry, record, indicatorState) {
+  const color = resolveColorStyle(entry, indicatorState);
+  const underline = !!findActiveKeyword(entry.keywords, "UNDERLINE", indicatorState);
+  const entryHighlight = !!findActiveKeyword(entry.keywords, "HIGHLIGHT", indicatorState);
+  const recordHighlight = !!findActiveKeyword(record.keywords, "HIGHLIGHT", indicatorState);
+  return {
+    color,
+    highlight: entryHighlight || recordHighlight,
+    underline,
+  };
+}
+
+/**
  * LINE(position-down position-across line-length line-direction line-width
  *      [line-pad] [color])
  * e.g. LINE(4 3 5 *HRZ .01) — verified against IBM's DDS reference for
@@ -462,6 +578,7 @@ function resolveLayout(model, recordName, indicatorState, uom) {
     const barcodeKw = entry.kind === "field" ? findActiveKeyword(entry.keywords, "BARCODE", indicatorState) : undefined;
     const font = resolveFont(entry, record, model.fileLevel, indicatorState);
     const fontDisplay = resolveFontDisplay(font);
+    const style = resolveStyle(entry, record, indicatorState);
 
     cells.push({
       id: entry.id,
@@ -511,6 +628,10 @@ function resolveLayout(model, recordName, indicatorState, uom) {
       // resolveFont/resolveFontDisplay above); previously this object was
       // built inline here and only ever handled FONT/FGID.
       font: fontDisplay,
+      // Batch EE (docs/TASKS.md) — COLOR/HIGHLIGHT/UNDERLINE resolved to a
+      // renderable style object (see resolveStyle's own comment for the
+      // per-keyword cascade rules and the DSPATR scope correction).
+      style,
     });
 
     cursorLine = line;
@@ -578,6 +699,8 @@ const mod = {
   // cells[].font) so they're unit-testable in isolation.
   resolveFont,
   resolveFontDisplay,
+  resolveColorStyle,
+  resolveStyle,
 };
 if (typeof module !== "undefined" && module.exports) module.exports = mod;
 if (typeof window !== "undefined") window.PrtfLayout = mod;

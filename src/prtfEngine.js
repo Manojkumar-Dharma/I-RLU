@@ -102,6 +102,11 @@ const mod = {
   resolveFontName: CodedFontMetrics.resolveFontName,
   resolveCodedFont: CodedFontMetrics.resolveCodedFont,
   resolveFontCharacterSet: CodedFontMetrics.resolveFontCharacterSet,
+  // Batch EE — COLOR/HIGHLIGHT/UNDERLINE resolved to a renderable per-cell
+  // style (see prtfLayout.js's resolveStyle/resolveColorStyle for the
+  // per-keyword cascade rules and the DSPATR scope correction).
+  resolveStyle: Layout.resolveStyle,
+  resolveColorStyle: Layout.resolveColorStyle,
 };
 if (typeof module !== "undefined" && module.exports) module.exports = mod;
 if (typeof window !== "undefined") window.PrtfEngine = mod;
