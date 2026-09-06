@@ -449,6 +449,47 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       (no headless browser in this sandbox) that the "Duplicate" button
       produces a correctly-named, selectable clone.
 
+- [x] **Batch EE — Render `COLOR`/`HIGHLIGHT`/`UNDERLINE` visually in the
+      design-time preview.** These were editable via the properties panel
+      (Batch A) and correctly resolved per-keyword-conditioning (Batch
+      CC/DD), but nothing ever applied the resolved value to rendered cell
+      text — toggling an indicator on a conditioned `COLOR` pair had no
+      visible effect at all. **Scope correction found while implementing:**
+      `DSPATR` was dropped from scope — verified against IBM's DDS
+      reference for printer files (the full "the following keywords are
+      valid for printer files" enumeration) and confirmed it's NOT a valid
+      printer-file keyword at all (display-file only), the same kind of
+      finding Batch Z made for `USER`/`SYSNAME`. Also confirmed each
+      keyword's actual cascade rules against IBM's own keyword
+      descriptions rather than assuming a FONT-like cascade: `COLOR` and
+      `UNDERLINE` are field-level-only (no record/file cascade);
+      `HIGHLIGHT` is record-level OR field-level with OR semantics ("if
+      both the record- and field-level HIGHLIGHT keywords are specified
+      and either indicator condition is met, HIGHLIGHT is used") rather
+      than resolveFont's nearest-wins-and-stops. New `resolveColorStyle`/
+      `resolveStyle` (`src/prtfLayout.js`) mirror the `resolveFont`/
+      `resolveFontDisplay` split already established for FONT (Batch L
+      continued): named colors and `*RGB`'s three literal 0-255 tokens
+      resolve to an exact CSS color; `*CMYK`/`*CIELAB` stay flagged
+      `approximate` with no guessed color, per Batch A's own documented
+      caveat about their unconfirmed numeric ranges (docs/TASKS.md's own
+      Batch EE wording overstated this by lumping `*RGB` in with the
+      approximate ones — Batch A's actual comment confirms `*RGB` against
+      the project's own `sample-afpds.pf` fixture). `resolveLayout` now
+      carries a `style` object per cell alongside the existing `font`;
+      `media/webviewClient.js`'s `renderPage` applies it (text color,
+      `font-weight:bold` for HIGHLIGHT, `text-decoration:underline`), plus
+      a tooltip note when a COLOR model isn't rendered. Not attempted:
+      HIGHLIGHT's existing "ignored if CDEFNT/FNTCHRSET also coded"
+      conflict (already surfaced as a `fieldWarnings` message) isn't
+      cross-checked here to suppress the bold styling — kept out to stay
+      "resolve + render" only, no model/parser/writer change, matching the
+      task's own stated scope. See `docs/TASKS.md` Batch EE for the full
+      writeup. 10 new tests in `test/prtfBatchEE.test.ts`; full suite now
+      430, all passing. **No real-browser verification possible in this
+      sandbox — please verify visually in a real Extension Development
+      Host.**
+
 ## Next up
 
 As of the RLU screen-capture review (`docs/KEYWORD-INVENTORY.md`), the
