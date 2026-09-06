@@ -87,7 +87,7 @@ test("Batch AA headline repro: a single one-field edit no longer floods Track-so
   // A small, clean multi-field record in the same 'A'-in-column-6 style as
   // the real-world sample files, but deliberately free of this project's
   // OTHER known, separately-tracked limitations (DDS's "+n" relative
-  // position notation — see docs/TASKS.md Batch DD — and multiple
+  // position notation — see docs/TASKS.md Batch LL — and multiple
   // file-level lines collapsing into one regenerated block), so this test
   // isolates Batch AA's own fix rather than being muddied by those.
   //

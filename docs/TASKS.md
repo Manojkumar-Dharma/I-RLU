@@ -105,7 +105,7 @@ vice versa.
 | AA | ~~**Bug fix:** `regenerateSource` unconditionally blanks out each line's optional column-6 form-type marker (`A`) instead of preserving whatever was already there, and rebuilds every line fresh on every edit regardless of whether it changed — the two combine to make Batch X's "Track source modifications" flag nearly the entire file as changed from a single one-field edit, on any source written in the (very common) `A`-in-column-6 style~~ | n/a (writer correctness, `src/prtfWriter.js`) | **Done** | **X** (was specifically what made X's diff-based tracking unreliable on this style of source — re-verified against it as part of this batch) |
 | BB | **Bug fix:** a constant's quoted literal is only recognized when it's the *first* token in the keyword area (`prtfParser.ts`'s literal-extraction regex is anchored with `^`) — a literal preceded by another keyword (e.g. `SPACEB(1) 'CUSTOMER MASTER LISTING'`, a common real-world pattern) parses with `entry.literal` left `undefined`, so the Properties panel shows blank Text for a constant that has real display text | n/a (parser correctness, `src/prtfParser.ts`) | Open | none |
 | CC | ~~**Bug fix:** conditioning indicators are only modeled per field/constant/record entry, not per KEYWORD — a real, common DDS/RLU technique (e.g. two mutually-exclusive `COLOR` keywords on one field, each conditioned on a different indicator, via an attached keyword-only continuation line) was silently misparsed as a bogus phantom constant entry, and even if it hadn't been, the writer had no way to round-trip per-keyword conditioning at all~~ | n/a (model/parser/writer/layout correctness, not a keyword itself — affects every keyword that can appear on its own conditioned line) | **Done** | none |
-| DD | **Bug fix:** a field's `+n` relative-position notation (DDS positions 42-44, e.g. `+2` = "2 spaces after the previous field ends" — see IBM's own RELPOS keyword reference) is read by `parseInt` as a plain absolute number, silently discarding the "this is relative, not absolute" semantic — round-tripping such a field through I-RLU relocates it to a fixed, usually-wrong absolute column | n/a (parser/model/writer correctness, `src/prtfParser.ts`/`src/prtfModel.ts`/`src/prtfWriter.js`, plus any UI that edits a field's line/position) | Open | none |
+| LL | **Bug fix:** a field's `+n` relative-position notation (DDS positions 42-44, e.g. `+2` = "2 spaces after the previous field ends" — see IBM's own RELPOS keyword reference) is read by `parseInt` as a plain absolute number, silently discarding the "this is relative, not absolute" semantic — round-tripping such a field through I-RLU relocates it to a fixed, usually-wrong absolute column | n/a (parser/model/writer correctness, `src/prtfParser.ts`/`src/prtfModel.ts`/`src/prtfWriter.js`, plus any UI that edits a field's line/position) | Open | none |
 
 ## Batch detail
 
@@ -2035,7 +2035,7 @@ nowhere near the actual edit.
   column-6 `A` count survives parse+regenerate on the actual `SCSPRT1.prtf`
   content, and one reproducing the original Batch X repro on a clean,
   hand-verified fixture (deliberately NOT the messy real-world file, which
-  has two other, separately-tracked, unrelated quirks — see Batch DD below
+  has two other, separately-tracked, unrelated quirks — see Batch LL below
   and the file-level-merge note above — that would otherwise muddy a
   full-file diff): editing one field now tags exactly that field's own
   line and comments out exactly its own old line, with every unrelated
@@ -2045,7 +2045,7 @@ nowhere near the actual edit.
 - **Found along the way, logged separately rather than folded in:** the
   same real-file round-trip testing that drove this batch also surfaced
   DDS's `+n` relative-position notation being silently absolutized — see
-  Batch DD below. That's a distinct, separately-scoped bug, not something
+  Batch LL below. That's a distinct, separately-scoped bug, not something
   this batch's fix touches or needs to touch.
 
 ### Batch BB — Bug fix: a constant's literal is only recognized when it's the first keyword-area token [OPEN]
@@ -2187,7 +2187,7 @@ any code.
   keyword line's own separate physical line(s), not just an entry's own
   header line.**
 
-### Batch DD — Bug fix: DDS's `+n` relative-position notation is silently absolutized [OPEN]
+### Batch LL — Bug fix: DDS's `+n` relative-position notation is silently absolutized [OPEN]
 
 Found during Batch AA's own real-world round-trip testing against
 `SCSPRT1.prtf` (see `test/fixtures/scsprt1-realworld.prtf`) — once column 6

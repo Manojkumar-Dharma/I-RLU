@@ -332,7 +332,7 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       through, including onto each attached conditioned-keyword line's own
       separate physical line(s), not just an entry's header line. Full
       suite now 377 tests, all passing. **Found along the way, logged
-      separately as Batch DD rather than folded in:** DDS's `+n`
+      separately as Batch LL rather than folded in:** DDS's `+n`
       relative-position notation (columns 42-44) is silently read as a
       plain absolute number — a distinct, differently-scoped bug.
 
@@ -348,14 +348,15 @@ from database file" via Code for i (Y, done), and system-constant
 (`DATE`/`TIME`/`PAGNBR`) design-time rendering + add-UI (Z, done — see
 `docs/REQUIREMENTS.md` §10 for why `USER`/`SYSNAME` were dropped from the
 original five-keyword scope) — see `docs/TASKS.md`'s Batch W/X/Y/Z detail
-sections for the full I-SDA-reference writeups. Batches AA/BB/DD were
+sections for the full I-SDA-reference writeups. Batches AA/BB/LL were
 filed from reviewing two real-world sample PRTF files supplied for
 keyword-usage reference: the column-6 form-type/Batch-X interaction above
 (AA, done), a constant literal not recognized when preceded by a keyword
 (BB, open), and DDS's `+n` relative-position notation being silently
-absolutized (DD, open — renumbered from CC to avoid colliding with the
-concurrently-landed, unrelated per-keyword-conditioning-indicators batch
-above, which claimed CC first) — see `docs/TASKS.md`'s Batch AA/BB/DD
+absolutized (LL, open — renumbered twice over two concurrent-session
+letter collisions, first CC→DD, then DD→LL, as other sessions' own work
+claimed each letter first; see the git history around this commit if the
+renaming itself is ever confusing) — see `docs/TASKS.md`'s Batch AA/BB/LL
 detail sections. Summary of everything else (see TASKS.md for full detail,
 acceptance criteria, and file-level
 ownership per batch):
