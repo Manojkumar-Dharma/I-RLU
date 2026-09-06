@@ -106,6 +106,7 @@ vice versa.
 | BB | **Bug fix:** a constant's quoted literal is only recognized when it's the *first* token in the keyword area (`prtfParser.ts`'s literal-extraction regex is anchored with `^`) — a literal preceded by another keyword (e.g. `SPACEB(1) 'CUSTOMER MASTER LISTING'`, a common real-world pattern) parses with `entry.literal` left `undefined`, so the Properties panel shows blank Text for a constant that has real display text | n/a (parser correctness, `src/prtfParser.ts`) | Open | none |
 | CC | ~~**Bug fix:** conditioning indicators are only modeled per field/constant/record entry, not per KEYWORD — a real, common DDS/RLU technique (e.g. two mutually-exclusive `COLOR` keywords on one field, each conditioned on a different indicator, via an attached keyword-only continuation line) was silently misparsed as a bogus phantom constant entry, and even if it hadn't been, the writer had no way to round-trip per-keyword conditioning at all~~ | n/a (model/parser/writer/layout correctness, not a keyword itself — affects every keyword that can appear on its own conditioned line) | **Done** | none |
 | DD | ~~Batch CC follow-up: thread indicator state through the record/file-level geometry keywords `resolveLayout` resolves once per call (`PAGSIZE`, `CPI`/`LPI`, `LINE`/`BOX`, `OVERLAY`/`PAGSEG`/`AFPRSC`, `STRPAGGRP`/`ENDPAGGRP`/`DOCIDXTAG`/`DTASTMCMD`) — Batch CC itself only reached the per-field/constant lookups~~ | n/a (layout correctness, `src/prtfLayout.js`) | **Done** | **CC** (this is that batch's own explicitly-flagged remaining scope) |
+| EE | Render `COLOR`/`DSPATR`/`UNDERLINE`/`HIGHLIGHT` visually in the design-time page preview — these are editable via the properties panel (Batch A) and now correctly conditioned per-keyword (Batch CC/DD), but the resolved value is never actually applied to the on-screen cell text at all today (no font color, no bold/reverse-image/underline styling in `media/webviewClient.js`'s cell rendering) — so toggling an indicator on a conditioned `COLOR` pair, or just setting `COLOR` at all, has no visible effect in the designer even though the model/layout resolve it correctly | `COLOR` (Named/`*RGB`, `*CMYK`/`*CIELAB` unverified — see Batch A), `DSPATR`, `UNDERLINE`, `HIGHLIGHT` | Open | none (needs `resolveLayout` to surface a resolved style per cell, then webview CSS/rendering to apply it — no model/parser/writer change expected) |
 
 ## Batch detail
 
@@ -2308,6 +2309,58 @@ Tests: 8 new in `test/prtfConditionedKeywords.test.ts` (`PAGSIZE`, `LINE`,
 before any field; that attachment's own round-trip; file-level
 conditioning capture). Manually re-verified byte-identical round-trip
 against all three real fixture files. Full suite: 394 tests, all passing.
+
+### Batch EE — Render COLOR/DSPATR/UNDERLINE/HIGHLIGHT visually [OPEN]
+
+**The gap:** `COLOR`, `DSPATR`, `UNDERLINE`, and `HIGHLIGHT` are all
+editable via the properties panel (Batch A) and are now correctly
+resolved per-keyword-conditioning (Batch CC/DD — `findActiveKeyword`
+already picks the right one out of several conditioned variants). But
+none of that resolved value is ever applied to the actual rendered cell
+text in `media/webviewClient.js`'s page preview — `renderPage` draws a
+cell's text in whatever the browser's default color/weight is,
+regardless of what `COLOR`/`DSPATR`/etc. say. Confirmed by grepping
+`media/webviewClient.js` and `src/prtfLayout.js` for `COLOR`/`DSPATR`/
+`color:` before writing docs/TASKS.md's Batch CC entry — no rendering
+code touches these keywords at all today, only the properties-panel
+editing UI does. Practical effect: setting `COLOR(RED)` on a field, or
+toggling an indicator between two conditioned `COLOR` values, does
+literally nothing visible in the designer even though the underlying
+model and layout resolution are both already correct.
+
+**What to do:**
+- `src/prtfLayout.js`'s `resolveLayout` should resolve a per-cell style
+  object (analogous to how it already resolves `font`/`fontDisplay` via
+  `resolveFont`/`resolveFontDisplay`) from `findActiveKeyword(entry.keywords,
+  "COLOR", indicatorState)` / `"DSPATR"` / `"UNDERLINE"` / `"HIGHLIGHT"`,
+  cascading record→file level the same way `resolveFont` does (DDS allows
+  all four at record level too, as record-level defaults fields inherit).
+- `COLOR`'s parameter is one of IBM's fixed named colors (`BLU`, `RED`,
+  `PNK`, `GRN`, `TRQ`, `YLW`, `WHT`) or (per Batch A's own writeup)
+  `*RGB`/unverified `*CMYK`/`*CIELAB` — map the named set to CSS colors
+  directly; treat `*RGB` etc. the same "approximate, not verified" way
+  this file already treats other under-specified keywords (see the file's
+  banner comment).
+  `DSPATR` values worth mapping to CSS: `HI` (bold-ish/emphasis — AFPDS
+  doesn't have a real terminal-style "high intensity", so bold is a
+  reasonable visual stand-in), `RI` (reverse image — swap foreground/
+  background), `BL` (blink — CSS `animation`, or skip as out of scope for
+  a static preview), `ND`/`PC`/`UL` (non-display/position-cursor/underline
+  — `UL` overlaps with the standalone `UNDERLINE` keyword; confirm against
+  IBM's DDS reference whether both can appear together and if so how they
+  compose, rather than assuming).
+- `media/webviewClient.js`'s cell-rendering code (`renderPage`) applies
+  the resolved style (`color`, `font-weight`/`text-decoration`, etc.) to
+  each cell's text node.
+- Add tests: `resolveLayout` resolves the right color/attribute per cell,
+  including a conditioned-`COLOR`-pair case exercising the same
+  indicator-toggle mechanism Batch CC/DD's own tests already cover for
+  other keywords (reuse `test/prtfConditionedKeywords.test.ts`'s
+  `buildLine`/`buildSource` helpers rather than re-inventing them).
+- No model/parser/writer change expected — `COLOR`/`DSPATR`/`UNDERLINE`/
+  `HIGHLIGHT` already parse, store, and round-trip correctly today (Batch
+  A); this is purely "resolve + render", the same shape Batch L
+  (continued)'s FONT/CDEFNT/FNTCHRSET/FONTNAME work already took.
 
 ## Adding a new batch
 
