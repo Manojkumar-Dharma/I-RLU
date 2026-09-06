@@ -595,6 +595,48 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       for move/resize/add on both fields and constants); full suite now
       468, all passing.
 
+- [x] **Batch JJ — Multi-select fields for bulk move/copy/delete.** Real
+      RLU's F13/F14/F15 mark a rectangular screen area and copy/move it as
+      a block; this tool's own selection model (established from Batch Q
+      onward) is click-a-cell, not mark-a-rectangle, so this implements
+      multi-select via Ctrl/Cmd-click instead — same reference point
+      I-SDA's own shift/ctrl/cmd-click additive selection uses — while
+      keeping RLU's core "the group moves/copies together, preserving
+      relative layout" behavior: every selected id shifts by the SAME
+      delta. **Landed after Batch KK/LL**, exactly the pairing this
+      batch's own original filing anticipated — `bulkMove`/`bulkCopy`
+      reuse Batch KK's `reportWidthCols`/`clampToReportWidth`/
+      `clampConstantToReportWidth` and Batch LL's `relativePosition:
+      false` fix directly, rather than re-deriving either (a bulk drag/
+      copy is just as capable of pushing a field off-page, or of
+      stranding a stale "this is still relative" flag, as a single move
+      already was before those two batches fixed it). New
+      `state.multiSelectIds` in `media/webviewClient.js` (a `Set`,
+      deliberately kept separate from the existing `state.selectedId`
+      rather than folding single-select into "a set of size 1" — avoids
+      touching the already-heavily-tested single-cell properties panel at
+      all); Ctrl/Cmd-click toggles membership, a plain click always
+      clears it. Dragging a cell that's part of the selection drags the
+      WHOLE group (offsets preserved via a JSON `dataTransfer` payload);
+      dragging any other cell is an unrelated plain single-cell move,
+      unchanged from before. New bulk-actions panel ("Copy group"/"Delete
+      group"/"Clear selection") shown in place of the single-cell
+      properties panel whenever the selection set is non-empty. Three new
+      edit kinds in `src/webviewProtocol.ts`/`src/prtfEdits.ts`:
+      `bulkMove`/`bulkDelete` (dangling ids skipped rather than failing
+      the whole batch) and `bulkCopy` (same-record-only for v1, same
+      scope boundary Batch Q's own single-field copy already draws;
+      auto-assigns each clone's name via the existing
+      `nextAvailableFieldName` rather than a per-field confirmation form,
+      the same "auto-name several at once" precedent Batch Y's "Add
+      fields from database file" already established). See
+      `docs/TASKS.md` Batch JJ for the full writeup. 24 new tests in
+      `test/prtfBatchJJ.test.ts` plus two source-text/CSS shape checks in
+      `test/webviewLayout.test.ts`; full suite now 497, all passing.
+      **No real-browser verification possible in this sandbox for the
+      actual Ctrl/Cmd-click and group-drag interactions — please verify
+      visually in a real Extension Development Host.**
+
 ## Next up
 
 As of the RLU screen-capture review (`docs/KEYWORD-INVENTORY.md`), the
