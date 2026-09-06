@@ -637,7 +637,7 @@
 
   function labeledInput(labelText, inputAttrs) {
     const input = el("input", inputAttrs);
-    // Batch AA: labelText used to be appended as a bare string (a DOM text
+    // Batch CC: labelText used to be appended as a bare string (a DOM text
     // node), which CSS can't select or size at all — meaning every
     // labeledInput row's value input started at whatever x-position that
     // row's OWN label text happened to end at, instead of lining up with
@@ -897,7 +897,7 @@
       if (opt === currentValue) o.setAttribute("selected", "selected");
       select.appendChild(o);
     });
-    // Batch AA: same bare-text-node fix as labeledInput above.
+    // Batch CC: same bare-text-node fix as labeledInput above.
     const label = el("span", { class: "prop-label" }, [labelText]);
     return { row: el("label", { class: "prop-row" }, [label, select]), input: select };
   }
@@ -1583,7 +1583,7 @@
     });
     formWrap.appendChild(hriRow.row);
 
-    // Batch AA: was text-then-checkbox in one <label>, the opposite order
+    // Batch CC: was text-then-checkbox in one <label>, the opposite order
     // from every other keyword-toggle row's checkbox-then-text `.ind-label`
     // (appendKeywordRows etc.) — combined with .prop-row's old
     // justify-content:space-between, that pushed this checkbox all the way
@@ -1690,7 +1690,7 @@
       // database picker (that part needs Code for i — see the "Resolve
       // Referenced Field" button below), same manually-entered-first
       // approach Batch H's task detail calls for.
-      // Batch AA: same text-then-checkbox reversal fix as the barcode
+      // Batch CC: same text-then-checkbox reversal fix as the barcode
       // Asterisk toggle above.
       refCheckbox = el("input", { type: "checkbox" });
       if (cell.reference) refCheckbox.setAttribute("checked", "checked");
@@ -1735,7 +1735,7 @@
       const refFileRow = labeledInput("Ref. file", { type: "text", maxlength: "10", value: target.file || "" });
       refFileInput = refFileRow.input;
       refFieldsRow.appendChild(refFileRow.row);
-      // Batch AA: same text-then-checkbox reversal fix as above.
+      // Batch CC: same text-then-checkbox reversal fix as above.
       useRefValuesCheckbox = el("input", { type: "checkbox" });
       useRefValuesCheckbox.setAttribute("checked", "checked"); // default Y, matching real RLU
       const useRefValuesRow = el("div", { class: "prop-row" }, [el("label", { class: "ind-label" }, [useRefValuesCheckbox, " Use referenced values"])]);
@@ -1940,7 +1940,7 @@
     const downInp = el("input", { type: "text", placeholder: "position-down", value: f.posDown || "" });
     const acrossInp = el("input", { type: "text", placeholder: "position-across", value: f.posAcross || "" });
     const extraInp = el("input", { type: "text", placeholder: "extra, e.g. (*ROTATION 90)", value: f.extra || "" });
-    // Batch AA: these 4 used to be appended directly to `container` with
+    // Batch CC: these 4 used to be appended directly to `container` with
     // no row wrapper at all — no `.prop-row`, no shared width/alignment
     // rules, no visual grouping with the checkbox above them. Wrapping
     // them in their own `.prop-row` matches how MSGCON/COLOR's own
@@ -1978,7 +1978,7 @@
     const downInp = el("input", { type: "text", placeholder: "vertical offset (optional)", value: f.posDown || "" });
     const acrossInp = el("input", { type: "text", placeholder: "horizontal offset (optional)", value: f.posAcross || "" });
     const extraInp = el("input", { type: "text", placeholder: "extra, e.g. (*ROTATION 90)", value: f.extra || "" });
-    // Batch AA: see OVERLAY's own row above — same bare-appendChild bug, same fix.
+    // Batch CC: see OVERLAY's own row above — same bare-appendChild bug, same fix.
     const valuesRow = el("div", { class: "prop-row" });
     [nameInp, downInp, acrossInp, extraInp].forEach((i) => valuesRow.appendChild(i));
     container.appendChild(valuesRow);
@@ -2013,7 +2013,7 @@
     const downInp = el("input", { type: "text", placeholder: "position-down", value: f.posDown || "" });
     const acrossInp = el("input", { type: "text", placeholder: "position-across", value: f.posAcross || "" });
     const extraInp = el("input", { type: "text", placeholder: "extra, e.g. (*SIZE 2 1)", value: f.extra || "" });
-    // Batch AA: see OVERLAY's own row above — same bare-appendChild bug, same fix.
+    // Batch CC: see OVERLAY's own row above — same bare-appendChild bug, same fix.
     const valuesRow = el("div", { class: "prop-row" });
     [nameInp, typeInp, downInp, acrossInp, extraInp].forEach((i) => valuesRow.appendChild(i));
     container.appendChild(valuesRow);
@@ -2051,7 +2051,7 @@
       if (opt === f.tagLevel) o.setAttribute("selected", "selected");
       levelSel.appendChild(o);
     });
-    // Batch AA: see OVERLAY's own row above — same bare-appendChild bug, same fix.
+    // Batch CC: see OVERLAY's own row above — same bare-appendChild bug, same fix.
     const valuesRow = el("div", { class: "prop-row" });
     [nameInp, valueInp, levelSel].forEach((i) => valuesRow.appendChild(i));
     container.appendChild(valuesRow);

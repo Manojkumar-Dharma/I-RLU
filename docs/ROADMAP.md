@@ -291,7 +291,7 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       freshly-parsed system-constant. 7 new tests
       (`test/prtfBatchZ.test.ts`); full suite now 347 tests, all passing.
 
-- [x] **Batch AA — Bug fix: properties-panel row layout consistency.**
+- [x] **Batch CC — Bug fix: properties-panel row layout consistency.**
       Reported: "check box and text box are improperly placed... Range
       them in a way it is easy and uniform." Three independent CSS bugs
       in the shared `.prop-row` rule set — checkboxes stretched to 140px
@@ -305,7 +305,7 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       reverse order from every other toggle, and four AFP-resource rows
       (`appendOverlayRow`/`appendPagsegRow`/`appendAfprscRow`/
       `appendDocidxtagRow`) appended their value inputs with no row
-      wrapper at all. See `docs/TASKS.md` Batch AA for the full
+      wrapper at all. See `docs/TASKS.md` Batch CC for the full
       root-cause writeup. `test/webviewLayout.test.ts` extended with 4
       new tests (CSS rule shape + a source-text structural check for the
       four bare-appendChild rows); full suite now 368 tests, all

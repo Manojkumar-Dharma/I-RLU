@@ -137,7 +137,7 @@ body { font-family: var(--vscode-editor-font-family, monospace); color: var(--vs
 .toolbar { display: flex; align-items: center; gap: 8px; padding: 8px; font-size: 12px; flex-wrap: wrap; flex-shrink: 0; border-bottom: 1px solid var(--vscode-panel-border); }
 .indicators { display: inline-flex; gap: 8px; flex-wrap: wrap; }
 .indicators-wrap { display: inline-flex; align-items: center; gap: 4px; }
-/* Batch AA bug fix — reported: "check box and text box are improperly
+/* Batch CC bug fix — reported: "check box and text box are improperly
    placed", "Range them in a way it is easy and uniform". Root causes
    found by inspection (three distinct bugs, all in this shared rule
    set, affecting nearly every properties-panel row since they all
