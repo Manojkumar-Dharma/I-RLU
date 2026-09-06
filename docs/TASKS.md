@@ -104,6 +104,7 @@ vice versa.
 | Z | ~~System-constant fields (`DATE`, `TIME`, `USER`, `SYSNAME`, `PAGNBR`) — parse as design-time placeholder text (mirroring I-SDA's `fieldDisplayText`) and add an "Add system constant" option alongside literal-text constants~~ | `DATE`, `TIME`, `PAGNBR` (`USER`/`SYSNAME` dropped — see detail section: verified against IBM's DDS reference, neither is a valid printer-file keyword) | **Done** | none |
 | AA | **Bug fix:** `regenerateSource` unconditionally blanks out each line's optional column-6 form-type marker (`A`) instead of preserving whatever was already there, and rebuilds every line fresh on every edit regardless of whether it changed — the two combine to make Batch X's "Track source modifications" flag nearly the entire file as changed from a single one-field edit, on any source written in the (very common) `A`-in-column-6 style | n/a (writer correctness, `src/prtfWriter.js`) | Open | **X** (this is specifically what makes X's diff-based tracking unreliable on this style of source — fix this first, or re-verify X against it afterward) |
 | BB | **Bug fix:** a constant's quoted literal is only recognized when it's the *first* token in the keyword area (`prtfParser.ts`'s literal-extraction regex is anchored with `^`) — a literal preceded by another keyword (e.g. `SPACEB(1) 'CUSTOMER MASTER LISTING'`, a common real-world pattern) parses with `entry.literal` left `undefined`, so the Properties panel shows blank Text for a constant that has real display text | n/a (parser correctness, `src/prtfParser.ts`) | Open | none |
+| CC | ~~**Bug fix:** conditioning indicators are only modeled per field/constant/record entry, not per KEYWORD — a real, common DDS/RLU technique (e.g. two mutually-exclusive `COLOR` keywords on one field, each conditioned on a different indicator, via an attached keyword-only continuation line) was silently misparsed as a bogus phantom constant entry, and even if it hadn't been, the writer had no way to round-trip per-keyword conditioning at all~~ | n/a (model/parser/writer/layout correctness, not a keyword itself — affects every keyword that can appear on its own conditioned line) | **Done** | none |
 
 ## Batch detail
 
@@ -2068,6 +2069,96 @@ token as an ordinary keyword in original order. Add a test fixture based
 directly on the `SPACEB(1) 'literal'` pattern from `SCSPRT1.prtf` (and the
 `'TIME:'` variant) to `prtfParser.test.ts`, and confirm the round trip
 (parse → regenerate) still reproduces the original source for both.
+
+### Batch CC — Per-keyword conditioning indicators [DONE]
+**The gap, confirmed by reading the code (not assumed) before writing any
+fix:** real DDS/RLU conditioning is per PHYSICAL LINE, not just per field/
+constant/record. A field's own definition line has one set of up to 3
+conditioning indicators governing the field as a whole (already modeled,
+via `FieldEntry`/`ConstantEntry`/`RecordFormatEntry.conditions`) — but a
+*separate*, ADDITIONAL physical line can attach one or more further
+keyword(s) to that SAME field, with its OWN independent conditioning
+(blank name/type/length/usage/line/position columns, just conditioning +
+keyword text). The classic real-world use: two mutually-exclusive `COLOR`
+keywords on one field, one active under indicator 05, the other under
+`N05`. `Keyword` had no `conditions` field at all, and the parser treated
+ANY blank-name line inside a record as a brand-new constant, unconditionally
+— so a real conditioned-keyword-continuation line for an existing field
+silently became a bogus, invisible "constant" entry (no literal, no
+Location), and the field never got the keyword at all. Verified this
+empirically against a hand-built, column-exact DDS snippet before touching
+any code.
+
+**Fix — model, parser, writer, and (partially) layout:**
+- `prtfModel.ts`: `Keyword` gained an optional `conditions` field,
+  independent of its owning entry's own `conditions` — never inferred or
+  defaulted from the entry's conditions, since the two are genuinely
+  independent in real DDS. Undefined/empty means "no conditioning of its
+  own" (the overwhelming common case — inline on the entry's own header
+  line, or a plain +/- text-wrap continuation of it).
+- `prtfParser.ts`: a blank-name line inside a record with NO length/type/
+  decimals/usage/line/position AND at least one existing field/constant to
+  attach to is now recognized as an attached keyword-only line and merged
+  into the PRECEDING entry's keywords (tagged with that line's own
+  conditions), instead of becoming a new `ConstantEntry`. A genuine
+  constant (has a Location, or nothing precedes it) is unaffected — this
+  only changes classification for the specific "all positional columns
+  blank" shape a real constant can't have (a constant always needs at
+  least a Location to be placed at all). Also correctly handles the
+  attached line's own +/- wrap continuation.
+- `prtfWriter.js`: new `groupKeywordsByConditions` groups a keywords array
+  into consecutive runs sharing the same conditioning, and new
+  `emitEntryWithConditionedKeywords` emits the entry's own header line
+  (carrying any leading UNconditioned keyword run, plus a constant's
+  literal token) followed by each differently-conditioned group on its own
+  blank-positional line(s) with its own conditioning slots — replacing the
+  old `emitWithKeywords(positional, keywordsToText(entry.keywords))` call
+  in every one of `regenerateSource`'s field/constant/record/fileLevel
+  cases, which used to flatten every keyword onto the entry's own header
+  line regardless of any per-keyword conditioning, silently collapsing and
+  losing it on any edit.
+- `prtfLayout.js`/`prtfKeywordHelpers.js`: `collectIndicators` now also
+  walks keyword-level `conditions` (an indicator referenced ONLY via an
+  attached keyword wouldn't otherwise appear in the indicator-toggle panel
+  at all). New `activeKeywords`/`findActiveKeyword`/`findAllActiveKeywords`
+  helpers filter a keywords array down to what's active under a given
+  indicator state, applied to: `resolveConstantPlaceholder` (`DATE`/`TIME`/
+  `PAGNBR`), the per-entry `SKIPB`/`SPACEB`/`SKIPA`/`SPACEA`/`BARCODE`
+  lookups, and `resolveFont`'s FONT/CDEFNT/FNTCHRSET/FONTNAME cascade
+  (across all three of its entry/record/fileLevel levels) — so toggling an
+  indicator in the toolbar now correctly switches whether a conditionally-
+  attached keyword actually takes effect in the resolved layout, the same
+  way real RLU's own indicator-toggle preview works.
+- **Deliberately NOT done in this batch** (flagging honestly rather than
+  silently leaving a gap): `resolveFont`'s per-keyword-conditioning support
+  only reaches keywords looked up BY that function; page-level geometry
+  this file resolves via `record`/`fileLevel`-level lookups it does NOT
+  thread `indicatorState` through yet — `PAGSIZE`, `CPI`/`LPI` outside the
+  font cascade, `LINE`/`BOX`, `OVERLAY`/`PAGSEG`/`AFPRSC`, and the page-
+  group keywords — would need the same treatment to fully match real RLU,
+  left as a follow-up given how much larger a refactor threading
+  `indicatorState` through every remaining call site would be versus the
+  field/constant-level cases fixed here (which cover the realistic common
+  case of conditioning a specific field's own attributes). Separately —
+  **not a conditioning gap, a pre-existing and unrelated one** — `COLOR`/
+  `DSPATR` aren't rendered visually in the page preview AT ALL yet
+  (editable in the properties panel, but no on-screen color/attribute
+  effect), conditioned or not; toggling an indicator on a conditioned
+  `COLOR` pair won't be visually apparent until that separate rendering
+  work exists.
+- Tests: new `test/prtfConditionedKeywords.test.ts`, 11 tests — parser
+  (attached line recognized as keywords not a phantom constant; inline
+  keywords carry no conditions of their own; a genuine constant with a
+  real Location is unaffected; the attached line's own +/- continuation is
+  preserved), round-trip (two independently-conditioned keywords on one
+  field; an unconditioned run followed by a conditioned one), writer
+  (`groupKeywordsByConditions`, `emitEntryWithConditionedKeywords`'s column
+  layout), `collectIndicators` (keyword-only-referenced indicator still
+  found), and layout (`DATE` and `SKIPB` toggling correctly per their own
+  conditioning). Also manually verified round-trip fidelity is still
+  byte-identical against all three real fixture files
+  (`sample1.pf`/`sample-scs.pf`/`sample-afpds.pf`) after this change. Full
+  suite: 375 tests, all passing (11 new, 364 pre-existing unchanged).
 
 ## Adding a new batch
 

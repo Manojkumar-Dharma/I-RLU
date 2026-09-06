@@ -130,6 +130,12 @@ export function parseSource(text: string): ParsedSource {
   let pendingKeywordText = "";
   let pendingJoinWithSpace = false;
   let pendingStartLine = -1;
+  // Set only when the CURRENT pending run started from an attached
+  // keyword-only line (see the "attached keyword line" branch below) —
+  // undefined for the far more common case of keywords continuing from an
+  // entry's own header line, where they carry no conditioning of their
+  // own beyond the entry's (see prtfModel.ts's Keyword.conditions comment).
+  let pendingConditions: ConditioningIndicator[] | undefined;
   let entryIdCounter = 0;
   const nextId = () => "e" + entryIdCounter++;
 
@@ -141,6 +147,7 @@ export function parseSource(text: string): ParsedSource {
           params: tok.params,
           raw: tok.raw,
           sourceLineIndex: pendingStartLine,
+          conditions: pendingConditions,
         });
       }
     }
@@ -148,6 +155,7 @@ export function parseSource(text: string): ParsedSource {
     pendingKeywordText = "";
     pendingJoinWithSpace = false;
     pendingStartLine = -1;
+    pendingConditions = undefined;
   }
 
   for (let idx = 0; idx < rawLines.length; idx++) {
@@ -224,6 +232,30 @@ export function parseSource(text: string): ParsedSource {
     let target: Keyword[];
     let entry: SourceLineEntry;
     let kwTextForKeywords = kwText;
+    // A completely blank name/reference/length/type/decimals/usage/line/
+    // position, but non-empty (or absent — see below) conditioning, is a
+    // physical line whose ONLY job is to attach one or more additional
+    // keyword(s) to the entry immediately before it in the record — the
+    // classic RLU technique for e.g. two mutually-exclusive COLOR keywords
+    // on the same field, each independently conditioned. Every one of
+    // those positional columns being blank is what marks this as "not a
+    // constant" (a constant always needs at least a Location — line and
+    // position — to be placed at all; DATE/TIME/PAGNBR-only "system
+    // constants" still carry Location, just no literal). Requiring an
+    // existing field/constant to attach to (not just "record started")
+    // guards against a genuinely malformed line being silently absorbed
+    // with no diagnostic — falls through to the ordinary constant branch
+    // below instead, same as it did before this existed.
+    const isAttachedKeywordLine =
+      !!currentRecord &&
+      !referenceFlag &&
+      length === undefined &&
+      dataType === undefined &&
+      decimalPositions === undefined &&
+      usage === undefined &&
+      lineNo === undefined &&
+      position === undefined &&
+      currentRecord.fields.length > 0;
 
     if (!currentRecord) {
       // File-level keyword line (no record format opened yet).
@@ -250,6 +282,23 @@ export function parseSource(text: string): ParsedSource {
       sequence.push(field);
       target = field.keywords;
       entry = field;
+    } else if (isAttachedKeywordLine) {
+      const owner = currentRecord.fields[currentRecord.fields.length - 1];
+      target = owner.keywords;
+      entry = owner;
+      const lineConditions = conditions.length ? conditions : undefined;
+      if (continues) {
+        pendingKeywordTarget = target;
+        pendingKeywordText = kwText;
+        pendingJoinWithSpace = joinWithSpace;
+        pendingStartLine = idx;
+        pendingConditions = lineConditions;
+      } else if (kwText.trim() !== "") {
+        for (const tok of splitKeywords(kwText)) {
+          target.push({ name: tok.name, params: tok.params, raw: tok.raw, sourceLineIndex: idx, conditions: lineConditions });
+        }
+      }
+      continue;
     } else {
       const constant: ConstantEntry = {
         kind: "constant",

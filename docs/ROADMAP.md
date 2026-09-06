@@ -291,6 +291,27 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       freshly-parsed system-constant. 7 new tests
       (`test/prtfBatchZ.test.ts`); full suite now 347 tests, all passing.
 
+- [x] **Batch CC — Per-keyword conditioning indicators.** Real DDS/RLU
+      lets a keyword-only continuation line (blank name/type/position,
+      just its own conditioning) attach ADDITIONAL, independently-
+      conditioned keyword(s) to an existing field/constant — e.g. two
+      mutually-exclusive `COLOR` keywords on one field, each active under
+      a different indicator. `Keyword` had no `conditions` field at all,
+      and the parser was misparsing every such line as a bogus phantom
+      constant. `Keyword.conditions` added (independent of the owning
+      entry's own conditions), parser now correctly attaches these lines
+      to the preceding entry, and the writer (`groupKeywordsByConditions`/
+      `emitEntryWithConditionedKeywords`) now round-trips per-keyword
+      conditioning instead of silently flattening/losing it. Indicator
+      toggling in the toolbar now also correctly switches `DATE`/`TIME`/
+      `PAGNBR`, `SKIPB`/`SPACEB`/`SKIPA`/`SPACEA`/`BARCODE`, and the FONT
+      cascade when conditioned this way. NOT yet done: threading indicator
+      state through `PAGSIZE`/`LINE`/`BOX`/`OVERLAY`/`PAGSEG`/`AFPRSC`/
+      page-group geometry, and — separately, pre-existing — `COLOR`/
+      `DSPATR` still aren't visually rendered in the preview at all. See
+      `docs/TASKS.md` Batch CC for the full writeup. 11 new tests; full
+      suite now 375, all passing.
+
 ## Next up
 
 As of the RLU screen-capture review (`docs/KEYWORD-INVENTORY.md`), the

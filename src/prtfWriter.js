@@ -65,6 +65,62 @@ function keywordsToText(keywords) {
 }
 
 /**
+ * Groups a keywords array into consecutive runs sharing the same
+ * conditioning (see prtfModel.ts's Keyword.conditions comment for why
+ * this exists at all): a run of keywords with no `conditions` of their
+ * own — the ordinary case, living on the entry's own header line/wrap-
+ * continuations — versus a run that came from an attached keyword-only
+ * line and needs to be re-emitted on its OWN physical line(s) with its
+ * own conditioning columns, name/type/position left blank. Consecutive
+ * keywords sharing the exact same conditioning are kept in one group (one
+ * physical line, wrapping further if long) rather than one line per
+ * keyword, matching how such lines are actually authored — several
+ * keywords under the same condition together, e.g. `05  COLOR(BLU) DSPATR(HI)`.
+ */
+function groupKeywordsByConditions(keywords) {
+  const groups = [];
+  const key = (conditions) => (conditions && conditions.length ? conditions.map((c) => c.raw).join(",") : "");
+  for (const kw of keywords || []) {
+    const kwConditions = kw.conditions && kw.conditions.length ? kw.conditions : undefined;
+    const last = groups[groups.length - 1];
+    if (last && last.key === key(kwConditions)) {
+      last.keywords.push(kw);
+    } else {
+      groups.push({ conditions: kwConditions, key: key(kwConditions), keywords: [kw] });
+    }
+  }
+  return groups;
+}
+
+/**
+ * Emits an entry's positional line plus its keywords, correctly splitting
+ * off any keyword group that carries its own independent conditioning
+ * (see groupKeywordsByConditions) onto separate, blank-positional line(s)
+ * of its own rather than folding every keyword onto the entry's own
+ * header line the way plain `emitWithKeywords(positional, keywordsToText(...))`
+ * used to (data loss for any entry with a conditioned attached-keyword
+ * line — see docs/TASKS.md's conditioning-indicators batch for the full
+ * writeup of why). `leadingText` (used for a constant's literal token) is
+ * always emitted on the entry's OWN header line, ahead of any of its
+ * unconditioned keywords, never split onto its own conditioned line —a
+ * constant's literal isn't itself a separately-conditionable keyword.
+ */
+function emitEntryWithConditionedKeywords(positional44, keywords, leadingText) {
+  const groups = groupKeywordsByConditions(keywords);
+  const firstGroup = groups[0];
+  const firstIsUnconditioned = !firstGroup || !firstGroup.conditions;
+  const headerKeywordText = firstIsUnconditioned && firstGroup ? keywordsToText(firstGroup.keywords) : "";
+  const headerText = leadingText ? (headerKeywordText ? leadingText + " " + headerKeywordText : leadingText) : headerKeywordText;
+  const lines = emitWithKeywords(positional44, headerText);
+  const restGroups = firstIsUnconditioned ? groups.slice(1) : groups;
+  for (const group of restGroups) {
+    const groupPositional = buildPositional({ conditions: group.conditions });
+    lines.push(...emitWithKeywords(groupPositional, keywordsToText(group.keywords)));
+  }
+  return lines;
+}
+
+/**
  * Splits keyword-area text into whitespace-separated tokens, treating an
  * entire single-quoted DDS literal (including any spaces inside it, and
  * respecting DDS's doubled-`''`-means-a-literal-quote escaping) as ONE
@@ -189,12 +245,12 @@ function regenerateSource(model) {
         break;
       case "fileLevel": {
         const positional = buildPositional({});
-        outLines.push(...emitWithKeywords(positional, keywordsToText(entry.keywords)));
+        outLines.push(...emitEntryWithConditionedKeywords(positional, entry.keywords));
         break;
       }
       case "record": {
         const positional = buildPositional({ nameType: "R", name: entry.name, conditions: entry.conditions });
-        outLines.push(...emitWithKeywords(positional, keywordsToText(entry.keywords)));
+        outLines.push(...emitEntryWithConditionedKeywords(positional, entry.keywords));
         break;
       }
       case "field": {
@@ -209,17 +265,13 @@ function regenerateSource(model) {
           position: entry.position,
           conditions: entry.conditions,
         });
-        outLines.push(...emitWithKeywords(positional, keywordsToText(entry.keywords)));
+        outLines.push(...emitEntryWithConditionedKeywords(positional, entry.keywords));
         break;
       }
       case "constant": {
         const positional = buildPositional({ lineNo: entry.line, position: entry.position, conditions: entry.conditions });
-        let kwText = keywordsToText(entry.keywords);
-        if (entry.literal !== undefined) {
-          const litToken = "'" + String(entry.literal).replace(/'/g, "''") + "'";
-          kwText = kwText ? litToken + " " + kwText : litToken;
-        }
-        outLines.push(...emitWithKeywords(positional, kwText));
+        const litToken = entry.literal !== undefined ? "'" + String(entry.literal).replace(/'/g, "''") + "'" : undefined;
+        outLines.push(...emitEntryWithConditionedKeywords(positional, entry.keywords, litToken));
         break;
       }
       default:
@@ -386,6 +438,8 @@ module.exports = {
   buildPositional,
   emitWithKeywords,
   keywordsToText,
+  groupKeywordsByConditions,
+  emitEntryWithConditionedKeywords,
   upsertReffldKeyword,
   tokenizeKeywordText,
   commentOutLine,
