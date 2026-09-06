@@ -236,17 +236,23 @@ export function parseSource(text: string): ParsedSource {
     // A completely blank name/reference/length/type/decimals/usage/line/
     // position, but non-empty (or absent — see below) conditioning, is a
     // physical line whose ONLY job is to attach one or more additional
-    // keyword(s) to the entry immediately before it in the record — the
-    // classic RLU technique for e.g. two mutually-exclusive COLOR keywords
-    // on the same field, each independently conditioned. Every one of
-    // those positional columns being blank is what marks this as "not a
-    // constant" (a constant always needs at least a Location — line and
-    // position — to be placed at all; DATE/TIME/PAGNBR-only "system
-    // constants" still carry Location, just no literal). Requiring an
-    // existing field/constant to attach to (not just "record started")
-    // guards against a genuinely malformed line being silently absorbed
-    // with no diagnostic — falls through to the ordinary constant branch
-    // below instead, same as it did before this existed.
+    // keyword(s) to the entry immediately before it — the classic RLU
+    // technique for e.g. two mutually-exclusive COLOR keywords on the same
+    // field, each independently conditioned. Every one of those positional
+    // columns being blank is what marks this as "not a constant" (a
+    // constant always needs at least a Location — line and position — to
+    // be placed at all; DATE/TIME/PAGNBR-only "system constants" still
+    // carry Location, just no literal). "The entry immediately before it"
+    // is the record's own most recently added field/constant if it has
+    // one, or the RECORD FORMAT ITSELF if a record has been opened but no
+    // field/constant has been seen yet — the same technique applies to
+    // record-level keywords like PAGSIZE/CPI/LPI/OVERLAY/STRPAGGRP, which
+    // live directly on the record, not on any field (see this batch's own
+    // tests in prtfConditionedKeywords.test.ts for a PAGSIZE example).
+    // Requiring a record to have been opened at all guards against a
+    // genuinely malformed line being silently absorbed with no diagnostic —
+    // falls through to the ordinary constant branch below instead, same as
+    // it did before this existed.
     const isAttachedKeywordLine =
       !!currentRecord &&
       !referenceFlag &&
@@ -255,11 +261,17 @@ export function parseSource(text: string): ParsedSource {
       decimalPositions === undefined &&
       usage === undefined &&
       lineNo === undefined &&
-      position === undefined &&
-      currentRecord.fields.length > 0;
+      position === undefined;
 
     if (!currentRecord) {
-      // File-level keyword line (no record format opened yet).
+      // File-level keyword line (no record format opened yet). Real DDS
+      // rarely conditions file-level keywords (indicators are unusual at
+      // that scope), but the syntax permits it and there's no reason to
+      // special-case dropping it here — captured the same way an attached
+      // field/record keyword line's conditioning is, just tagged directly
+      // rather than via the isAttachedKeywordLine branch below (file-level
+      // has no separate "genuine new entry" alternative to rule out the
+      // way a constant is for a record's fields).
       target = fileLevel.keywords;
       entry = fileLevel; // not pushed to sequence more than once; see below
       if (sequence.indexOf(fileLevel) === -1) {
@@ -271,6 +283,19 @@ export function parseSource(text: string): ParsedSource {
         fileLevel.formType = col(line, 6);
         sequence.push(fileLevel);
       }
+      const lineConditions = conditions.length ? conditions : undefined;
+      if (continues) {
+        pendingKeywordTarget = target;
+        pendingKeywordText = kwText;
+        pendingJoinWithSpace = joinWithSpace;
+        pendingStartLine = idx;
+        pendingConditions = lineConditions;
+      } else if (kwText.trim() !== "") {
+        for (const tok of splitKeywords(kwText)) {
+          target.push({ name: tok.name, params: tok.params, raw: tok.raw, sourceLineIndex: idx, conditions: lineConditions });
+        }
+      }
+      continue;
     } else if (name) {
       const field: FieldEntry = {
         kind: "field",
@@ -293,7 +318,7 @@ export function parseSource(text: string): ParsedSource {
       target = field.keywords;
       entry = field;
     } else if (isAttachedKeywordLine) {
-      const owner = currentRecord.fields[currentRecord.fields.length - 1];
+      const owner = currentRecord.fields.length > 0 ? currentRecord.fields[currentRecord.fields.length - 1] : currentRecord;
       target = owner.keywords;
       entry = owner;
       const lineConditions = conditions.length ? conditions : undefined;

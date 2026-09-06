@@ -87,7 +87,7 @@ vice versa.
 | I | ~~`UOM` modeling~~ **done elsewhere** (see `i-rlu.unitOfMeasure` setting, `docs/ROADMAP.md`) + file-level SKIPA/SKIPB *AFPDS validation | `SKIPA`, `SKIPB` (validation only) | **Done** (validation landed as part of Batch F — see `prtfEngine.js`'s `validateFileLevelKeywords`) | none |
 | J | ~~Compile command: library/source-file/member picker~~ | n/a (tooling) | **Done** | none |
 | K | Packaging (`.vsix`) | n/a (tooling) | **Done** | ideally after A–I land, but can be prepped early |
-| L | Real AFP font metrics | n/a (data) | Mostly done — FGID identification resolved; proportional widths now use real published Adobe AFM data (metric-compatible substitute fonts, not verified IBM FGID resource extraction); FONTNAME fully resolved, CDEFNT/FNTCHRSET honestly partially resolved (documented prefix + small verified table; full resolution needs a live IBM i, see REQUIREMENTS.md §9) | none |
+| L | Real AFP font metrics | n/a (data) | Mostly done — FGID identification resolved; proportional widths now use real published Adobe AFM data (metric-compatible substitute fonts, not verified IBM FGID resource extraction); FONTNAME fully resolved (name/family/spacing offline, PLUS real per-character advance widths from real vendored substitute TrueType fonts — see "FONTNAME real advance widths" below), CDEFNT/FNTCHRSET honestly partially resolved (documented prefix + small verified table; full resolution needs a live IBM i, see REQUIREMENTS.md §9) | none |
 | M | ~~**Bug fix:** writer emits wrong continuation character when wrapping mid-token~~ | n/a (parser/writer correctness) | **Done** | none |
 | N | ~~`BARCODE` mutual-exclusion validation~~ | `BARCODE` (validation vs. `FONT`, `EDTCDE`, `EDTWRD`, `DATE`, `TIME`, `PAGNBR`, etc.) | **Done** | **C** |
 | O | Real AFP resource rendering (actual pixel content for page segments/overlays) | `PAGSEG`, `OVERLAY` (record-level) | Blocked — needs external resource files, see REQUIREMENTS.md §8 | **E** |
@@ -105,6 +105,14 @@ vice versa.
 | AA | ~~**Bug fix:** `regenerateSource` unconditionally blanks out each line's optional column-6 form-type marker (`A`) instead of preserving whatever was already there, and rebuilds every line fresh on every edit regardless of whether it changed — the two combine to make Batch X's "Track source modifications" flag nearly the entire file as changed from a single one-field edit, on any source written in the (very common) `A`-in-column-6 style~~ | n/a (writer correctness, `src/prtfWriter.js`) | **Done** | **X** (was specifically what made X's diff-based tracking unreliable on this style of source — re-verified against it as part of this batch) |
 | BB | **Bug fix:** a constant's quoted literal is only recognized when it's the *first* token in the keyword area (`prtfParser.ts`'s literal-extraction regex is anchored with `^`) — a literal preceded by another keyword (e.g. `SPACEB(1) 'CUSTOMER MASTER LISTING'`, a common real-world pattern) parses with `entry.literal` left `undefined`, so the Properties panel shows blank Text for a constant that has real display text | n/a (parser correctness, `src/prtfParser.ts`) | Open | none |
 | CC | ~~**Bug fix:** conditioning indicators are only modeled per field/constant/record entry, not per KEYWORD — a real, common DDS/RLU technique (e.g. two mutually-exclusive `COLOR` keywords on one field, each conditioned on a different indicator, via an attached keyword-only continuation line) was silently misparsed as a bogus phantom constant entry, and even if it hadn't been, the writer had no way to round-trip per-keyword conditioning at all~~ | n/a (model/parser/writer/layout correctness, not a keyword itself — affects every keyword that can appear on its own conditioned line) | **Done** | none |
+| DD | ~~Batch CC follow-up: thread indicator state through the record/file-level geometry keywords `resolveLayout` resolves once per call (`PAGSIZE`, `CPI`/`LPI`, `LINE`/`BOX`, `OVERLAY`/`PAGSEG`/`AFPRSC`, `STRPAGGRP`/`ENDPAGGRP`/`DOCIDXTAG`/`DTASTMCMD`) — Batch CC itself only reached the per-field/constant lookups~~ | n/a (layout correctness, `src/prtfLayout.js`) | **Done** | **CC** (this is that batch's own explicitly-flagged remaining scope) |
+| EE | Render `COLOR`/`DSPATR`/`UNDERLINE`/`HIGHLIGHT` visually in the design-time page preview — these are editable via the properties panel (Batch A) and now correctly conditioned per-keyword (Batch CC/DD), but the resolved value is never actually applied to the on-screen cell text at all today (no font color, no bold/reverse-image/underline styling in `media/webviewClient.js`'s cell rendering) — so toggling an indicator on a conditioned `COLOR` pair, or just setting `COLOR` at all, has no visible effect in the designer even though the model/layout resolve it correctly | `COLOR` (Named/`*RGB`, `*CMYK`/`*CIELAB` unverified — see Batch A), `DSPATR`, `UNDERLINE`, `HIGHLIGHT` | Open | none (needs `resolveLayout` to surface a resolved style per cell, then webview CSS/rendering to apply it — no model/parser/writer change expected) |
+| FF | ~~**Bug fix:** properties/keywords column rows inconsistent — checkboxes stretched to the value-input width, some rows put the checkbox before its label and others after, several rows had no row wrapper at all~~ | n/a (webview UI/CSS, `media/webviewClient.js` + `src/buildWebviewTemplate.js`) | **Done** | none |
+| GG | Field/constant overlap detection — no warning today when two fields' positions+lengths overlap, or a field extends past another, on the same line | n/a (layout correctness, not a keyword) | Open | none |
+| HH | Sample/test data entry & preview — real RLU's `SD` sequence command lets a person type realistic per-field values shown in the design preview instead of a bare `{FIELDNAME}` placeholder | n/a (webview UI + model, not a keyword) | Open | none |
+| II | Duplicate/clone an entire record format (all its fields/constants/keywords in one action) — Batch Q covers a single field, Batch P covers add/rename/delete/reorder of record formats, neither clones a whole one | n/a (tooling/UI, not a keyword) | Open | **Q** (reuse its field-copy naming-collision logic per cloned field) |
+| JJ | Multi-select fields for bulk move/copy/delete — real RLU's F14/F15 (Copy Fields/Move Fields) operate on several selected fields at once; today's click-to-place/drag is one-field-at-a-time only | n/a (webview UI, not a keyword) | Open | **Q** (bulk version of its single-field copy) |
+| KK | Boundary shift-and-truncate (real RLU's `LT`/`RT`) — moving/resizing a field past the report's right edge has no validation at all today; a field can end up positioned off-page silently | n/a (layout correctness, not a keyword) | Open | **GG** (natural pairing — both are "is this field's position/length actually valid" checks) |
 | LL | **Bug fix:** a field's `+n` relative-position notation (DDS positions 42-44, e.g. `+2` = "2 spaces after the previous field ends" — see IBM's own RELPOS keyword reference) is read by `parseInt` as a plain absolute number, silently discarding the "this is relative, not absolute" semantic — round-tripping such a field through I-RLU relocates it to a fixed, usually-wrong absolute column | n/a (parser/model/writer correctness, `src/prtfParser.ts`/`src/prtfModel.ts`/`src/prtfWriter.js`, plus any UI that edits a field's line/position) | Open | none |
 
 ## Batch detail
@@ -890,6 +898,91 @@ work needed one small adjustment (the FONTNAME quoting fix above) but was
 otherwise unaffected — it's about letting the user *set* these keywords'
 values through the UI, which is a separate concern from resolving their
 real metrics for rendering.
+
+**[FONTNAME real advance widths — DONE, as follows]:**
+
+At the time the section above was written, `resolveFontName`'s
+family/name/spacing were fully resolved but deliberately carried NO
+per-character advance-width data at all — the investigation that opened
+this batch's CDEFNT/FNTCHRSET/FONTNAME work found nothing downstream
+called `AfpFontMetrics.getAdvanceWidth`-style glyph widths, so there was
+nothing to wire FONTNAME's own widths into. This follow-up adds that
+capability for real, prompted by a direct request to look into it
+alongside investigating IBM i's own custom-TrueType-font-upload feature
+(FONTNAME can reference a font uploaded straight to the IFS, no purchased
+host font package required — see REQUIREMENTS.md for that research).
+
+**Why this is solvable at all despite FONTNAME's named font itself being
+just as inaccessible as CDEFNT/FNTCHRSET's:** a `FONTNAME`-referenced font
+is an ordinary TrueType/OpenType (`.ttf`/`.otf`) file — a well-documented,
+public binary format (unlike CDEFNT/FNTCHRSET's IBM-internal font-resource
+data, which IBM's own documentation says has no universal decode table at
+all). That means real glyph metrics for the *generic idea* of "a TrueType
+font in FONTNAME_GENERIC_FALLBACK's monospace/serif/sans-serif buckets"
+are obtainable from any real font in that category — not this tool
+inventing data, but reading someone else's real font file for real.
+
+**Implementation:**
+- New `src/afpTrueTypeMetrics.js`: a from-scratch sfnt (TrueType/OpenType)
+  binary parser — reads the table directory, `head` (unitsPerEm), `hhea`/
+  `hmtx` (real per-glyph advance widths), and `cmap` (formats 4 and 12,
+  Unicode codepoint → glyph ID). Deliberately scoped to metrics only — no
+  glyph-outline (`glyf`/`CFF`/`loca`) parsing, since advance width is all
+  layout/preview work needs and outline parsing is substantially more
+  involved for no payoff here. Verified correct by cross-checking its
+  output against `fontTools` (the industry-standard Python font library)
+  across the full ASCII printable range (32-126) on three real fonts
+  during development — **zero mismatches**, not spot-checked on a couple
+  of characters and assumed correct elsewhere.
+- Three real, unmodified, SIL OFL 1.1-licensed fonts vendored at
+  `resources/fonts/` (a shipped runtime location — confirmed present in
+  `vsce ls`'s packaged-file list, not just a test fixture) — sourced from
+  the official `google/fonts` repository: **Cousine** (Courier New
+  substitute, monospace — purpose-built for this by the same Ascender/
+  Google lineage as the well-known "croscore" fonts), **Tinos** (Times New
+  Roman substitute, serif — same lineage), and **PT Sans** (fills the
+  sans-serif bucket, but honestly NOT claimed as an Arial-metric match —
+  the real Arial-compatible croscore font, Arimo, is only distributed as a
+  variable font in the current `google/fonts` repo, which a fixed-
+  per-glyph-width model can't read). Full provenance, commit hash, and
+  license text in `resources/fonts/NOTICE.md`.
+- `src/afpCodedFontMetrics.js` gained `getAdvanceWidth(name, ch)`, mapping
+  a FONTNAME value through the same `FONTNAME_GENERIC_FALLBACK` bucket
+  `resolveFontName` already uses, to a lazily-parsed-and-cached vendored
+  substitute font, returning a width in the same "1.0 == one character
+  cell" normalized units `afpFontMetrics.js`'s own `getAdvanceWidth` uses —
+  computed as a REAL average over that font's own ASCII-range widths
+  (not a hardcoded constant like `afpFontMetrics.js`'s
+  `PROPORTIONAL_AVG_WIDTH`, since a real font file is available to compute
+  it from directly here). Returns `undefined` — never a guessed
+  approximation — for a name outside the three known buckets, matching
+  this project's existing honesty convention.
+- `resolveFontName`'s own `isPlaceholderMetrics`/`resolutionNote` updated
+  for known names: previously `false`/`undefined` (reasoned as "the
+  family IS the real font, no substitution happening"), now `true` with a
+  note explicitly naming which substitute font and pointing at
+  `resources/fonts/NOTICE.md` — because real substitute advance-width data
+  is now attached behind the scenes, and this project's own precedent
+  (`afpFontMetrics.js`'s identical flag for its AFM-substitute
+  proportional widths) is to flag that honestly rather than let a
+  substitute's data ride under an unqualified "not a placeholder" label.
+  Updated `test/afpCodedFontMetrics.test.ts`'s existing assertions
+  in place to match, with the reasoning for the change documented
+  in the test file itself, not just silently flipped.
+- **Tests:** `test/afpTrueTypeMetrics.test.ts` (7 tests) — parses all
+  three real vendored fonts and asserts concrete values (including the
+  "every printable ASCII character resolves to a defined width" and
+  "an unmapped Private-Use-Area codepoint returns undefined" cases).
+  `test/afpCodedFontMetrics.test.ts` gained 4 new `getAdvanceWidth` tests
+  plus updates to the pre-existing `resolveFontName` assertions above.
+- Full suite: 375 tests, all passing on a clean install (`rm -rf
+  node_modules out && npm install && npm test`); `tsc --noEmit` clean;
+  `npx vsce ls` confirmed all five `resources/fonts/` files (three `.ttf`,
+  `NOTICE.md`, `LICENSE-OFL-1.1.txt`) are included in the packaged
+  extension, and a direct `require()` against the real compiled
+  `out/src/afpCodedFontMetrics.js` (not just the TypeScript source)
+  confirmed the `../../resources/fonts` runtime path resolves correctly
+  from its actual on-disk location.
 
 ### Batch M — Fix writer's continuation-character bug [DONE]
 **Found by:** `test/prtfFixtures.test.ts`'s round-trip test against
@@ -2243,6 +2336,421 @@ deciding. Add fixture-based round-trip tests using
 `test/fixtures/scsprt1-realworld.prtf`/`afpprt1-realworld.prtf` (both
 already contain real `+n` fields) alongside whatever synthetic cases get
 added, since those are what caught this in the first place.
+
+### Batch DD — Batch CC follow-up: geometry keyword conditioning [DONE]
+Threads `indicatorState` through the record/file-level keyword lookups
+`resolveLayout` resolves ONCE per call (as opposed to the per-field/
+constant loop Batch CC itself already covered): `resolvePageSize`
+(`PAGSIZE`), `resolveCpiLpi` (`CPI`/`LPI`), the `LINE`/`BOX` geometry list,
+`resolveResourcePlaceholders` (`OVERLAY`/`PAGSEG`/`AFPRSC`), and
+`collectPageGroupMetadata` (`STRPAGGRP`/`ENDPAGGRP`/`DOCIDXTAG`/
+`DTASTMCMD`) all now use `findActiveKeyword`/`findAllActiveKeywords`
+instead of the plain, condition-blind `findKeyword`/`findAllKeywords`.
+
+**A real bug found in Batch CC's OWN fix while writing this batch's
+tests, not assumed:** Batch CC's `isAttachedKeywordLine` detection in
+`prtfParser.ts` only ever attached a conditioned keyword-only line to the
+record's most recently added FIELD or CONSTANT — there was no path to
+attach one directly to the RECORD FORMAT ITSELF (a keyword-only
+conditioned line appearing right after `R RECORDNAME`, before any field
+has been seen yet). Since `PAGSIZE`/`CPI`/`LPI`/`LINE`/`BOX`/`OVERLAY`/
+`STRPAGGRP` etc. are RECORD-level keywords, not field-level, a
+conditioned variant of any of them is exactly this shape — Batch CC's own
+parser fix would have silently misparsed it as a phantom constant, the
+same failure mode Batch CC itself existed to fix, just one level up.
+Caught by writing this batch's own test for a conditioned `PAGSIZE`
+before any field existed and seeing it fail the same way Batch CC's
+original repro did. Fixed by widening the owner resolution to
+`currentRecord.fields.length > 0 ? <last field/constant> : currentRecord`
+instead of only ever the former.
+
+**A second, smaller gap fixed the same way:** file-level keyword lines
+(before any record format is opened) were correctly captured as file-
+level keywords already, but a file-level line's OWN conditioning
+(`conditions`, already parsed off that line either way) was computed and
+then discarded rather than attached to the keyword — real DDS rarely
+conditions file-level keywords, but the syntax permits it, and there's no
+principled reason to special-case dropping it now that the general
+mechanism exists. Fixed the same way as the record/field case: tagged
+directly when pushing (or via `pendingConditions` for a continuing line).
+
+**Also fixed while here:** `findActiveKeyword` (added in Batch CC) used
+first-match-wins semantics, inherited from `findKeyword`. That's wrong for
+exactly the pattern this whole feature exists for — an unconditioned
+DEFAULT keyword followed by a conditioned OVERRIDE of the SAME keyword
+(e.g. `PAGSIZE(66 132)` then a conditioned `PAGSIZE(88 198)`) — both are
+"active" once the override's indicator is on (the default is
+unconditionally active by definition), so first-match-wins would always
+return the default and the override would never visibly take effect.
+Caught by this batch's own PAGSIZE test failing with the default value
+even with the indicator on. Changed to last-active-match-wins, matching
+how a person reading the DDS top-to-bottom would expect a later,
+conditioned line to override an earlier default — a genuine behavioral
+fix, not just a threading exercise, and it doesn't change any
+single-occurrence case (which every pre-existing use of `findActiveKeyword`
+was).
+
+**Still not done (unrelated to conditioning, flagged in Batch CC's own
+writeup already):** `COLOR`/`DSPATR` still aren't rendered visually in the
+page preview at all, conditioned or not — a separate, pre-existing gap.
+
+Tests: 8 new in `test/prtfConditionedKeywords.test.ts` (`PAGSIZE`, `LINE`,
+`OVERLAY`, `STRPAGGRP`, `CPI` toggling; attaching to the record itself
+before any field; that attachment's own round-trip; file-level
+conditioning capture). Manually re-verified byte-identical round-trip
+against all three real fixture files. Full suite: 394 tests, all passing.
+
+### Batch EE — Render COLOR/DSPATR/UNDERLINE/HIGHLIGHT visually [OPEN]
+
+**The gap:** `COLOR`, `DSPATR`, `UNDERLINE`, and `HIGHLIGHT` are all
+editable via the properties panel (Batch A) and are now correctly
+resolved per-keyword-conditioning (Batch CC/DD — `findActiveKeyword`
+already picks the right one out of several conditioned variants). But
+none of that resolved value is ever applied to the actual rendered cell
+text in `media/webviewClient.js`'s page preview — `renderPage` draws a
+cell's text in whatever the browser's default color/weight is,
+regardless of what `COLOR`/`DSPATR`/etc. say. Confirmed by grepping
+`media/webviewClient.js` and `src/prtfLayout.js` for `COLOR`/`DSPATR`/
+`color:` before writing docs/TASKS.md's Batch CC entry — no rendering
+code touches these keywords at all today, only the properties-panel
+editing UI does. Practical effect: setting `COLOR(RED)` on a field, or
+toggling an indicator between two conditioned `COLOR` values, does
+literally nothing visible in the designer even though the underlying
+model and layout resolution are both already correct.
+
+**What to do:**
+- `src/prtfLayout.js`'s `resolveLayout` should resolve a per-cell style
+  object (analogous to how it already resolves `font`/`fontDisplay` via
+  `resolveFont`/`resolveFontDisplay`) from `findActiveKeyword(entry.keywords,
+  "COLOR", indicatorState)` / `"DSPATR"` / `"UNDERLINE"` / `"HIGHLIGHT"`,
+  cascading record→file level the same way `resolveFont` does (DDS allows
+  all four at record level too, as record-level defaults fields inherit).
+- `COLOR`'s parameter is one of IBM's fixed named colors (`BLU`, `RED`,
+  `PNK`, `GRN`, `TRQ`, `YLW`, `WHT`) or (per Batch A's own writeup)
+  `*RGB`/unverified `*CMYK`/`*CIELAB` — map the named set to CSS colors
+  directly; treat `*RGB` etc. the same "approximate, not verified" way
+  this file already treats other under-specified keywords (see the file's
+  banner comment).
+  `DSPATR` values worth mapping to CSS: `HI` (bold-ish/emphasis — AFPDS
+  doesn't have a real terminal-style "high intensity", so bold is a
+  reasonable visual stand-in), `RI` (reverse image — swap foreground/
+  background), `BL` (blink — CSS `animation`, or skip as out of scope for
+  a static preview), `ND`/`PC`/`UL` (non-display/position-cursor/underline
+  — `UL` overlaps with the standalone `UNDERLINE` keyword; confirm against
+  IBM's DDS reference whether both can appear together and if so how they
+  compose, rather than assuming).
+- `media/webviewClient.js`'s cell-rendering code (`renderPage`) applies
+  the resolved style (`color`, `font-weight`/`text-decoration`, etc.) to
+  each cell's text node.
+- Add tests: `resolveLayout` resolves the right color/attribute per cell,
+  including a conditioned-`COLOR`-pair case exercising the same
+  indicator-toggle mechanism Batch CC/DD's own tests already cover for
+  other keywords (reuse `test/prtfConditionedKeywords.test.ts`'s
+  `buildLine`/`buildSource` helpers rather than re-inventing them).
+- No model/parser/writer change expected — `COLOR`/`DSPATR`/`UNDERLINE`/
+  `HIGHLIGHT` already parse, store, and round-trip correctly today (Batch
+  A); this is purely "resolve + render", the same shape Batch L
+  (continued)'s FONT/CDEFNT/FNTCHRSET/FONTNAME work already took.
+
+### Batch FF — Bug fix: properties-panel row layout consistency [DONE]
+
+Reported by Manojkumar-dharma: "right panel is not correctly organized,
+check box and text box are improperly placed. Range them in a way it is
+easy and uniform." Found three distinct, independent bugs by inspection,
+all reachable through the same shared `.prop-row` rule set (so nearly
+every properties-panel row was affected by at least one of them):
+
+1. **Checkboxes stretched to 140px wide.** `.prop-row input, .prop-row
+   select { width: 140px; }` (`src/buildWebviewTemplate.js`) is a
+   descendant selector with no `:not([type="checkbox"])` exclusion — it
+   also matched every checkbox nested inside a `.ind-label` inside a
+   `.prop-row`, i.e. nearly every keyword-toggle row (`appendKeywordRows`,
+   `appendEdtcdeRow`, `appendMsgconRow`, `appendColorRow`,
+   `appendOverlayRow`, `appendPagsegRow`, `appendAfprscRow`,
+   `appendDocidxtagRow`). Browsers do respect explicit width/height on a
+   checkbox's own box, so this stretched every one of them from its
+   native ~13px to 140px. Fixed by excluding
+   `input[type="checkbox"]` from the width rule and giving it its own
+   `width: auto` rule.
+2. **Label columns didn't line up row to row.** `.ind-label`/
+   `.pfield-label` (the checkbox+name / label portion of a row) had no
+   width of their own — sized purely to their own text content — so a
+   row's value input started at a different x-position depending on how
+   long THAT row's keyword name happened to be (e.g. "DFT" vs
+   "FLTFIXDEC"), instead of every row's value column lining up at the
+   same offset. Fixed by giving `.ind-label`, a new `.prop-label`, and
+   `.pfield-label` a shared fixed `flex: 0 0 104px` (104px comfortably
+   fits every keyword name in this codebase's own
+   `docs/KEYWORD-INVENTORY.md` — longest is `FLTFIXDEC`, 9 chars — with
+   `text-overflow: ellipsis` as a safety net for anything longer).
+   `labeledInput`/`labeledSelect` (`media/webviewClient.js`) previously
+   appended their label text as a bare DOM text node rather than an
+   element — text nodes aren't selectable in CSS at all, so there was no
+   way to give THEIR label column the same width until the raw text got
+   wrapped in an actual `<span class="prop-label">`.
+3. **Multi-input rows overflowed and wrapped unevenly.** The old fixed
+   `width: 140px` per value input, with no shared space-splitting, meant
+   a row with 2+ inputs on one line (EDTCDE's edit-code select + fill
+   character; MSGCON's four params) needed 280–560px of value-input
+   width alone — several times the ~300px usable width inside the
+   340px-wide `.side-col` — guaranteeing an uneven wrap that looked
+   different depending on how many inputs a given row happened to have.
+   Changed to `flex: 1 1 70px`, so a row's own input(s) share whatever
+   width is actually available evenly, still wrapping to a second line
+   as a cohesive group when they genuinely don't fit, rather than each
+   competing independently at a size that assumed it had the whole row.
+
+**Two further structural bugs found along the way** (not CSS — no CSS
+fix could have addressed either):
+- **Reversed checkbox/label order.** Three standalone Y/N toggles — the
+  barcode "Asterisk (CODE3OF9)" row, and Batch H's "Reference a field"/
+  "Use referenced values" rows — built their `<label class="prop-row">`
+  as `[text, checkbox]` instead of the `.ind-label` convention's
+  `[checkbox, text]` used by every other toggle in the panel. Combined
+  with `.prop-row`'s old `justify-content: space-between`, this pushed
+  those three checkboxes all the way to the row's right edge with their
+  text flush left, instead of sitting right next to their text like
+  every other toggle. Restructured all three to the standard
+  checkbox-first `.ind-label` shape.
+- **Four rows with no wrapper at all.** `appendOverlayRow`,
+  `appendPagsegRow`, `appendAfprscRow`, and `appendDocidxtagRow` (all
+  Batch E) appended their 3–5 value inputs directly to the panel
+  container with `container.appendChild(i)` — no `.prop-row` div, no
+  shared width/alignment rules, no visual grouping with the checkbox
+  above them at all. `appendMsgconRow` and `appendColorRow` (both Batch
+  A) already did this correctly (their value inputs go into their own
+  `.prop-row` div); the four Batch E rows just hadn't followed that
+  existing pattern. Fixed by wrapping each one's inputs in a
+  `valuesRow = el("div", { class: "prop-row" })`, matching MSGCON/COLOR.
+
+**Verification:** `npx tsc --noEmit` clean; full suite 368/368 passing
+(364 previous + 4 new in `test/webviewLayout.test.ts`). The new tests
+lock in the specific CSS rules (checkbox exclusion, shared label-column
+flex-basis, shared value-input flex-basis) and, since the four-rows-with-
+no-wrapper bug is structural rather than CSS, a source-text shape check
+confirming those four functions build a `.prop-row` around their value
+inputs rather than appending them bare — same "can't prove real layout,
+so lock in the specific mechanism instead" approach `webviewLayout.test.ts`
+already used for the `#root` scroll-chain fix (Batch V). **No real-browser
+verification was possible in this session** (same sandbox limitation
+documented since Batch V — no usable headless browser here). **Please
+verify in a real Extension Development Host**, ideally against a field
+or record with several different keyword types checked at once (a mix
+of flag/text/select keywords, EDTCDE, and at least one AFP resource
+keyword like OVERLAY) so the alignment is visible across every row shape
+at once, not just one at a time.
+
+### Batch GG — Field/constant overlap detection [OPEN]
+
+Filed after a real-IBM-RLU-parity review at Manojkumar-dharma's request.
+Real DDS has a documented restriction that two fields/constants can't
+occupy the same screen/print position — when they do, only one is
+actually honored; real RLU (and I-SDA, this project's sister for display
+files) both surface this instead of letting it silently happen. I-RLU has
+no equivalent today — checked `src/prtfLayout.js` and
+`src/prtfKeywordValidation.js` for any overlap/collision logic; there is
+none. Two fields can occupy the same cells right now with zero warning
+anywhere in the UI.
+
+**Reference implementation — I-SDA:** `src/dspfEngine.js`'s
+`resolveScreen` (grep "Position-sequence overlap resolution" for the
+exact spot) sorts candidate fields by `(line, column)` and processes them
+in that order — the first field to claim a cell range wins, later
+fields overlapping any of those same cells are dropped from the resolved
+render (not permanently removed from the model — just not shown/counted
+for that resolve pass) and recorded in a separate `overlaps` array
+alongside the normal resolved-field list, specifically so the UI can
+warn about them without changing what's actually rendered (which should
+match what real DDS would do). `src/buildWebviewTemplate.js`'s
+`updateOverlapWarning(screen)` reads that same `screen.overlaps` array
+(the one `render()` already built — not a second resolve call) and shows/
+hides a warning banner (`#overlapWarning`) accordingly.
+
+**What to do in I-RLU:** confirm first whether real printer-file DDS has
+the identical "later field silently dropped" behavior IBM documents for
+display files, or something different (a printer file writes sequentially
+top-to-bottom rather than being an interactive screen redraw, so verify
+against the IBM DDS reference for printer files specifically rather than
+assuming display-file behavior transfers unchanged) — this determines
+whether I-RLU's version should actually DROP the losing field from the
+resolved layout (matching I-SDA/real DDS) or just warn without dropping
+anything (if PRTF's own real behavior turns out to differ, e.g. simply
+overprinting rather than one being silently omitted). Whichever the real
+behavior turns out to be, add the equivalent resolution pass to
+`src/prtfLayout.js`'s `resolveLayout`, surface an `overlaps` array on its
+return value the same way, and add a warning banner in
+`media/webviewClient.js` reading it.
+
+**Test:** a unit test placing two fields at literally identical
+line/position (or overlapping ranges) and asserting the resolved layout
+correctly reflects whatever the verified real DDS behavior turns out to
+be, plus that `overlaps` reports both fields involved (matching
+I-SDA's own "report exactly who it collided with, not just 'something'"
+comment).
+
+### Batch HH — Sample/test data entry & preview [OPEN]
+
+Filed in the same review as Batch GG. Real RLU's `SD` (Sample Data)
+sequence-line command lets a person type realistic per-field values that
+show in the Design Report preview instead of a bare field-name
+placeholder — letting them see roughly what an actual populated report
+will look like before ever compiling/running it. I-RLU's preview always
+shows `{FIELDNAME}` (confirmed: `src/prtfLayout.js` builds cell text as
+`"{" + entry.name + "}"` for a field, with no alternative). Checked I-SDA
+for an equivalent (`sampleData`/"sample data" — grep turned up nothing) —
+this appears to be a printer-report-specific RLU concept with no display-
+file analog to mirror, since a live screen doesn't have a comparable
+"prototype run" concept; treat real IBM RLU documentation as the primary
+spec for this one, not I-SDA.
+
+**What to do:**
+- Add an optional per-field sample-value string to the model (`FieldEntry`
+  in `src/prtfModel.ts`) — this is I-RLU-side-only "scratch" data for the
+  preview, NOT a DDS keyword and NOT written back to the DDS source at
+  all (real RLU's own sample data isn't part of the compiled printer file
+  either — it's purely a design-time aid). Consider whether this belongs
+  in the `.prtf` file itself (as a specially-marked comment RLU-style
+  tools sometimes use for round-tripping design metadata) or purely as
+  transient in-memory webview state that doesn't survive closing the
+  editor — check what real RLU actually does (does closing/reopening RLU
+  keep sample data, or is it session-only?) before choosing, since this
+  materially affects whether it needs any writer changes at all.
+- `media/webviewClient.js`: a new "Sample data" input in the field's
+  properties panel (`renderEditPanel`/`labeledInput`-shaped), and use it
+  instead of `{FIELDNAME}` in the cell text builder when present and
+  non-empty, respecting the field's own length/decimal formatting
+  (truncate/pad to the field's actual length the same way a real
+  compiled value would render, not just drop the raw string in verbatim).
+- Numeric/date fields: consider a "fill with a plausible example" default
+  generator (e.g. today's date for a date-typed field, `0.00`-shaped for
+  a numeric with decimals) as a convenience, but this is a nice-to-have,
+  not required for the core feature.
+
+**Verification:** unit tests confirming sample-data text formatting
+respects length/decimals/type the same way `prtfLayout.js`'s other
+formatting does; no writer/round-trip test needed if sample data is kept
+out of the DDS source entirely (confirm that design decision first, per
+above).
+
+### Batch II — Duplicate/clone an entire record format [OPEN]
+
+Filed in the same review as Batch GG/HH. Batch Q covers copying a single
+field/constant; Batch P covers add/rename/delete/reorder of whole record
+formats — neither clones an entire record format (header + every one of
+its fields/constants/keywords) in one action, a common real need for
+files with several similar detail/header record formats.
+
+**Reference implementation — I-SDA:** `src/dspfWriter.js`'s `copyRecord
+(dspfFile, sourceLines, record, options)` — notably simpler than Batch
+Q's per-field copy, because a record format's own fields are copied
+**byte-for-byte verbatim, unchanged** — DDS scopes field names per record
+format (not file-wide), so a copied record's fields keep their exact
+original names with no collision risk, unlike copying a single field
+into an EXISTING record (Batch Q's actual hard problem). Only the record
+format's own NAME needs a fresh non-colliding one
+(`nextAvailableRecordName`, already exists in I-RLU per Batch P/Q's own
+naming-collision logic — reuse it, don't re-derive). Implementation is
+essentially "generate a new header line with the new name (same
+conditions/keywords as the original), then splice in every one of the
+original's own field/constant/keyword-continuation source lines
+unchanged right after it."
+
+**What to do in I-RLU:** add the equivalent to `src/prtfWriter.js` (a
+`copyRecordFormat`-shaped function, or extend `prtfEdits.js`'s existing
+`addRecord`/similar machinery from Batch P), a new `WebviewEdit` kind in
+`webviewProtocol.ts`, and a "Duplicate record format" UI entry point in
+`media/webviewClient.js` (the existing record-format switcher/management
+UI from Batch P is the natural place). Reuse Batch P/Q's own
+non-colliding-name helper for the new record's name.
+
+**Verification:** parse → duplicate → regenerate round-trip test
+confirming the new record's fields/keywords are byte-identical to the
+original's except the record's own name, plus a naming-collision test
+(duplicating a record whose generated name would collide with an
+existing one, e.g. duplicating "DETAIL" twice in a row).
+
+### Batch JJ — Multi-select fields for bulk move/copy/delete [OPEN]
+
+Filed in the same review as Batch GG/HH/II. Real RLU's F14 (Copy Fields)/
+F15 (Move Fields) function keys operate on several selected fields at
+once. I-RLU's click-to-place/drag (confirmed: no `multiSelect`/
+`shiftKey`-style handling anywhere in `media/webviewClient.js`) only ever
+acts on one field/constant at a time.
+
+**Reference implementation — I-SDA:** Shift/Ctrl/Cmd-click adds to an
+existing selection (`const additive = e.shiftKey || e.ctrlKey ||
+e.metaKey`, `src/buildWebviewTemplate.js`); `getSelectedFields()` returns
+the current multi-selection; dragging any one of several already-selected
+fields calls `startGroupDrag(selectedEls, selectedFields, ...)` instead of
+the single-field `startDrag`, which moves the whole group together,
+preserving each field's relative offset from the others, and clamps the
+GROUP's own combined bounding box to stay in bounds (`clampedDeltaLine`/
+`clampedDeltaColumn` — `Math.min(bounds.maxLine - minGroupLine,
+Math.max(bounds.minLine - minGroupLine, deltaLine))`-shaped) rather than
+clamping each field independently (which would let the group visually
+compress/distort against an edge instead of moving as a rigid unit).
+
+**What to do in I-RLU:** add the equivalent click-to-add-to-selection
+modifier-key handling, a `startGroupDrag` mirroring I-SDA's own
+bounding-box-clamped group move, and multi-target versions of
+Batch Q's existing copy/delete actions (copy-selected, delete-selected)
+in `media/webviewClient.js`. This pairs naturally with Batch KK's
+boundary-clamping work below — implement whichever lands first with an
+eye toward the other reusing its clamp math rather than each inventing
+its own.
+
+**Verification:** since this is webview drag/selection UI, no real
+automated coverage is likely feasible in this project's environment (same
+documented "no headless browser in this sandbox" limitation as Batches
+V/FF) — focus on unit-testing any pure logic extracted (e.g. the group
+bounding-box clamp math itself, following the `designerOpenMode.ts`-style
+"extract the vscode/DOM-free logic into its own testable module" pattern
+this project already uses), and flag for manual verification in a real
+Extension Development Host.
+
+### Batch KK — Boundary shift-and-truncate [OPEN]
+
+Filed in the same review as Batch GG/HH/II/JJ. Real RLU's `LT(N)`/`RT(N)`
+sequence commands shift-and-truncate a field's data at the report's
+left/right boundary when a move or resize would push it out of bounds.
+I-RLU has no equivalent validation at all today — a field can be
+positioned or resized past the report's right edge (or with a negative/
+zero line or column) with no warning, no clamping, nothing.
+
+**Reference implementation — I-SDA:** partial, not a complete parity
+match — worth reading carefully rather than assuming it's a drop-in
+mirror. I-SDA's `startGroupDrag` DOES clamp a multi-field group's own
+combined bounding box to the screen's bounds during a drag (see Batch
+JJ's own writeup above for the exact math), but a close read of the
+SINGLE-field crosshair/placement code (`buildWebviewTemplate.js`, the
+`col`/`line` calculation right before `startDrag`) shows it deliberately
+clamps only to a minimum of 1 (top-left), NOT to the screen's own max
+lines/columns — its own comment says this is intentional, so hovering at
+the true edge reads the real last row/column rather than stopping short.
+Whether single-field PLACEMENT (as opposed to hover-tracking) is itself
+bounds-checked elsewhere in that file wasn't confirmed in this session's
+review — check before assuming I-SDA already fully solved this for the
+single-field case, since the group-drag clamp and the plain hover-clamp
+found so far are two different, narrower things.
+
+**What to do in I-RLU:** treat real IBM RLU's own documented `LT`/`RT`
+behavior as the primary spec (what exactly gets truncated — the field's
+declared length, or just its resolved/preview display text; does it
+prompt the person or just silently truncate; does it apply to top/bottom
+boundaries too or only left/right) rather than assuming I-SDA has a
+complete equivalent to copy. Add boundary validation to wherever fields
+are placed/resized in `media/webviewClient.js`/`src/prtfEdits.js`, using
+I-SDA's group-drag clamp math as a reference for the clamping arithmetic
+itself even though it's not a complete feature match. Natural pairing
+with Batch GG (overlap detection) — both are fundamentally "is this
+field's position/length actually valid" checks, so consider whether they
+should share a single validation pass in `prtfLayout.js` rather than two
+separate ones, once both are underway.
+
+**Verification:** unit tests for the boundary-clamp math itself (a field
+positioned/resized past each edge — right, and whichever other edges the
+real RLU behavior turns out to cover) confirming it's caught and handled
+per whatever the verified real RLU behavior specifies.
 
 ## Adding a new batch
 

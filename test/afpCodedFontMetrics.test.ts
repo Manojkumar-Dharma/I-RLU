@@ -18,18 +18,28 @@ test("resolveFontName: uses the exact name as the CSS family, with a monospace f
   assert.equal(r.name, "Courier New");
   assert.equal(r.family, '"Courier New", monospace');
   assert.equal(r.spacing, "fixed");
-  assert.equal(r.isPlaceholderMetrics, false); // this IS the real named font, not a substitute
-  assert.equal(r.resolutionNote, undefined);
+  // Name/family ARE the real, exact FONTNAME value — but this now also
+  // wires up real per-character advance widths from a vendored substitute
+  // font (see getAdvanceWidth's own tests below), which is a genuinely
+  // different situation from resolveCodedFont's known-name cases (those
+  // resolve to actual documented IBM typefaces with no substitute font
+  // involved at all, hence isPlaceholderMetrics: false there) — here,
+  // true honestly flags that a substitute's data is now attached.
+  assert.equal(r.isPlaceholderMetrics, true);
+  assert.match(r.resolutionNote, /Cousine/);
+  assert.match(r.resolutionNote, /resources\/fonts\/NOTICE\.md/);
 });
 
 test("resolveFontName: known sans-serif and serif names get the right generic fallback and spacing", () => {
   const arial = AfpCodedFontMetrics.resolveFontName("Arial");
   assert.equal(arial.family, '"Arial", sans-serif');
   assert.equal(arial.spacing, "proportional");
+  assert.match(arial.resolutionNote, /PT Sans/);
 
   const times = AfpCodedFontMetrics.resolveFontName("Times New Roman");
   assert.equal(times.family, '"Times New Roman", serif');
   assert.equal(times.spacing, "proportional");
+  assert.match(times.resolutionNote, /Tinos/);
 });
 
 test("resolveFontName: name matching is case-insensitive against the known-name table", () => {
@@ -48,6 +58,40 @@ test("resolveFontName: an unrecognized name still renders using the exact name, 
 test("resolveFontName: a family name containing a double quote doesn't produce invalid CSS", () => {
   const r = AfpCodedFontMetrics.resolveFontName('Weird"Font');
   assert.ok(!r.family.includes('Weird"Font"'), "the embedded quote should be stripped, not doubled into broken CSS");
+});
+
+// --- getAdvanceWidth (FONTNAME real substitute-font metrics) ------------
+
+test("getAdvanceWidth: a known monospace name (Courier New) returns the same cell-relative width for every character, from the real vendored substitute font", () => {
+  const w = (ch: string) => AfpCodedFontMetrics.getAdvanceWidth("Courier New", ch);
+  const a = w("A");
+  assert.ok(typeof a === "number" && a > 0);
+  assert.equal(w("i"), a);
+  assert.equal(w(" "), a);
+  assert.equal(w("W"), a);
+  // Cell-relative: a genuinely monospace font's own average-over-ASCII IS
+  // its per-character width, so this should normalize to almost exactly
+  // 1.0 (allowing float rounding), the same "1.0 == one cell" convention
+  // afpFontMetrics.js's own getAdvanceWidth uses.
+  assert.ok(Math.abs(a - 1.0) < 0.001, "expected ~1.0, got " + a);
+});
+
+test("getAdvanceWidth: a known proportional name (Times New Roman) returns real, varying cell-relative widths", () => {
+  const w = (ch: string) => AfpCodedFontMetrics.getAdvanceWidth("Times New Roman", ch);
+  const narrow = w("i");
+  const wide = w("W");
+  assert.ok(typeof narrow === "number" && typeof wide === "number");
+  assert.ok(wide > narrow, "W should be meaningfully wider than i in a real proportional font");
+});
+
+test("getAdvanceWidth: name matching is case-insensitive, same as resolveFontName", () => {
+  const a = AfpCodedFontMetrics.getAdvanceWidth("courier new", "A");
+  const b = AfpCodedFontMetrics.getAdvanceWidth("COURIER NEW", "A");
+  assert.equal(a, b);
+});
+
+test("getAdvanceWidth: an unrecognized FONTNAME returns undefined, not a guessed width", () => {
+  assert.equal(AfpCodedFontMetrics.getAdvanceWidth("Bookman Old Style", "A"), undefined);
 });
 
 // --- resolveCodedFont (CDEFNT) ------------------------------------------
