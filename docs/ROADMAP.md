@@ -562,6 +562,39 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       verify the "Sample data" input and its effect on the preview
       visually in a real Extension Development Host.**
 
+- [x] **Batch KK — Boundary shift-and-truncate.** No validation existed
+      anywhere a field/constant's position or length is set, so a
+      drag/resize/add could silently push a field's data past the
+      report's right edge. Verified against IBM's own AS/400 "Report
+      Layout Guide" first, per this task's own instruction: real RLU's
+      `RT(N)`/`LT(N)` sequence commands "shift and truncate data on the
+      Right/Left Side if crossing the Boundaries" — i.e. the position is
+      kept as requested and the DATA is clipped at the boundary, not
+      silently allowed to overflow or the whole move rejected. I-RLU has
+      no sequence-command area to reproduce `LT(N)`/`RT(N)` verbatim, so
+      this applies the same principle to the paths I-RLU actually has:
+      `move` (drag), `updateField`'s length (resize via the properties
+      panel), and `addField`/`addConstant` (placing something new).
+      Deliberately scoped to the horizontal (column) boundary only, not
+      the bottom of the page — a printer file just continues onto a later
+      page past `PAGSIZE`'s line count (same as SKIPB/SPACEB already do),
+      so there's nothing to truncate vertically, matching real RLU's own
+      `LT`/`RT` being explicitly horizontal-only commands. New
+      `reportWidthCols`/`clampToReportWidth` (fields — truncates `length`)
+      /`clampConstantToReportWidth` (constants have no `length`
+      attribute, so this trims characters off the end of the literal text
+      itself) in `src/prtfEdits.ts`, all exported directly for isolated
+      unit testing (same convention Batch GG's `detectFieldOverlaps`
+      established); `resolvePageSize` newly exported from
+      `src/prtfLayout.js` so the edit layer can find the report's own
+      width without duplicating `PAGSIZE`-resolution logic. See
+      `docs/TASKS.md` Batch KK for the full writeup. 22 new tests in
+      `test/prtfBatchKK.test.ts` (pure clamp-math unit tests covering
+      within-bounds/right-edge-truncation/left-edge-clamp/degenerate/
+      undefined-length cases, plus `applyEditToModel` integration tests
+      for move/resize/add on both fields and constants); full suite now
+      468, all passing.
+
 ## Next up
 
 As of the RLU screen-capture review (`docs/KEYWORD-INVENTORY.md`), the

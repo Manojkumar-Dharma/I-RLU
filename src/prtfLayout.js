@@ -818,6 +818,10 @@ const mod = {
   // Batch HH (docs/TASKS.md) — exported directly so it's unit-testable in
   // isolation, same rationale as detectFieldOverlaps above.
   formatSampleValue,
+  // Batch KK (docs/TASKS.md) — exported so prtfEdits.ts's boundary
+  // shift-and-truncate check can find the report's own width without
+  // duplicating PAGSIZE-resolution logic.
+  resolvePageSize,
 };
 if (typeof module !== "undefined" && module.exports) module.exports = mod;
 if (typeof window !== "undefined") window.PrtfLayout = mod;
