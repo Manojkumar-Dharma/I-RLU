@@ -37,9 +37,24 @@ function activeKeywords(keywords, indicatorState) {
   });
 }
 
-/** `findKeyword`, but only among keywords currently active per `indicatorState` (see `activeKeywords`). */
+/**
+ * `findKeyword`, but only among keywords currently active per
+ * `indicatorState` (see `activeKeywords`) — and, unlike `findKeyword`'s own
+ * first-match-wins semantics, returns the LAST active match rather than
+ * the first. This matters specifically for the "default + conditional
+ * override" authoring pattern this whole conditioning mechanism exists
+ * for: an unconditioned PAGSIZE(66 132) followed by a conditioned
+ * PAGSIZE(88 198) on the same record are BOTH "active" once the override's
+ * indicator is on (the unconditioned one is unconditionally active by
+ * definition) — first-match-wins would always return the default and the
+ * override would never visibly take effect, defeating the entire point of
+ * writing it. Later-in-source wins instead, mirroring how a person reading
+ * the DDS top-to-bottom would expect a later, conditioned line to override
+ * an earlier default when its condition holds.
+ */
 function findActiveKeyword(keywords, name, indicatorState) {
-  return findKeyword(activeKeywords(keywords, indicatorState), name);
+  const active = findAllKeywords(activeKeywords(keywords, indicatorState), name);
+  return active.length ? active[active.length - 1] : undefined;
 }
 
 /** `findAllKeywords`, but only among keywords currently active per `indicatorState` (see `activeKeywords`). */

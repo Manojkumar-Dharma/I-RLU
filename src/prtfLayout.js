@@ -63,9 +63,9 @@ const AfpCodedFontMetrics =
  * jobs may differ per font, so this is a rendering approximation, not a
  * production measurement.
  */
-function resolveCpiLpi(record, fileLevel) {
-  const cpiKw = findKeyword(record.keywords, "CPI") || findKeyword(fileLevel.keywords, "CPI");
-  const lpiKw = findKeyword(record.keywords, "LPI") || findKeyword(fileLevel.keywords, "LPI");
+function resolveCpiLpi(record, fileLevel, indicatorState) {
+  const cpiKw = findActiveKeyword(record.keywords, "CPI", indicatorState) || findActiveKeyword(fileLevel.keywords, "CPI", indicatorState);
+  const lpiKw = findActiveKeyword(record.keywords, "LPI", indicatorState) || findActiveKeyword(fileLevel.keywords, "LPI", indicatorState);
   return { cpi: numericParam(cpiKw, 10), lpi: numericParam(lpiKw, 6) };
 }
 
@@ -310,11 +310,11 @@ function parseBarcodeGeometry(kw, lpi, uom) {
  * is rendered, even though the properties panel (media/webviewClient.js)
  * only edits by keyword name and so only reaches the first.
  */
-function resolveResourcePlaceholders(record, cpi, lpi, uom) {
+function resolveResourcePlaceholders(record, cpi, lpi, uom, indicatorState) {
   return [
-    ...findAllKeywords(record.keywords, "OVERLAY").map((kw) => parseOverlay(kw, cpi, lpi, uom)),
-    ...findAllKeywords(record.keywords, "PAGSEG").map((kw) => parsePagseg(kw, cpi, lpi, uom)),
-    ...findAllKeywords(record.keywords, "AFPRSC").map((kw) => parseAfprsc(kw, cpi, lpi, uom)),
+    ...findAllActiveKeywords(record.keywords, "OVERLAY", indicatorState).map((kw) => parseOverlay(kw, cpi, lpi, uom)),
+    ...findAllActiveKeywords(record.keywords, "PAGSEG", indicatorState).map((kw) => parsePagseg(kw, cpi, lpi, uom)),
+    ...findAllActiveKeywords(record.keywords, "AFPRSC", indicatorState).map((kw) => parseAfprsc(kw, cpi, lpi, uom)),
   ];
 }
 
@@ -325,28 +325,28 @@ function resolveResourcePlaceholders(record, cpi, lpi, uom) {
  * on the printed page, so unlike resolveResourcePlaceholders above they
  * don't get row/col geometry).
  */
-function collectPageGroupMetadata(record) {
+function collectPageGroupMetadata(record, indicatorState) {
   const items = [];
-  findAllKeywords(record.keywords, "STRPAGGRP").forEach((kw) => {
+  findAllActiveKeywords(record.keywords, "STRPAGGRP", indicatorState).forEach((kw) => {
     const inner = String(kw.params || "").replace(/^\(/, "").replace(/\)$/, "").trim();
     items.push({ keyword: "STRPAGGRP", summary: inner ? "Start page group " + inner : "Start page group" });
   });
-  findAllKeywords(record.keywords, "ENDPAGGRP").forEach(() => {
+  findAllActiveKeywords(record.keywords, "ENDPAGGRP", indicatorState).forEach(() => {
     items.push({ keyword: "ENDPAGGRP", summary: "End page group" });
   });
-  findAllKeywords(record.keywords, "DOCIDXTAG").forEach((kw) => {
+  findAllActiveKeywords(record.keywords, "DOCIDXTAG", indicatorState).forEach((kw) => {
     const t = paramTokens(kw);
     items.push({ keyword: "DOCIDXTAG", summary: t.length ? "Index tag: " + t.join(" ") : "Index tag" });
   });
-  findAllKeywords(record.keywords, "DTASTMCMD").forEach((kw) => {
+  findAllActiveKeywords(record.keywords, "DTASTMCMD", indicatorState).forEach((kw) => {
     const inner = String(kw.params || "").replace(/^\(/, "").replace(/\)$/, "").trim();
     items.push({ keyword: "DTASTMCMD", summary: inner ? "Data stream command: " + inner : "Data stream command" });
   });
   return items;
 }
 
-function resolvePageSize(record, fileLevel) {
-  const kw = findKeyword(record.keywords, "PAGSIZE") || findKeyword(fileLevel.keywords, "PAGSIZE");
+function resolvePageSize(record, fileLevel, indicatorState) {
+  const kw = findActiveKeyword(record.keywords, "PAGSIZE", indicatorState) || findActiveKeyword(fileLevel.keywords, "PAGSIZE", indicatorState);
   let lines = 66;
   let cols = 132;
   if (kw) {
@@ -409,12 +409,12 @@ function resolveLayout(model, recordName, indicatorState, uom) {
   const record = model.records.find((r) => r.name === recordName) || model.records[0];
   if (!record) return null;
 
-  const { lines: pageLines, cols: pageCols } = resolvePageSize(record, model.fileLevel);
-  const { cpi, lpi } = resolveCpiLpi(record, model.fileLevel);
+  const { lines: pageLines, cols: pageCols } = resolvePageSize(record, model.fileLevel, indicatorState);
+  const { cpi, lpi } = resolveCpiLpi(record, model.fileLevel, indicatorState);
 
   const draws = [
-    ...findAllKeywords(record.keywords, "LINE").map((kw) => parseLineGeometry(kw, cpi, lpi, uom)),
-    ...findAllKeywords(record.keywords, "BOX").map((kw) => parseBoxGeometry(kw, cpi, lpi, uom)),
+    ...findAllActiveKeywords(record.keywords, "LINE", indicatorState).map((kw) => parseLineGeometry(kw, cpi, lpi, uom)),
+    ...findAllActiveKeywords(record.keywords, "BOX", indicatorState).map((kw) => parseBoxGeometry(kw, cpi, lpi, uom)),
   ];
 
   // Batch E (docs/TASKS.md) — AFP page-group / resource keyword
@@ -422,8 +422,8 @@ function resolveLayout(model, recordName, indicatorState, uom) {
   // AFPRSC, rendered as labeled boxes); `pageGroupKeywords` are the
   // non-positioned ones (STRPAGGRP/ENDPAGGRP/DOCIDXTAG/DTASTMCMD, surfaced
   // as a badge list instead — see collectPageGroupMetadata's own comment).
-  const resources = resolveResourcePlaceholders(record, cpi, lpi, uom);
-  const pageGroupKeywords = collectPageGroupMetadata(record);
+  const resources = resolveResourcePlaceholders(record, cpi, lpi, uom, indicatorState);
+  const pageGroupKeywords = collectPageGroupMetadata(record, indicatorState);
 
   let cursorLine = 1;
   let cursorCol = 1;

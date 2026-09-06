@@ -312,6 +312,25 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       `docs/TASKS.md` Batch CC for the full writeup. 11 new tests; full
       suite now 375, all passing.
 
+- [x] **Batch DD — Batch CC follow-up: geometry keyword conditioning.**
+      Threaded indicator state through the record/file-level lookups
+      `resolveLayout` resolves once per call — `PAGSIZE`, `CPI`/`LPI`,
+      `LINE`/`BOX`, `OVERLAY`/`PAGSEG`/`AFPRSC`, and `STRPAGGRP`/
+      `ENDPAGGRP`/`DOCIDXTAG`/`DTASTMCMD` — completing what Batch CC left
+      as its own explicitly-flagged remaining scope. Found and fixed two
+      real bugs along the way, not just plumbing: Batch CC's own attached-
+      keyword-line detection had no path to attach a conditioned line to
+      the RECORD FORMAT ITSELF (only ever to a field/constant), which
+      matters a lot here since PAGSIZE/CPI/LINE/etc. are record-level
+      keywords; and `findActiveKeyword` used first-match-wins semantics,
+      which silently defeats the common "unconditioned default + a
+      conditioned override of the same keyword" authoring pattern (fixed
+      to last-active-match-wins). Also captured file-level keywords' own
+      conditioning, previously computed and discarded. See `docs/TASKS.md`
+      Batch DD for the full writeup. 8 new tests; full suite now 394, all
+      passing; byte-identical round-trip re-verified against all three
+      real fixture files.
+
 ## Next up
 
 As of the RLU screen-capture review (`docs/KEYWORD-INVENTORY.md`), the

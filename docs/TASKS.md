@@ -105,6 +105,7 @@ vice versa.
 | AA | **Bug fix:** `regenerateSource` unconditionally blanks out each line's optional column-6 form-type marker (`A`) instead of preserving whatever was already there, and rebuilds every line fresh on every edit regardless of whether it changed — the two combine to make Batch X's "Track source modifications" flag nearly the entire file as changed from a single one-field edit, on any source written in the (very common) `A`-in-column-6 style | n/a (writer correctness, `src/prtfWriter.js`) | Open | **X** (this is specifically what makes X's diff-based tracking unreliable on this style of source — fix this first, or re-verify X against it afterward) |
 | BB | **Bug fix:** a constant's quoted literal is only recognized when it's the *first* token in the keyword area (`prtfParser.ts`'s literal-extraction regex is anchored with `^`) — a literal preceded by another keyword (e.g. `SPACEB(1) 'CUSTOMER MASTER LISTING'`, a common real-world pattern) parses with `entry.literal` left `undefined`, so the Properties panel shows blank Text for a constant that has real display text | n/a (parser correctness, `src/prtfParser.ts`) | Open | none |
 | CC | ~~**Bug fix:** conditioning indicators are only modeled per field/constant/record entry, not per KEYWORD — a real, common DDS/RLU technique (e.g. two mutually-exclusive `COLOR` keywords on one field, each conditioned on a different indicator, via an attached keyword-only continuation line) was silently misparsed as a bogus phantom constant entry, and even if it hadn't been, the writer had no way to round-trip per-keyword conditioning at all~~ | n/a (model/parser/writer/layout correctness, not a keyword itself — affects every keyword that can appear on its own conditioned line) | **Done** | none |
+| DD | ~~Batch CC follow-up: thread indicator state through the record/file-level geometry keywords `resolveLayout` resolves once per call (`PAGSIZE`, `CPI`/`LPI`, `LINE`/`BOX`, `OVERLAY`/`PAGSEG`/`AFPRSC`, `STRPAGGRP`/`ENDPAGGRP`/`DOCIDXTAG`/`DTASTMCMD`) — Batch CC itself only reached the per-field/constant lookups~~ | n/a (layout correctness, `src/prtfLayout.js`) | **Done** | **CC** (this is that batch's own explicitly-flagged remaining scope) |
 
 ## Batch detail
 
@@ -2244,6 +2245,69 @@ any code.
   byte-identical against all three real fixture files
   (`sample1.pf`/`sample-scs.pf`/`sample-afpds.pf`) after this change. Full
   suite: 375 tests, all passing (11 new, 364 pre-existing unchanged).
+
+### Batch DD — Batch CC follow-up: geometry keyword conditioning [DONE]
+Threads `indicatorState` through the record/file-level keyword lookups
+`resolveLayout` resolves ONCE per call (as opposed to the per-field/
+constant loop Batch CC itself already covered): `resolvePageSize`
+(`PAGSIZE`), `resolveCpiLpi` (`CPI`/`LPI`), the `LINE`/`BOX` geometry list,
+`resolveResourcePlaceholders` (`OVERLAY`/`PAGSEG`/`AFPRSC`), and
+`collectPageGroupMetadata` (`STRPAGGRP`/`ENDPAGGRP`/`DOCIDXTAG`/
+`DTASTMCMD`) all now use `findActiveKeyword`/`findAllActiveKeywords`
+instead of the plain, condition-blind `findKeyword`/`findAllKeywords`.
+
+**A real bug found in Batch CC's OWN fix while writing this batch's
+tests, not assumed:** Batch CC's `isAttachedKeywordLine` detection in
+`prtfParser.ts` only ever attached a conditioned keyword-only line to the
+record's most recently added FIELD or CONSTANT — there was no path to
+attach one directly to the RECORD FORMAT ITSELF (a keyword-only
+conditioned line appearing right after `R RECORDNAME`, before any field
+has been seen yet). Since `PAGSIZE`/`CPI`/`LPI`/`LINE`/`BOX`/`OVERLAY`/
+`STRPAGGRP` etc. are RECORD-level keywords, not field-level, a
+conditioned variant of any of them is exactly this shape — Batch CC's own
+parser fix would have silently misparsed it as a phantom constant, the
+same failure mode Batch CC itself existed to fix, just one level up.
+Caught by writing this batch's own test for a conditioned `PAGSIZE`
+before any field existed and seeing it fail the same way Batch CC's
+original repro did. Fixed by widening the owner resolution to
+`currentRecord.fields.length > 0 ? <last field/constant> : currentRecord`
+instead of only ever the former.
+
+**A second, smaller gap fixed the same way:** file-level keyword lines
+(before any record format is opened) were correctly captured as file-
+level keywords already, but a file-level line's OWN conditioning
+(`conditions`, already parsed off that line either way) was computed and
+then discarded rather than attached to the keyword — real DDS rarely
+conditions file-level keywords, but the syntax permits it, and there's no
+principled reason to special-case dropping it now that the general
+mechanism exists. Fixed the same way as the record/field case: tagged
+directly when pushing (or via `pendingConditions` for a continuing line).
+
+**Also fixed while here:** `findActiveKeyword` (added in Batch CC) used
+first-match-wins semantics, inherited from `findKeyword`. That's wrong for
+exactly the pattern this whole feature exists for — an unconditioned
+DEFAULT keyword followed by a conditioned OVERRIDE of the SAME keyword
+(e.g. `PAGSIZE(66 132)` then a conditioned `PAGSIZE(88 198)`) — both are
+"active" once the override's indicator is on (the default is
+unconditionally active by definition), so first-match-wins would always
+return the default and the override would never visibly take effect.
+Caught by this batch's own PAGSIZE test failing with the default value
+even with the indicator on. Changed to last-active-match-wins, matching
+how a person reading the DDS top-to-bottom would expect a later,
+conditioned line to override an earlier default — a genuine behavioral
+fix, not just a threading exercise, and it doesn't change any
+single-occurrence case (which every pre-existing use of `findActiveKeyword`
+was).
+
+**Still not done (unrelated to conditioning, flagged in Batch CC's own
+writeup already):** `COLOR`/`DSPATR` still aren't rendered visually in the
+page preview at all, conditioned or not — a separate, pre-existing gap.
+
+Tests: 8 new in `test/prtfConditionedKeywords.test.ts` (`PAGSIZE`, `LINE`,
+`OVERLAY`, `STRPAGGRP`, `CPI` toggling; attaching to the record itself
+before any field; that attachment's own round-trip; file-level
+conditioning capture). Manually re-verified byte-identical round-trip
+against all three real fixture files. Full suite: 394 tests, all passing.
 
 ## Adding a new batch
 
