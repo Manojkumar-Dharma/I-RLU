@@ -101,7 +101,33 @@ export type WebviewEdit =
   // fields/constants/keywords) in one action. Identified by NAME, same as
   // every other Batch P record-format operation above — see prtfEdits.ts's
   // "duplicateRecord" case for the actual clone/naming logic.
-  | { kind: "duplicateRecord"; name: string };
+  | { kind: "duplicateRecord"; name: string }
+  // Batch JJ — bulk versions of move/copy/delete for a multi-selected set
+  // of fields/constants (media/webviewClient.js's Ctrl/Cmd-click multi-
+  // select — see state.multiSelectIds). Real RLU's F13/F14/F15 mark a
+  // rectangular screen area and copy/move it as a block; this tool's
+  // multi-select is a set of individually-clicked entries instead (this
+  // tool's own established selection model, from Batch Q onward, is
+  // click-a-cell — not RLU's mark-a-rectangle), but the group-preserves-
+  // relative-layout behavior is the same: every id moves/copies by the
+  // SAME delta, so the group's shape doesn't distort.
+  // "delta", not an absolute per-id line/position, because the webview
+  // computes a single delta once (the group's dragged/placed anchor
+  // entry's old position vs. new position) and this way prtfEdits.ts
+  // doesn't need each id's own before/after position sent over just to
+  // recompute the same delta itself.
+  | { kind: "bulkMove"; ids: string[]; deltaLine: number; deltaPosition: number }
+  | { kind: "bulkDelete"; ids: string[] }
+  // Same-record-only for v1, same scope boundary Batch Q's own single-
+  // field "Copy" already draws (see buildCopyPendingNew's comment in
+  // src/prtfWebviewLogic.js) — cross-record bulk copy is a follow-up, not
+  // supported here. Unlike Batch Q's single-copy flow, a bulk copy of
+  // several fields at once auto-assigns each new field's name (via
+  // prtfEdits.ts's existing nextAvailableFieldName) rather than showing a
+  // pending-new confirmation form per field — the same "auto-name several
+  // at once, no per-item form" precedent Batch Y's "Add fields from
+  // database file" already established for a similar N-at-once add.
+  | { kind: "bulkCopy"; recordName: string; ids: string[]; deltaLine: number; deltaPosition: number };
 
 /** Every message shape media/webviewClient.js posts to the extension host via vscode.postMessage. */
 export type WebviewMessage =

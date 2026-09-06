@@ -594,6 +594,107 @@ export function applyEditToModel(model: ParsedSource, edit: WebviewEdit): boolea
       model.sequence.splice(seqEnd, 0, newRecord, ...clonedFields);
       return true;
     }
+    // Batch JJ — bulk move/delete/copy for a multi-selected set of
+    // fields/constants (see webviewProtocol.ts's comment on these three
+    // edit kinds for the delta-based design and the same-record-only
+    // bulkCopy scope boundary).
+    case "bulkMove": {
+      let changed = false;
+      for (const id of edit.ids) {
+        const found = findEntryById(model, id);
+        if (!found) continue; // stale id (e.g. already deleted by a prior edit in the same batch) — skip, don't fail the whole bulk operation
+        found.entry.line = (found.entry.line || 0) + edit.deltaLine;
+        found.entry.position = (found.entry.position || 0) + edit.deltaPosition;
+        changed = true;
+      }
+      return changed;
+    }
+    case "bulkDelete": {
+      let changed = false;
+      for (const id of edit.ids) {
+        const found = findEntryById(model, id);
+        if (!found) continue;
+        found.record.fields.splice(found.fieldsIndex, 1);
+        const seqIndex = model.sequence.indexOf(found.entry);
+        if (seqIndex !== -1) model.sequence.splice(seqIndex, 1);
+        changed = true;
+      }
+      return changed;
+    }
+    case "bulkCopy": {
+      const record = model.records.find((r) => r.name === edit.recordName);
+      if (!record) return false;
+      const nextId = makeIdGenerator(model);
+      let changed = false;
+      for (const id of edit.ids) {
+        const found = findEntryById(model, id);
+        // v1 scope: only ids that belong to the TARGET record are copied —
+        // matches Batch Q's own single-field "same-record copy only"
+        // boundary. A multi-select spanning several records (not possible
+        // via today's webview UI, which scopes selection to the currently
+        // open record, but defensive here regardless) silently skips any
+        // id outside `record` rather than copying it somewhere the person
+        // never asked for.
+        if (!found || found.record !== record) continue;
+        const src = found.entry;
+        const newLine = (src.line || 0) + edit.deltaLine;
+        const newPosition = (src.position || 0) + edit.deltaPosition;
+        // Keywords are cloned (not shared by reference), sourceLineIndex
+        // reset to -1 — same convention duplicateRecord's own
+        // cloneKeywords uses, for the same reason (these are new physical
+        // lines with no source line of their own yet).
+        const clonedKeywords: Keyword[] = src.keywords.map((k) => ({
+          ...k,
+          sourceLineIndex: -1,
+          conditions: k.conditions ? k.conditions.map((c) => ({ ...c })) : undefined,
+        }));
+        let clone: FieldEntry | ConstantEntry;
+        if (src.kind === "field") {
+          clone = {
+            kind: "field",
+            id: nextId(),
+            sourceLineIndex: -1,
+            name: nextAvailableFieldName(record, src.name),
+            reference: src.reference,
+            length: src.length,
+            dataType: src.dataType,
+            decimalPositions: src.decimalPositions,
+            usage: src.usage,
+            line: newLine,
+            position: newPosition,
+            // Batch JJ v1: the source's OWN entry-level conditioning
+            // (unrelated to the keyword-level conditions cloned above)
+            // isn't carried over, same limitation Batch Q's single-field
+            // copy already has (addField's edit shape has no
+            // sourceConditions field either) — a fresh, unconditioned
+            // copy either way.
+            conditions: [],
+            keywords: clonedKeywords,
+          };
+        } else {
+          clone = {
+            kind: "constant",
+            id: nextId(),
+            sourceLineIndex: -1,
+            literal: src.literal,
+            line: newLine,
+            position: newPosition,
+            conditions: [],
+            keywords: clonedKeywords,
+          };
+        }
+        record.fields.push(clone);
+        // Same "right after its own source" placement duplicateRecord's
+        // per-clone fields use — keeps a copied block visually adjacent to
+        // what it was copied from in the regenerated source, even though
+        // resolveLayout's placement of these entries only ever depends on
+        // their own explicit line/position, never on model.sequence order.
+        const anchorIndex = model.sequence.indexOf(src);
+        model.sequence.splice(anchorIndex === -1 ? model.sequence.length : anchorIndex + 1, 0, clone);
+        changed = true;
+      }
+      return changed;
+    }
     default:
       return false;
   }

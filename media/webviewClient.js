@@ -77,6 +77,23 @@
     // (reusing the same "click to place" flow add already uses) and
     // consumed by the page click handler once a placement is picked.
     copySource: null,
+    // Batch JJ — multi-select for bulk move/copy/delete. A Set of cell ids,
+    // toggled by Ctrl/Cmd-click (see renderPage's cell click handler).
+    // Deliberately kept separate from `selectedId` rather than folding
+    // single-select into "a set of size 1" — that would mean touching
+    // renderEditPanel's existing per-cell properties-panel logic (already
+    // covered by many existing tests) just to add this batch, for no
+    // behavioral gain: a plain click still means "show me this one cell's
+    // properties", which is exactly what `selectedId` already does. Empty
+    // Set = no multi-select in progress = properties panel behaves exactly
+    // as it did before this batch.
+    multiSelectIds: new Set(),
+    // Batch JJ — armed by the bulk-actions panel's "Copy" button, the
+    // multi-entry equivalent of `copySource` above: the ids being copied,
+    // plus which one is the "anchor" (the entry the person clicks-to-place
+    // is positioned at; every other selected entry follows at the same
+    // offset it had from the anchor before the copy).
+    bulkCopySourceIds: null,
   };
 
   let CELL_W = 8; // px per character column — recomputed per record from CPI via layout.grid (96/CPI); see render()
@@ -226,6 +243,14 @@
     // switching to any other toolbar action (or reselecting a cell)
     // cancels a copy-in-progress the same way it cancels a plain add.
     state.copySource = null;
+    // Batch JJ — bulk copy-in-progress (see state.bulkCopySourceIds' own
+    // comment above), cancelled the same way and for the same reason as
+    // `copySource`. Deliberately NOT clearing `multiSelectIds` itself here
+    // — the selection set is a separate concept from any pending action on
+    // it, and is instead cleared by its own two callers: a plain (non-
+    // modifier) cell click, and the bulk-actions panel's own "Clear
+    // selection" button.
+    state.bulkCopySourceIds = null;
   }
 
   function renderToolbar() {
@@ -367,7 +392,11 @@
     toolbar.appendChild(addFieldBtn);
     toolbar.appendChild(addConstBtn);
     if (state.placing) {
-      const what = state.copySource ? "the copy" : "the new " + state.placing;
+      // Batch JJ — bulkCopy is armed the same way a single Batch Q copy
+      // is (state.placing truthy + a click-to-place flow), just keyed off
+      // bulkCopySourceIds instead of copySource — same "the copy" wording
+      // applies, not "the new bulkCopy".
+      const what = state.copySource || state.bulkCopySourceIds ? "the copy" : "the new " + state.placing;
       toolbar.appendChild(el("span", { class: "hint" }, ["Click on the page to place " + what + "."]));
     }
 
@@ -569,7 +598,8 @@
             "cell" +
             (cell.kind === "constant" ? " constant" : " field") +
             (cell.barcode ? (barcodeSymbol ? " barcode rendered" : " barcode") : "") +
-            (cell.id === state.selectedId ? " selected" : ""),
+            (cell.id === state.selectedId ? " selected" : "") +
+            (state.multiSelectIds.has(cell.id) ? " multi-selected" : ""),
           style: `position:absolute;left:${(cell.position - 1) * CELL_W}px;top:${(cell.line - 1) * CELL_H}px;width:${w}px;height:${h}px;${fontCss}${styleCss}`,
           title: cell.barcode
             ? (barcodeSymbol
@@ -591,13 +621,48 @@
       );
       div.addEventListener("click", (ev) => {
         ev.stopPropagation();
+        // Batch JJ — Ctrl/Cmd-click toggles this cell in the multi-select
+        // set instead of opening its single-cell properties panel. Metakey
+        // covers macOS (Cmd), ctrlKey covers Windows/Linux — same
+        // dual-check convention most web apps use for "the platform's
+        // native multi-select modifier", since neither key alone is right
+        // on every OS.
+        if (ev.ctrlKey || ev.metaKey) {
+          if (state.multiSelectIds.has(cell.id)) state.multiSelectIds.delete(cell.id);
+          else state.multiSelectIds.add(cell.id);
+          state.selectedId = null;
+          state.pendingNew = null;
+          state.placing = null;
+          render();
+          return;
+        }
+        // A plain click always means "just this one" — exits any
+        // multi-select in progress the same way clicking empty page space
+        // already does (see the page click handler below), so a stray
+        // plain click after a Ctrl-click spree doesn't leave a confusing
+        // "3 selected" bulk panel showing alongside a single cell's own
+        // properties panel.
+        state.multiSelectIds.clear();
         state.selectedId = cell.id;
         state.pendingNew = null;
         state.placing = null;
         render();
       });
       div.addEventListener("dragstart", (ev) => {
-        ev.dataTransfer.setData("text/plain", cell.id);
+        // Batch JJ — dragging a cell that's part of the current multi-
+        // select drags the WHOLE group (preserving every member's offset
+        // from this cell, the drag anchor); dragging any other cell is an
+        // unrelated plain single-cell move, same as before this batch,
+        // and implicitly abandons the multi-select the same way a plain
+        // click does (the drop handler below clears it).
+        if (state.multiSelectIds.size > 0 && state.multiSelectIds.has(cell.id)) {
+          ev.dataTransfer.setData(
+            "text/plain",
+            JSON.stringify({ bulk: true, ids: Array.from(state.multiSelectIds), anchorId: cell.id, anchorLine: cell.line, anchorPosition: cell.position })
+          );
+        } else {
+          ev.dataTransfer.setData("text/plain", cell.id);
+        }
       });
       page.appendChild(div);
     });
@@ -657,7 +722,29 @@
     });
 
     page.addEventListener("click", (ev) => {
-      if (state.placing) {
+      if (state.placing === "bulkCopy" && state.bulkCopySourceIds) {
+        // Batch JJ — click-to-place for a bulk copy, the multi-entry
+        // sibling of the copySource branch below. The clicked point
+        // becomes the ANCHOR entry's new position; every other selected
+        // entry is offset by the same delta, so the group's shape doesn't
+        // distort.
+        const { line, position } = lineColFromEvent(ev, page);
+        const { ids, anchorLine, anchorPosition } = state.bulkCopySourceIds;
+        vscode.postMessage({
+          type: "edit",
+          edit: {
+            kind: "bulkCopy",
+            recordName: state.recordName,
+            ids,
+            deltaLine: line - anchorLine,
+            deltaPosition: position - anchorPosition,
+          },
+        });
+        state.placing = null;
+        state.bulkCopySourceIds = null;
+        state.multiSelectIds.clear();
+        render();
+      } else if (state.placing) {
         const { line, position } = lineColFromEvent(ev, page);
         state.pendingNew = state.copySource
           ? buildCopyPendingNew(state.placing, line, position, state.copySource, layout)
@@ -669,6 +756,9 @@
       } else {
         state.selectedId = null;
         state.pendingNew = null;
+        // Batch JJ — clicking empty page space (not a cell) also exits any
+        // multi-select in progress, same as a plain cell click does.
+        state.multiSelectIds.clear();
         render();
       }
     });
@@ -676,9 +766,36 @@
     page.addEventListener("dragover", (ev) => ev.preventDefault());
     page.addEventListener("drop", (ev) => {
       ev.preventDefault();
-      const id = ev.dataTransfer.getData("text/plain");
+      const raw = ev.dataTransfer.getData("text/plain");
       const { line, position } = lineColFromEvent(ev, page);
-      vscode.postMessage({ type: "edit", edit: { kind: "move", recordName: state.recordName, id, line, position } });
+      // Batch JJ — a bulk (group) drag encodes a JSON payload (see this
+      // cell's own dragstart handler above); a plain single-cell drag is
+      // still just the bare id string it always was. Try JSON first,
+      // falling back to "it's a plain id" the same way real-world sniffing
+      // of an unknown-shape string typically does — a bare id like "e3"
+      // isn't valid JSON, so this never misclassifies a plain drag as bulk.
+      let bulk = null;
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.bulk) bulk = parsed;
+      } catch (e) {
+        bulk = null;
+      }
+      if (bulk) {
+        vscode.postMessage({
+          type: "edit",
+          edit: {
+            kind: "bulkMove",
+            ids: bulk.ids,
+            deltaLine: line - bulk.anchorLine,
+            deltaPosition: position - bulk.anchorPosition,
+          },
+        });
+        state.multiSelectIds.clear();
+        render();
+      } else {
+        vscode.postMessage({ type: "edit", edit: { kind: "move", recordName: state.recordName, id: raw, line, position } });
+      }
     });
 
     return page;
@@ -954,11 +1071,76 @@
   /** Renders the properties panel for either a pending-new entry or the currently selected one. Returns null if nothing to show. */
   function renderPropsPanel(layout) {
     if (state.pendingNew) return renderNewEntryPanel(state.pendingNew);
+    // Batch JJ — a multi-select in progress takes priority over a single
+    // `selectedId` (the two are mutually exclusive in practice: every path
+    // that sets one clears the other — see the cell click handler above),
+    // shown as a distinct "N selected" bulk-actions panel rather than
+    // trying to force multiple cells' worth of properties into the single-
+    // cell edit panel below.
+    if (state.multiSelectIds.size > 0) return renderBulkActionsPanel(layout);
     if (state.selectedId) {
       const cell = layout.cells.find((c) => c.id === state.selectedId);
       if (cell) return renderEditPanel(cell, layout);
     }
     return null;
+  }
+
+  /**
+   * Batch JJ (docs/TASKS.md) — the bulk-actions panel shown in place of the
+   * single-cell properties panel whenever `state.multiSelectIds` is
+   * non-empty. Mirrors real RLU's F13/F14/F15 (mark, copy, move) at the
+   * level of "what a person can do to several fields at once", but through
+   * this tool's own Ctrl/Cmd-click multi-select rather than RLU's mark-a-
+   * rectangle — see webviewProtocol.ts's comment on the bulkMove/
+   * bulkDelete/bulkCopy edit kinds for why.
+   */
+  function renderBulkActionsPanel(layout) {
+    const ids = Array.from(state.multiSelectIds);
+    const cells = ids.map((id) => layout.cells.find((c) => c.id === id)).filter(Boolean);
+    // A selected id can go stale (its entry was deleted by some other
+    // means) between selection and render; drop it from the working set
+    // rather than showing a panel that claims N when only N-1 still exist.
+    const liveIds = cells.map((c) => c.id);
+
+    const panel = el("div", { class: "props" });
+    panel.appendChild(el("h4", {}, [liveIds.length + " selected"]));
+
+    const copyBtn = el("button", { class: "btn" }, ["Copy group"]);
+    copyBtn.addEventListener("click", () => {
+      // Batch JJ — the anchor is whichever selected entry is closest to
+      // the top-left of the page (lowest line, then lowest position) —
+      // an arbitrary-but-deterministic choice matching how a person
+      // visually reads the group, so clicking near the group's own
+      // top-left corner to place the copy feels natural rather than
+      // needing to know which specific entry secretly anchors it.
+      const anchor = cells.reduce((best, c) => (c.line < best.line || (c.line === best.line && c.position < best.position) ? c : best));
+      state.bulkCopySourceIds = { ids: liveIds, anchorLine: anchor.line, anchorPosition: anchor.position };
+      state.placing = "bulkCopy";
+      state.pendingNew = null;
+      state.selectedId = null;
+      render();
+    });
+
+    const deleteBtn = el("button", { class: "btn danger" }, ["Delete group"]);
+    deleteBtn.addEventListener("click", () => {
+      vscode.postMessage({ type: "edit", edit: { kind: "bulkDelete", ids: liveIds } });
+      state.multiSelectIds.clear();
+    });
+
+    const clearBtn = el("button", { class: "btn" }, ["Clear selection"]);
+    clearBtn.addEventListener("click", () => {
+      state.multiSelectIds.clear();
+      render();
+    });
+
+    const btnRow = el("div", { class: "prop-buttons" }, [copyBtn, deleteBtn, clearBtn]);
+    panel.appendChild(btnRow);
+    panel.appendChild(
+      el("p", { class: "hint" }, [
+        "Drag any highlighted field/constant to move the whole group together. Ctrl/Cmd-click a field or constant to add or remove it from the group; a plain click clears it.",
+      ])
+    );
+    return panel;
   }
 
   /**

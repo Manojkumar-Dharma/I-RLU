@@ -223,6 +223,12 @@ body { font-family: var(--vscode-editor-font-family, monospace); color: var(--vs
 .cell.constant { color: var(--vscode-editor-foreground); }
 .cell:hover { border-color: var(--vscode-focusBorder); }
 .cell.selected { border: 1px solid var(--vscode-focusBorder); background: rgba(77,170,252,0.15); }
+/* Batch JJ — Ctrl/Cmd-click multi-select. A distinct color (orange, matching
+   this template's other "group of related things" convention — see
+   .draw-line/.draw-box above) from .selected's blue so the two states read
+   as different at a glance: .selected is "this one cell's properties panel
+   is open", .multi-selected is "part of the current bulk-action group". */
+.cell.multi-selected { border: 1px solid var(--vscode-charts-orange, orange); background: rgba(255,165,0,0.15); }
 .draw-line { background: var(--vscode-charts-orange, orange); }
 .draw-box { border: 1px solid var(--vscode-charts-orange, orange); box-sizing: border-box; }
 .draw-line.approximate, .draw-box.approximate { opacity: 0.5; border-style: dashed; }

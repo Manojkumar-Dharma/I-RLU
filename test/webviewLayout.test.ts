@@ -118,3 +118,33 @@ test("webview layout (Batch FF): OVERLAY/PAGSEG/AFPRSC/DOCIDXTAG's value inputs 
     assert.doesNotMatch(body, /\]\.forEach\(\(i\) => container\.appendChild\(i\)\)/, `${fnName} must not append its value inputs directly to container with no row wrapper`);
   }
 });
+
+// Batch JJ — multi-select for bulk move/copy/delete. Same "webviewClient.js
+// isn't require()-able" constraint as the OVERLAY/PAGSEG check above, so
+// these are source-text shape checks rather than DOM-interaction tests
+// (the actual mutation logic these wire up to is fully unit tested in
+// test/prtfBatchJJ.test.ts, which needs no DOM at all).
+test("webview layout (Batch JJ): .multi-selected has its own distinct CSS rule from .selected", () => {
+  const css = extractCss(getWebviewHtml("testnonce"));
+  const multiSelectedMatch = css.match(/\.cell\.multi-selected\s*\{([^}]*)\}/);
+  assert.ok(multiSelectedMatch, ".cell.multi-selected has no CSS rule at all — a Ctrl/Cmd-click multi-select would be visually indistinguishable from an unselected cell");
+  assert.match(multiSelectedMatch![1], /border/, ".multi-selected should have a visible border, same as .selected does");
+});
+
+test("webview layout (Batch JJ): the cell click handler checks ctrlKey/metaKey before toggling multi-select, and the three bulk edit kinds are actually sent", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../../media/webviewClient.js"), "utf8");
+  assert.match(
+    source,
+    /if \(ev\.ctrlKey \|\| ev\.metaKey\)/,
+    "cell click handler must check both ctrlKey and metaKey (Windows/Linux vs macOS) before toggling multiSelectIds"
+  );
+  // Guards the two files (webviewProtocol.ts's WebviewEdit union and this
+  // file's actual postMessage calls) against silently drifting apart —
+  // webviewProtocol.ts's own header comment already flags this as
+  // impossible to check automatically any other way, since the webview
+  // itself isn't type-checked.
+  for (const kind of ["bulkMove", "bulkDelete", "bulkCopy"]) {
+    assert.match(source, new RegExp('kind:\\s*"' + kind + '"'), `media/webviewClient.js never sends a "${kind}" edit — webviewProtocol.ts declares it but nothing actually posts it`);
+  }
+});
+
