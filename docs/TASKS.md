@@ -110,7 +110,7 @@ vice versa.
 | FF | ~~**Bug fix:** properties/keywords column rows inconsistent — checkboxes stretched to the value-input width, some rows put the checkbox before its label and others after, several rows had no row wrapper at all~~ | n/a (webview UI/CSS, `media/webviewClient.js` + `src/buildWebviewTemplate.js`) | **Done** | none |
 | GG | Field/constant overlap detection — no warning today when two fields' positions+lengths overlap, or a field extends past another, on the same line | n/a (layout correctness, not a keyword) | Open | none |
 | HH | Sample/test data entry & preview — real RLU's `SD` sequence command lets a person type realistic per-field values shown in the design preview instead of a bare `{FIELDNAME}` placeholder | n/a (webview UI + model, not a keyword) | Open | none |
-| II | Duplicate/clone an entire record format (all its fields/constants/keywords in one action) — Batch Q covers a single field, Batch P covers add/rename/delete/reorder of record formats, neither clones a whole one | n/a (tooling/UI, not a keyword) | Open | **Q** (reuse its field-copy naming-collision logic per cloned field) |
+| II | ~~Duplicate/clone an entire record format (all its fields/constants/keywords in one action) — Batch Q covers a single field, Batch P covers add/rename/delete/reorder of record formats, neither clones a whole one~~ | n/a (tooling/UI, not a keyword) | **Done** | none |
 | JJ | Multi-select fields for bulk move/copy/delete — real RLU's F14/F15 (Copy Fields/Move Fields) operate on several selected fields at once; today's click-to-place/drag is one-field-at-a-time only | n/a (webview UI, not a keyword) | Open | **Q** (bulk version of its single-field copy) |
 | KK | Boundary shift-and-truncate (real RLU's `LT`/`RT`) — moving/resizing a field past the report's right edge has no validation at all today; a field can end up positioned off-page silently | n/a (layout correctness, not a keyword) | Open | **GG** (natural pairing — both are "is this field's position/length actually valid" checks) |
 | LL | **Bug fix:** a field's `+n` relative-position notation (DDS positions 42-44, e.g. `+2` = "2 spaces after the previous field ends" — see IBM's own RELPOS keyword reference) is read by `parseInt` as a plain absolute number, silently discarding the "this is relative, not absolute" semantic — round-tripping such a field through I-RLU relocates it to a fixed, usually-wrong absolute column | n/a (parser/model/writer correctness, `src/prtfParser.ts`/`src/prtfModel.ts`/`src/prtfWriter.js`, plus any UI that edits a field's line/position) | Open | none |
@@ -2684,7 +2684,7 @@ formatting does; no writer/round-trip test needed if sample data is kept
 out of the DDS source entirely (confirm that design decision first, per
 above).
 
-### Batch II — Duplicate/clone an entire record format [OPEN]
+### Batch II — Duplicate/clone an entire record format [DONE]
 
 Filed in the same review as Batch GG/HH. Batch Q covers copying a single
 field/constant; Batch P covers add/rename/delete/reorder of whole record
@@ -2720,6 +2720,82 @@ confirming the new record's fields/keywords are byte-identical to the
 original's except the record's own name, plus a naming-collision test
 (duplicating a record whose generated name would collide with an
 existing one, e.g. duplicating "DETAIL" twice in a row).
+
+**[DONE] — Implemented as follows:**
+- **Correction to the task's own "reuse Batch P/Q's own non-colliding-name
+  helper" instruction, found while implementing:** no such helper actually
+  existed for RECORD names — Batch Y's `nextAvailableFieldName`
+  (`prtfEdits.ts`) is scoped to one record's own FIELDS, and Batch P's
+  `addRecord` only ever rejects a duplicate record name outright (no
+  auto-suggestion). Added a new sibling, `nextAvailableRecordName(model,
+  desiredName)`, scoped to `model.records` (record names are unique
+  file-wide, not per-record like field names) with the same 10-character
+  DDS name-column limit and the same "already-free base name wins
+  outright, no forced suffix" behavior `nextAvailableFieldName` already
+  has.
+- New `WebviewEdit` kind `{ kind: "duplicateRecord"; name: string }`
+  (`src/webviewProtocol.ts`), dispatched through the existing generic
+  `applyEdit`/`applyEditToModel` plumbing — no `extension.ts` change
+  needed, same as every other Batch P record-format operation.
+- `prtfEdits.ts`'s new `"duplicateRecord"` case: finds the source record
+  by name, computes the new name via `nextAvailableRecordName`, and
+  deep-clones the record's own `conditions`/`keywords` plus every one of
+  its fields/constants — field/constant NAMES, lengths, types, positions,
+  literals, and keywords are copied **byte-for-byte verbatim, unchanged**
+  (confirmed against I-SDA's own `copyRecord` reasoning: DDS scopes field
+  names per record format, so there's no collision risk to solve here,
+  unlike Batch Q's actual hard problem of copying a field INTO an existing
+  record). Every cloned field/constant gets a fresh, distinct `id` via a
+  new `makeIdGenerator(model)` helper (separate from `prtfParser.ts`'s own
+  per-parse `nextId()` counter, which starts fresh at `"e0"` every parse
+  and would very likely collide with real ids already present in an
+  in-memory, already-parsed model) — deep-cloned, not shared by reference,
+  so editing the clone's own keywords afterward can't mutate the source's
+  (and vice versa; verified by a dedicated test that reaches in and
+  mutates a cloned keyword's `params` directly).
+- **Placement:** the new record is inserted immediately after the SOURCE
+  record in `model.records` (matching `addRecord`'s own default placement
+  convention), and its whole block — the record entry followed by every
+  cloned field/constant, in original order — is spliced into
+  `model.sequence` right after the SOURCE record's own block (itself plus
+  everything up to, but not including, the next record-kind entry — the
+  same block definition `reorderRecord`'s own `blockRange` already uses),
+  so any trailing comment after the source's last field stays attached to
+  the SOURCE, not swept into the duplicate. **A real, documented
+  consequence of always inserting right after the SOURCE (not after the
+  most recently created duplicate):** duplicating the same record twice in
+  a row lands the second duplicate (e.g. `DETAIL3`) ahead of the first
+  (`DETAIL2`), not appended after it — covered by its own test rather than
+  silently assumed to read top-to-bottom in creation order.
+- UI: a "Duplicate" button in the toolbar next to Delete
+  (`media/webviewClient.js`) — posts the edit directly with no
+  confirmation step or inline form, unlike Add/Rename/Delete's own pending-
+  UI-state forms, since there's nothing to fill in or confirm
+  (`nextAvailableRecordName` picks the new name itself, matching this
+  batch's own framing of the action as non-destructive and immediate).
+  Selection intentionally stays on the just-duplicated SOURCE record after
+  the edit applies — same "don't auto-switch selection" behavior
+  `addRecord`'s own button already has — rather than jumping the toolbar's
+  `<select>` to the new duplicate.
+- Tests: new `test/prtfBatchII.test.ts` — byte-for-byte field/constant/
+  keyword cloning (names, lengths, types, positions, literals, keyword
+  `raw` text), fresh-and-distinct cloned ids, the deep-clone-not-shared-
+  reference guard, placement + trailing-comment-stays-with-source, the
+  naming-collision case (duplicating "DETAIL" twice in a row →
+  `DETAIL2`/`DETAIL3`, in the placement order described above), an unknown-
+  name no-op rejection, an empty-record duplicate (no fields at all), and
+  three direct `nextAvailableRecordName` unit tests (already-free base
+  name, numeric-suffix collision, 10-character truncation).
+- Full suite: 420 tests, all passing (410 prior + 10 new); `tsc --noEmit`
+  and `npm run compile` both clean. **No real-browser verification was
+  possible in this session** (same documented sandbox limitation as
+  Batches V/FF/GG onward — no usable headless browser here); the new
+  "Duplicate" button was checked only via `media/webviewClient.js`
+  parsing/assembling cleanly (`webviewAssembly.test.ts`'s existing
+  end-to-end script execution). **Please verify in a real Extension
+  Development Host** that clicking "Duplicate" on a record with several
+  fields/keywords produces a correctly-named clone selectable from the
+  toolbar's `<select>`.
 
 ### Batch JJ — Multi-select fields for bulk move/copy/delete [OPEN]
 

@@ -419,6 +419,36 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       leading-literal case, and a direct check against the real
       `scsprt1-realworld.prtf` fixture); full suite now 410, all passing.
 
+- [x] **Batch II — Duplicate/clone an entire record format.** Batch Q
+      covers copying a single field/constant; Batch P covers add/rename/
+      delete/reorder of whole record formats — neither cloned an entire
+      record format (header + every field/constant/keyword) in one action.
+      Modeled on I-SDA's own `copyRecord`: a record's fields are copied
+      **byte-for-byte verbatim** (DDS scopes field names per record
+      format, so there's no collision risk to solve, unlike Batch Q's own
+      copy-a-field-into-an-existing-record problem) — only the record's
+      own NAME needs a fresh one. **Correction found while implementing:**
+      no existing "non-colliding record name" helper actually existed to
+      reuse (Batch Y's `nextAvailableFieldName` is scoped to one record's
+      fields, not file-wide record names) — added a new sibling,
+      `nextAvailableRecordName`, plus `makeIdGenerator` so cloned fields
+      get fresh ids that can't collide with the model's existing ones.
+      New `duplicateRecord` `WebviewEdit` kind dispatched through the
+      existing generic edit-application plumbing (no `extension.ts`
+      change needed); a "Duplicate" toolbar button posts it directly, no
+      confirmation step, since there's nothing to fill in. Placement:
+      right after the source record, with the source's own trailing
+      comment staying attached to the source rather than being swept into
+      the duplicate. See `docs/TASKS.md` Batch II for the full writeup.
+      10 new tests in `test/prtfBatchII.test.ts` (byte-for-byte cloning,
+      fresh/distinct ids, deep-clone-not-shared-reference, placement +
+      trailing-comment attachment, naming collision on repeated
+      duplication, an empty-record duplicate, and direct
+      `nextAvailableRecordName` unit tests); full suite now 420, all
+      passing. **Please verify in a real Extension Development Host**
+      (no headless browser in this sandbox) that the "Duplicate" button
+      produces a correctly-named, selectable clone.
+
 ## Next up
 
 As of the RLU screen-capture review (`docs/KEYWORD-INVENTORY.md`), the

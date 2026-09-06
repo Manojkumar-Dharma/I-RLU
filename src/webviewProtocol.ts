@@ -88,7 +88,12 @@ export type WebviewEdit =
   | { kind: "addRecord"; name: string; afterRecordName?: string }
   | { kind: "renameRecord"; oldName: string; newName: string }
   | { kind: "deleteRecord"; name: string }
-  | { kind: "reorderRecord"; name: string; direction: "up" | "down" };
+  | { kind: "reorderRecord"; name: string; direction: "up" | "down" }
+  // Batch II — clone an entire record format (header + every one of its
+  // fields/constants/keywords) in one action. Identified by NAME, same as
+  // every other Batch P record-format operation above — see prtfEdits.ts's
+  // "duplicateRecord" case for the actual clone/naming logic.
+  | { kind: "duplicateRecord"; name: string };
 
 /** Every message shape media/webviewClient.js posts to the extension host via vscode.postMessage. */
 export type WebviewMessage =

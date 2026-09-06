@@ -1,4 +1,4 @@
-import { ParsedSource, RecordFormatEntry, FieldEntry, ConstantEntry } from "./prtfModel";
+import { ParsedSource, RecordFormatEntry, FieldEntry, ConstantEntry, Keyword } from "./prtfModel";
 import { WebviewEdit } from "./webviewProtocol";
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { upsertReffldKeyword } = require("./prtfWriter.js");
@@ -53,6 +53,63 @@ export function nextAvailableFieldName(record: RecordFormatEntry, desiredName: s
     if (!used.has(candidate)) return candidate;
     n++;
   }
+}
+
+/**
+ * Batch II — record format names, like field names (see
+ * nextAvailableFieldName above), must be unique — but scoped to the whole
+ * MODEL (model.records), not to one record's own fields, and DDS's
+ * 19-28 name column gives them the same 10-character limit. Used by
+ * "duplicateRecord" below to name a cloned record format without
+ * colliding with the source (or any other existing record). Same
+ * "already-free base name wins outright" behavior as
+ * nextAvailableFieldName, for the same reason — re-duplicating a record
+ * that already has no colliding name shouldn't force a numeric suffix it
+ * doesn't need (in practice this only matters if the desired base name
+ * was somehow already free, since duplicateRecord's own caller always
+ * passes the SOURCE record's name, which is by definition already used).
+ */
+export function nextAvailableRecordName(model: ParsedSource, desiredName: string): string {
+  const MAX_LEN = 10;
+  const used = new Set(model.records.map((r) => r.name.toUpperCase()));
+  const base = (desiredName || "REC").toUpperCase().slice(0, MAX_LEN);
+  if (!used.has(base)) return base;
+  let n = 2;
+  while (true) {
+    const suffix = String(n);
+    const truncated = (desiredName || "REC").toUpperCase().slice(0, Math.max(1, MAX_LEN - suffix.length));
+    const candidate = truncated + suffix;
+    if (!used.has(candidate)) return candidate;
+    n++;
+  }
+}
+
+/**
+ * Batch II — generates ids for cloned field/constant entries that can't
+ * collide with any id already present anywhere in the model. Separate from
+ * prtfParser.ts's own per-parse `nextId()` counter (which starts fresh at
+ * "e0" every parse and would very likely collide with real ids already in
+ * this in-memory model, which was itself produced by a parse), and from
+ * Batch Q's copy-a-single-field flow (which doesn't need this at all — a
+ * single copied field's id is assigned server-side the same way any other
+ * addField is, via the SAME per-parse counter, because it only happens
+ * once at the point a fresh field is placed, not against an already-parsed
+ * model with a pre-existing id namespace to avoid stepping on).
+ */
+function makeIdGenerator(model: ParsedSource): () => string {
+  const used = new Set<string>();
+  for (const r of model.records) {
+    for (const f of r.fields) used.add(f.id);
+  }
+  let counter = 0;
+  return () => {
+    let id: string;
+    do {
+      id = "edup" + counter++;
+    } while (used.has(id));
+    used.add(id);
+    return id;
+  };
 }
 
 /**
@@ -430,6 +487,98 @@ export function applyEditToModel(model: ParsedSource, edit: WebviewEdit): boolea
 
       model.records[idx] = neighbor;
       model.records[neighborIdx] = record;
+      return true;
+    }
+    // Batch II — clone an entire record format (header + every field/
+    // constant/keyword) in one action. Unlike Batch Q's single-field copy,
+    // a record format's own fields are copied byte-for-byte VERBATIM,
+    // unchanged — DDS scopes field names per record format, not file-wide,
+    // so a copied record's fields keep their exact original names with no
+    // collision risk (the hard problem Batch Q actually has to solve
+    // doesn't apply here). Only the record format's own NAME needs a
+    // fresh, non-colliding one (nextAvailableRecordName above).
+    case "duplicateRecord": {
+      const sourceRecord = model.records.find((r) => r.name === edit.name);
+      if (!sourceRecord) return false;
+      const newName = nextAvailableRecordName(model, sourceRecord.name);
+      const nextId = makeIdGenerator(model);
+
+      // Keywords/conditions are cloned (not shared by reference) so an
+      // edit to either copy's keywords later can't mutate the other's;
+      // sourceLineIndex is reset to -1 since these are new physical lines
+      // that don't exist anywhere in the original source yet — same
+      // convention every other freshly-added entry in this file uses.
+      const cloneConditions = (conditions: RecordFormatEntry["conditions"]) => conditions.map((c) => ({ ...c }));
+      const cloneKeywords = (keywords: Keyword[]): Keyword[] =>
+        keywords.map((k) => ({ ...k, sourceLineIndex: -1, conditions: k.conditions ? k.conditions.map((c) => ({ ...c })) : undefined }));
+
+      const newRecord: RecordFormatEntry = {
+        kind: "record",
+        sourceLineIndex: -1,
+        name: newName,
+        conditions: cloneConditions(sourceRecord.conditions),
+        keywords: cloneKeywords(sourceRecord.keywords),
+        fields: [],
+        formType: sourceRecord.formType,
+      };
+
+      const clonedFields: (FieldEntry | ConstantEntry)[] = sourceRecord.fields.map((f) => {
+        if (f.kind === "field") {
+          const clone: FieldEntry = {
+            kind: "field",
+            id: nextId(),
+            sourceLineIndex: -1,
+            name: f.name,
+            reference: f.reference,
+            length: f.length,
+            dataType: f.dataType,
+            decimalPositions: f.decimalPositions,
+            usage: f.usage,
+            line: f.line,
+            position: f.position,
+            conditions: cloneConditions(f.conditions),
+            keywords: cloneKeywords(f.keywords),
+            formType: f.formType,
+          };
+          return clone;
+        }
+        const constantClone: ConstantEntry = {
+          kind: "constant",
+          id: nextId(),
+          sourceLineIndex: -1,
+          literal: f.literal,
+          line: f.line,
+          position: f.position,
+          conditions: cloneConditions(f.conditions),
+          keywords: cloneKeywords(f.keywords),
+          formType: f.formType,
+        };
+        return constantClone;
+      });
+      newRecord.fields = clonedFields;
+
+      // Insert the new record right after the source record in
+      // model.records (same "duplicate lands right next to its source"
+      // placement addRecord's own afterRecordName default follows).
+      const recordsIdx = model.records.indexOf(sourceRecord);
+      model.records.splice(recordsIdx + 1, 0, newRecord);
+
+      // Insert the new record's whole block (the record entry followed by
+      // every cloned field/constant, in original order) right after the
+      // SOURCE record's own block in model.sequence — its block being
+      // itself plus everything up to (but not including) the next
+      // record-kind entry, same definition reorderRecord's own blockRange
+      // uses, so any trailing comments after the source stay attached to
+      // the source rather than being swept into the new duplicate.
+      const seqStart = model.sequence.indexOf(sourceRecord);
+      let seqEnd = model.sequence.length;
+      for (let i = seqStart + 1; i < model.sequence.length; i++) {
+        if (model.sequence[i].kind === "record") {
+          seqEnd = i;
+          break;
+        }
+      }
+      model.sequence.splice(seqEnd, 0, newRecord, ...clonedFields);
       return true;
     }
     default:

@@ -310,9 +310,21 @@
       state.confirmDeleteRecord = opening;
       render();
     });
+    // Batch II — clones the entire currently-selected record format (all
+    // its fields/constants/keywords) in one click. Not destructive and
+    // not multi-step like Add/Rename/Delete's own inline forms — there's
+    // nothing to confirm or fill in (prtfEdits.ts's "duplicateRecord"
+    // picks the new name itself via nextAvailableRecordName), so this
+    // posts the edit directly rather than arming a pending-UI-state form.
+    const duplicateRecordBtn = el("button", { class: "btn", title: "Duplicate this record format (all its fields, constants, and keywords)" }, ["Duplicate"]);
+    duplicateRecordBtn.addEventListener("click", () => {
+      if (!state.recordName) return;
+      vscode.postMessage({ type: "edit", edit: { kind: "duplicateRecord", name: state.recordName } });
+    });
     toolbar.appendChild(addRecordBtn);
     toolbar.appendChild(renameRecordBtn);
     toolbar.appendChild(deleteRecordBtn);
+    toolbar.appendChild(duplicateRecordBtn);
 
     const addFieldBtn = el(
       "button",
