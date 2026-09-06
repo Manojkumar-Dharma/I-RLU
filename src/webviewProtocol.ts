@@ -36,6 +36,14 @@ export type WebviewEdit =
   | { kind: "removeRecordKeyword"; recordName: string; name: string }
   | { kind: "setFieldKeyword"; id: string; name: string; params?: string }
   | { kind: "removeFieldKeyword"; id: string; name: string }
+  // Batch HH — design-time-only per-field sample value (real RLU's SD
+  // sequence command), shown in the preview in place of "{FIELDNAME}".
+  // Field-only (constants already show their own literal text) — see
+  // prtfEdits.ts's "setFieldSampleValue" case for why this rejects a
+  // constant id. Empty string clears it back to the "{FIELDNAME}"
+  // placeholder, same "empty clears" convention setIndicatorText/
+  // removeIndicatorText already use for a similarly optional string field.
+  | { kind: "setFieldSampleValue"; id: string; sampleValue: string }
   | { kind: "setIndicatorText"; recordName: string; indicator: string; text: string }
   | { kind: "removeIndicatorText"; recordName: string; indicator: string }
   | {

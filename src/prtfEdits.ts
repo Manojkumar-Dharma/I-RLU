@@ -256,6 +256,19 @@ export function applyEditToModel(model: ParsedSource, edit: WebviewEdit): boolea
       if (idx !== -1) found.entry.keywords.splice(idx, 1);
       return true;
     }
+    case "setFieldSampleValue": {
+      // Batch HH — field-only (see FieldEntry.sampleValue's own comment
+      // for why this is in-memory/session-only, never written to source).
+      // Rejects a constant id rather than silently no-op'ing on it, same
+      // "found but wrong kind -> false" shape prtfKeywordValidation.js's
+      // own field-only checks use elsewhere.
+      const found = findEntryById(model, edit.id);
+      if (!found || found.entry.kind !== "field") return false;
+      const value = edit.sampleValue || "";
+      if (value) found.entry.sampleValue = value;
+      else delete found.entry.sampleValue;
+      return true;
+    }
     case "setIndicatorText": {
       // Batch G — INDTXT (docs/KEYWORD-INVENTORY.md §1) is a repeating
       // keyword: a record can carry one INDTXT per indicator it wants to

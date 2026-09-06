@@ -111,6 +111,11 @@ const mod = {
   // detectFieldOverlaps for the printer-file-overprint-vs-display-file
   // scope decision).
   detectFieldOverlaps: Layout.detectFieldOverlaps,
+  // Batch HH — design-time-only per-field sample value formatting (see
+  // prtfLayout.js's formatSampleValue and prtfModel.ts's
+  // FieldEntry.sampleValue for the "why transient, not written to DDS
+  // source" scope decision).
+  formatSampleValue: Layout.formatSampleValue,
 };
 if (typeof module !== "undefined" && module.exports) module.exports = mod;
 if (typeof window !== "undefined") window.PrtfEngine = mod;

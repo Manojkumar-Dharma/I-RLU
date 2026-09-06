@@ -525,6 +525,43 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       verification possible in this sandbox — please verify the warning
       banner visually in a real Extension Development Host.**
 
+- [x] **Batch HH — Sample/test data entry & preview.** Real RLU's `SD`
+      sequence command lets a person type realistic per-field values shown
+      in the design preview instead of a bare `{FIELDNAME}` placeholder —
+      no I-SDA equivalent (display files have no analogous "prototype run"
+      concept), so IBM's own RLU docs were treated as the primary spec.
+      **Persistence check made before choosing, per this task's own
+      instruction:** RLU's own screen model tracks a "Sample line" as one
+      of exactly four line types (Report/Filler/Field/Sample) embedded
+      directly in the design screen, suggesting real RLU does carry sample
+      data across STRRLU sessions — but no reference was found confirming
+      the actual raw-source encoding RLU uses to store it. Rather than
+      invent an unverified persistence format inside this project's own
+      DDS source (risking text a real compiler or another tool could
+      mishandle), sample data is kept **in-memory only**
+      (`FieldEntry.sampleValue`, `src/prtfModel.ts`), lost on re-parsing
+      the file — the fallback this task's own entry explicitly allowed.
+      `src/prtfParser.ts`/`src/prtfWriter.js` are untouched. New
+      `setFieldSampleValue` `WebviewEdit` kind (field-only — a constant
+      already shows its own literal text), dispatched through the existing
+      generic edit plumbing, empty string clearing it back to the
+      placeholder. New `formatSampleValue` (`src/prtfLayout.js`) respects
+      the field's own length (truncates, never overflows) and decimal
+      positions (numeric S/P/B/F types get a literal decimal point and are
+      right-justified; character types are left-justified, unpadded),
+      without attempting full EDTCDE/EDTWRD emulation. `resolveLayout` now
+      carries `sampleValue`/`sampleDisplay` per field cell;
+      `media/webviewClient.js` shows the formatted value in place of
+      `{FIELDNAME}`, with a new "Sample data" input in the properties
+      panel applying immediately on change. See `docs/TASKS.md` Batch HH
+      for the full writeup. 10 new tests in `test/prtfBatchHH.test.ts`
+      (formatting truncation/justification/decimal-insertion/non-numeric
+      fallback, edit set/clear/reject-constant, and layout wiring for
+      present/absent sample values); full suite now 446, all passing.
+      **No real-browser verification possible in this sandbox — please
+      verify the "Sample data" input and its effect on the preview
+      visually in a real Extension Development Host.**
+
 ## Next up
 
 As of the RLU screen-capture review (`docs/KEYWORD-INVENTORY.md`), the

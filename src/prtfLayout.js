@@ -525,6 +525,35 @@ function cellOverlapLabel(cell) {
 }
 
 /**
+ * Batch HH (docs/TASKS.md) — formats a raw per-field sample value (real
+ * RLU's SD sequence command) for the design preview, "respecting length/
+ * decimal formatting" per this batch's own task wording, without
+ * attempting full EDTCDE/EDTWRD emulation (the same explicit non-goal
+ * resolveConstantPlaceholder's own DATE-formatting comment above already
+ * states for a different keyword).
+ *
+ * Numeric data types (S/P/B/F, per IBM's DDS reference for printer files'
+ * position-35 data-type list) are right-justified with a literal decimal
+ * point inserted per decimalPositions, matching how a numeric field
+ * actually prints; non-numeric types are left-justified, unpadded. Either
+ * way the result is truncated — never overflowed — to the field's own
+ * resolved length: a real printer never grows a field past its declared
+ * width, it just prints what fits.
+ */
+function formatSampleValue(rawValue, length, dataType, decimalPositions) {
+  const len = length || String(rawValue || "").length || 1;
+  const isNumeric = dataType === "S" || dataType === "P" || dataType === "B" || dataType === "F";
+  let text = String(rawValue == null ? "" : rawValue);
+  if (isNumeric && decimalPositions) {
+    const stripped = text.replace(/[^0-9.\-]/g, "");
+    const parsed = Number(stripped);
+    if (stripped && !Number.isNaN(parsed)) text = parsed.toFixed(decimalPositions);
+  }
+  if (text.length > len) return text.slice(0, len);
+  return isNumeric ? text.padStart(len, " ") : text;
+}
+
+/**
  * Batch GG (docs/TASKS.md) — field/constant overlap detection.
  *
  * Reference: I-SDA's `dspfEngine.js` `resolveScreen` runs the same
@@ -698,6 +727,18 @@ function resolveLayout(model, recordName, indicatorState, uom) {
       // renderable style object (see resolveStyle's own comment for the
       // per-keyword cascade rules and the DSPATR scope correction).
       style,
+      // Batch HH (docs/TASKS.md) — design-time-only sample value (real
+      // RLU's SD sequence command). `sampleValue` is the raw text so the
+      // properties panel can prefill its input; `sampleDisplay` is the
+      // length/decimal-formatted version media/webviewClient.js's
+      // renderPage shows in place of "{FIELDNAME}" (see
+      // FieldEntry.sampleValue's own comment for why this never touches
+      // DDS source).
+      sampleValue: entry.kind === "field" ? entry.sampleValue : undefined,
+      sampleDisplay:
+        entry.kind === "field" && entry.sampleValue
+          ? formatSampleValue(entry.sampleValue, length, entry.dataType, entry.decimalPositions)
+          : undefined,
     });
 
     cursorLine = line;
@@ -774,6 +815,9 @@ const mod = {
   // Batch GG (docs/TASKS.md) — exported directly so it's unit-testable in
   // isolation, same rationale as resolveFont/resolveStyle above.
   detectFieldOverlaps,
+  // Batch HH (docs/TASKS.md) — exported directly so it's unit-testable in
+  // isolation, same rationale as detectFieldOverlaps above.
+  formatSampleValue,
 };
 if (typeof module !== "undefined" && module.exports) module.exports = mod;
 if (typeof window !== "undefined") window.PrtfLayout = mod;

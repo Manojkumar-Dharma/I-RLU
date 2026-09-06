@@ -587,7 +587,7 @@
           ? barcodeSymbol
             ? [barcodeSymbol]
             : [el("span", { class: "barcode-label" }, [cell.barcode.barCodeId || "BARCODE"])]
-          : [cell.kind === "constant" ? cell.text : "{" + cell.name + "}"]
+          : [cell.kind === "constant" ? cell.text : cell.sampleDisplay || "{" + cell.name + "}"]
       );
       div.addEventListener("click", (ev) => {
         ev.stopPropagation();
@@ -1732,6 +1732,28 @@
       const usageRow = labeledSelect("Usage", ["O", "I", "B", "H"], cell.usage || "O");
       usageSelect = usageRow.input;
       panel.appendChild(usageRow.row);
+
+      // Batch HH (docs/TASKS.md) — design-time-only sample value (real
+      // RLU's SD sequence command), shown in the design preview in place
+      // of "{FIELDNAME}". Applies immediately on change (its own
+      // "setFieldSampleValue" edit kind), same pattern as the indicator-
+      // text panel's inputs below, rather than being folded into the
+      // Save button's "updateField" edit — see FieldEntry.sampleValue's
+      // own comment for why this is never written to DDS source.
+      const sampleRow = labeledInput("Sample data", {
+        type: "text",
+        value: cell.sampleValue || "",
+        placeholder: "{" + (cell.name || "FIELDNAME") + "}",
+      });
+      sampleRow.input.addEventListener("change", () => {
+        vscode.postMessage({ type: "edit", edit: { kind: "setFieldSampleValue", id: cell.id, sampleValue: sampleRow.input.value } });
+      });
+      panel.appendChild(sampleRow.row);
+      panel.appendChild(
+        el("div", { class: "hint" }, [
+          "Design-time only — shown in this preview instead of the field name, but never written to the DDS source.",
+        ])
+      );
 
       // Batch H (docs/TASKS.md) — "Reference a field" Y/N + "Use referenced
       // values" Y/N pair (docs/KEYWORD-INVENTORY.md §3): position 29 'R'

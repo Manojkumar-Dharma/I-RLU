@@ -126,6 +126,26 @@ export interface FieldEntry extends BaseEntry {
   position?: number;
   conditions: ConditioningIndicator[];
   keywords: Keyword[];
+  /**
+   * Batch HH (docs/TASKS.md) — design-time-only sample value (real RLU's
+   * `SD` sequence command), shown in the design preview in place of
+   * "{FIELDNAME}". Deliberately NOT a DDS keyword and NOT written to the
+   * printer-file source at all: real RLU's own line-type model treats a
+   * "Sample line" as one of its four persisted line types (Report/Filler/
+   * Field/Sample), which suggests real RLU does carry sample data across
+   * STRRLU sessions — but no confirmed reference was found for the exact
+   * raw-source encoding RLU uses to store it (unlike, say, DSPATR's clean
+   * "not a valid printer-file keyword" confirmation in Batch EE), so
+   * inventing an unverified persistence format inside this project's own
+   * DDS source risks producing text a real compiler or another tool might
+   * mishandle. This field therefore lives only in the in-memory parsed
+   * model for the current editing session (lost on re-parsing the file,
+   * e.g. closing and reopening it) — the same "kept transient, out of DDS
+   * source entirely" fallback this batch's own docs/TASKS.md entry already
+   * allowed for. `src/prtfParser.ts` never sets this (nothing in real
+   * source populates it) and `src/prtfWriter.js` never emits it.
+   */
+  sampleValue?: string;
 }
 
 export interface ConstantEntry extends BaseEntry {
