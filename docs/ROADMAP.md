@@ -490,6 +490,41 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       sandbox — please verify visually in a real Extension Development
       Host.**
 
+- [x] **Batch GG — Field/constant overlap detection.** No overlap/
+      collision logic existed at all — two fields could occupy the same
+      cells with zero warning. Modeled on I-SDA's `dspfEngine.js`
+      `resolveScreen` (same (line, column)-sorted, first-claim-wins
+      bookkeeping), but **confirmed real printer-file DDS behavior
+      differs from display files before reusing I-SDA's drop-the-loser
+      approach**: IBM's own DDS reference for printer files states
+      plainly, "If fields overlap, the printer overprints" — there's no
+      dropped field at print time, unlike an interactive 5250 screen
+      which can only show one thing per cell. So this is warn-only:
+      `resolveLayout` (`src/prtfLayout.js`) gains a new `detectFieldOverlaps`
+      pass and an `overlaps` array on its return value, but nothing is
+      removed from the existing `cells` array — every field/constant
+      renders exactly as before. A new warning banner in
+      `media/webviewClient.js` (`.note.warning`, reusing the same warning
+      color as the existing `.hint.warning` field-panel messages) lists
+      each overlap as "`FIELD` over `BLOCKEDBY` (line L, pos P)". Scope
+      boundary: overlap is checked against the CURRENTLY active indicator
+      toggle state only (matching every other indicator-conditioned
+      resolution already in this project), not every possible indicator
+      combination at once — IBM's own reference notes the real compiler
+      diagnoses overlap treating conditioned fields "as if they were
+      selected," but this tool is a live, indicator-togglable design-time
+      preview rather than a static compile-time analyzer; toggling
+      indicators and re-checking is how a person exercises other
+      combinations. See `docs/TASKS.md` Batch GG for the full writeup. 6
+      new tests in `test/prtfBatchGG.test.ts` (disjoint fields report no
+      overlap, two fields relocated onto the same range report each
+      other with correct line/position and the losing field stays
+      rendered, a constant-vs-constant overlap reports using literal
+      text, indicator-toggle scoping, and two direct `detectFieldOverlaps`
+      unit tests); full suite now 436, all passing. **No real-browser
+      verification possible in this sandbox — please verify the warning
+      banner visually in a real Extension Development Host.**
+
 ## Next up
 
 As of the RLU screen-capture review (`docs/KEYWORD-INVENTORY.md`), the

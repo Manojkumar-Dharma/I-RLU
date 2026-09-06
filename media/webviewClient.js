@@ -165,6 +165,22 @@
         ])
       );
     }
+    // Batch GG (docs/TASKS.md) — field/constant overlap warning banner.
+    // Warn-only, matching prtfLayout.js's detectFieldOverlaps: nothing is
+    // hidden from the design above, this just flags that a real printer
+    // would overprint these cells' ink on top of each other.
+    if ((layout.overlaps || []).length) {
+      canvasCol.appendChild(
+        el(
+          "div",
+          { class: "note warning" },
+          [
+            "Overlapping fields/constants (the printer will overprint): " +
+              layout.overlaps.map((o) => o.field + " over " + o.blockedBy + " (line " + o.line + ", pos " + o.position + ")").join("; "),
+          ]
+        )
+      );
+    }
 
     const panel = renderPropsPanel(layout);
     if (panel) sideCol.appendChild(panel);

@@ -107,6 +107,10 @@ const mod = {
   // per-keyword cascade rules and the DSPATR scope correction).
   resolveStyle: Layout.resolveStyle,
   resolveColorStyle: Layout.resolveColorStyle,
+  // Batch GG — field/constant overlap detection (see prtfLayout.js's
+  // detectFieldOverlaps for the printer-file-overprint-vs-display-file
+  // scope decision).
+  detectFieldOverlaps: Layout.detectFieldOverlaps,
 };
 if (typeof module !== "undefined" && module.exports) module.exports = mod;
 if (typeof window !== "undefined") window.PrtfEngine = mod;

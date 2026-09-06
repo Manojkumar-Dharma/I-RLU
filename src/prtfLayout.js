@@ -519,6 +519,72 @@ function indicatorActive(conditions, indicatorState) {
   });
 }
 
+/** Human-readable label for a resolved cell, for overlap-warning messages. */
+function cellOverlapLabel(cell) {
+  return cell.kind === "field" ? cell.name : cell.text || "(unnamed constant)";
+}
+
+/**
+ * Batch GG (docs/TASKS.md) — field/constant overlap detection.
+ *
+ * Reference: I-SDA's `dspfEngine.js` `resolveScreen` runs the same
+ * (line, column)-sorted, first-claim-wins pass, but I-SDA is a DISPLAY
+ * file engine: it drops a losing field from the resolved render entirely
+ * (`resolved.push(f)` only happens when unblocked) because an interactive
+ * 5250 screen can only show one thing per cell.
+ *
+ * Printer files behave differently — confirmed against IBM's own DDS
+ * reference for printer files ("Overlapping fields"): "If fields overlap,
+ * the printer overprints." There is no dropped field at print time, only
+ * literal overprinted ink. So this pass mirrors I-SDA's detection logic
+ * (same sort, same first-claim-wins "who blocked whom" bookkeeping, so the
+ * warning message is exactly as specific) but deliberately does NOT drop
+ * anything from the caller's `cells` array — every cell already in `cells`
+ * still renders, exactly as a real CRTPRTF-compiled overprint would. This
+ * function only returns a side-channel `overlaps` list for a warning
+ * banner, same "surfaced separately, not silently dropped" shape I-SDA's
+ * own `overlaps` array already uses (this project just leans on that shape
+ * for the *entire* result here, not just the diagnostic reporting half of
+ * it).
+ *
+ * Scope boundary: this checks only the fields/constants already active for
+ * the CURRENT indicator-toggle preview (the `cells` array), not every
+ * indicator combination that could ever be true at once. IBM's own DDS
+ * reference notes the real compiler diagnoses overlap treating conditioned
+ * fields "as if they were selected" (i.e. a static, indicator-state-blind
+ * check) — this tool is a live, indicator-togglable design-time preview
+ * rather than a static compile-time analyzer, so overlap here is
+ * intentionally reported per-current-toggle-state; toggling indicators and
+ * re-checking is how a person exercises other combinations, the same
+ * boundary this project's other indicator-conditioned resolvers already
+ * draw.
+ */
+function detectFieldOverlaps(cells) {
+  const candidates = cells.slice().sort((a, b) => a.line - b.line || a.position - b.position);
+  const occupied = {}; // "line:col" -> the first cell that claimed it
+  const overlaps = [];
+  for (const cell of candidates) {
+    let blockedBy = null;
+    for (let c = cell.position; c < cell.position + cell.length && !blockedBy; c++) {
+      const key = cell.line + ":" + c;
+      if (occupied[key]) blockedBy = occupied[key];
+    }
+    if (blockedBy) {
+      overlaps.push({
+        field: cellOverlapLabel(cell),
+        blockedBy: cellOverlapLabel(blockedBy),
+        line: cell.line,
+        position: cell.position,
+      });
+      continue; // matches I-SDA's own claim logic: a blocked cell doesn't itself claim further cells
+    }
+    for (let c = cell.position; c < cell.position + cell.length; c++) {
+      occupied[cell.line + ":" + c] = cell;
+    }
+  }
+  return overlaps;
+}
+
 function resolveLayout(model, recordName, indicatorState, uom) {
   indicatorState = indicatorState || {};
   uom = uom === "cm" ? "cm" : "inch"; // default to inch, CRTPRTF's own default
@@ -652,6 +718,10 @@ function resolveLayout(model, recordName, indicatorState, uom) {
     resources,
     pageGroupKeywords,
     skippedByIndicator: skipped.map((e) => (e.kind === "field" ? e.name : e.literal || "(constant)")),
+    // Batch GG (docs/TASKS.md) — see detectFieldOverlaps' own comment for
+    // why this is warn-only (no cell removal), unlike I-SDA's display-file
+    // equivalent.
+    overlaps: detectFieldOverlaps(cells),
     // Pixel grid derived from the record's CPI/LPI at 96 DPI (standard web
     // display density): cellWidthPx = 96/CPI, cellHeightPx = 96/LPI. This
     // is the same character-cell grid RLU itself was built around, just
@@ -701,6 +771,9 @@ const mod = {
   resolveFontDisplay,
   resolveColorStyle,
   resolveStyle,
+  // Batch GG (docs/TASKS.md) — exported directly so it's unit-testable in
+  // isolation, same rationale as resolveFont/resolveStyle above.
+  detectFieldOverlaps,
 };
 if (typeof module !== "undefined" && module.exports) module.exports = mod;
 if (typeof window !== "undefined") window.PrtfLayout = mod;

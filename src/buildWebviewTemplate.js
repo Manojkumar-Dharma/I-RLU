@@ -235,6 +235,9 @@ body { font-family: var(--vscode-editor-font-family, monospace); color: var(--vs
 .badge-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .badge { font-size: 10px; padding: 2px 6px; border: 1px solid var(--vscode-panel-border); border-radius: 10px; background: var(--vscode-editorWidget-background); }
 .empty, .note { font-size: 12px; color: var(--vscode-descriptionForeground); margin-top: 8px; }
+/* Batch GG — field/constant overlap warning banner (see .hint.warning
+   above for the same warning color used elsewhere in this project). */
+.note.warning { color: var(--vscode-inputValidation-warningForeground, #b89500); }
 .btn { font-size: 11px; padding: 3px 8px; background: var(--vscode-button-secondaryBackground, #3a3d41); color: var(--vscode-button-secondaryForeground, #fff); border: none; border-radius: 2px; cursor: pointer; }
 .btn:hover { opacity: 0.85; }
 .btn.active { background: var(--vscode-button-background, #0e639c); color: var(--vscode-button-foreground, #fff); }
