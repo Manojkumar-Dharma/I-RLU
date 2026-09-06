@@ -108,6 +108,11 @@ vice versa.
 | DD | ~~Batch CC follow-up: thread indicator state through the record/file-level geometry keywords `resolveLayout` resolves once per call (`PAGSIZE`, `CPI`/`LPI`, `LINE`/`BOX`, `OVERLAY`/`PAGSEG`/`AFPRSC`, `STRPAGGRP`/`ENDPAGGRP`/`DOCIDXTAG`/`DTASTMCMD`) — Batch CC itself only reached the per-field/constant lookups~~ | n/a (layout correctness, `src/prtfLayout.js`) | **Done** | **CC** (this is that batch's own explicitly-flagged remaining scope) |
 | EE | Render `COLOR`/`DSPATR`/`UNDERLINE`/`HIGHLIGHT` visually in the design-time page preview — these are editable via the properties panel (Batch A) and now correctly conditioned per-keyword (Batch CC/DD), but the resolved value is never actually applied to the on-screen cell text at all today (no font color, no bold/reverse-image/underline styling in `media/webviewClient.js`'s cell rendering) — so toggling an indicator on a conditioned `COLOR` pair, or just setting `COLOR` at all, has no visible effect in the designer even though the model/layout resolve it correctly | `COLOR` (Named/`*RGB`, `*CMYK`/`*CIELAB` unverified — see Batch A), `DSPATR`, `UNDERLINE`, `HIGHLIGHT` | Open | none (needs `resolveLayout` to surface a resolved style per cell, then webview CSS/rendering to apply it — no model/parser/writer change expected) |
 | FF | ~~**Bug fix:** properties/keywords column rows inconsistent — checkboxes stretched to the value-input width, some rows put the checkbox before its label and others after, several rows had no row wrapper at all~~ | n/a (webview UI/CSS, `media/webviewClient.js` + `src/buildWebviewTemplate.js`) | **Done** | none |
+| GG | Field/constant overlap detection — no warning today when two fields' positions+lengths overlap, or a field extends past another, on the same line | n/a (layout correctness, not a keyword) | Open | none |
+| HH | Sample/test data entry & preview — real RLU's `SD` sequence command lets a person type realistic per-field values shown in the design preview instead of a bare `{FIELDNAME}` placeholder | n/a (webview UI + model, not a keyword) | Open | none |
+| II | Duplicate/clone an entire record format (all its fields/constants/keywords in one action) — Batch Q covers a single field, Batch P covers add/rename/delete/reorder of record formats, neither clones a whole one | n/a (tooling/UI, not a keyword) | Open | **Q** (reuse its field-copy naming-collision logic per cloned field) |
+| JJ | Multi-select fields for bulk move/copy/delete — real RLU's F14/F15 (Copy Fields/Move Fields) operate on several selected fields at once; today's click-to-place/drag is one-field-at-a-time only | n/a (webview UI, not a keyword) | Open | **Q** (bulk version of its single-field copy) |
+| KK | Boundary shift-and-truncate (real RLU's `LT`/`RT`) — moving/resizing a field past the report's right edge has no validation at all today; a field can end up positioned off-page silently | n/a (layout correctness, not a keyword) | Open | **GG** (natural pairing — both are "is this field's position/length actually valid" checks) |
 
 ## Batch detail
 
@@ -2450,6 +2455,218 @@ or record with several different keyword types checked at once (a mix
 of flag/text/select keywords, EDTCDE, and at least one AFP resource
 keyword like OVERLAY) so the alignment is visible across every row shape
 at once, not just one at a time.
+
+### Batch GG — Field/constant overlap detection [OPEN]
+
+Filed after a real-IBM-RLU-parity review at Manojkumar-dharma's request.
+Real DDS has a documented restriction that two fields/constants can't
+occupy the same screen/print position — when they do, only one is
+actually honored; real RLU (and I-SDA, this project's sister for display
+files) both surface this instead of letting it silently happen. I-RLU has
+no equivalent today — checked `src/prtfLayout.js` and
+`src/prtfKeywordValidation.js` for any overlap/collision logic; there is
+none. Two fields can occupy the same cells right now with zero warning
+anywhere in the UI.
+
+**Reference implementation — I-SDA:** `src/dspfEngine.js`'s
+`resolveScreen` (grep "Position-sequence overlap resolution" for the
+exact spot) sorts candidate fields by `(line, column)` and processes them
+in that order — the first field to claim a cell range wins, later
+fields overlapping any of those same cells are dropped from the resolved
+render (not permanently removed from the model — just not shown/counted
+for that resolve pass) and recorded in a separate `overlaps` array
+alongside the normal resolved-field list, specifically so the UI can
+warn about them without changing what's actually rendered (which should
+match what real DDS would do). `src/buildWebviewTemplate.js`'s
+`updateOverlapWarning(screen)` reads that same `screen.overlaps` array
+(the one `render()` already built — not a second resolve call) and shows/
+hides a warning banner (`#overlapWarning`) accordingly.
+
+**What to do in I-RLU:** confirm first whether real printer-file DDS has
+the identical "later field silently dropped" behavior IBM documents for
+display files, or something different (a printer file writes sequentially
+top-to-bottom rather than being an interactive screen redraw, so verify
+against the IBM DDS reference for printer files specifically rather than
+assuming display-file behavior transfers unchanged) — this determines
+whether I-RLU's version should actually DROP the losing field from the
+resolved layout (matching I-SDA/real DDS) or just warn without dropping
+anything (if PRTF's own real behavior turns out to differ, e.g. simply
+overprinting rather than one being silently omitted). Whichever the real
+behavior turns out to be, add the equivalent resolution pass to
+`src/prtfLayout.js`'s `resolveLayout`, surface an `overlaps` array on its
+return value the same way, and add a warning banner in
+`media/webviewClient.js` reading it.
+
+**Test:** a unit test placing two fields at literally identical
+line/position (or overlapping ranges) and asserting the resolved layout
+correctly reflects whatever the verified real DDS behavior turns out to
+be, plus that `overlaps` reports both fields involved (matching
+I-SDA's own "report exactly who it collided with, not just 'something'"
+comment).
+
+### Batch HH — Sample/test data entry & preview [OPEN]
+
+Filed in the same review as Batch GG. Real RLU's `SD` (Sample Data)
+sequence-line command lets a person type realistic per-field values that
+show in the Design Report preview instead of a bare field-name
+placeholder — letting them see roughly what an actual populated report
+will look like before ever compiling/running it. I-RLU's preview always
+shows `{FIELDNAME}` (confirmed: `src/prtfLayout.js` builds cell text as
+`"{" + entry.name + "}"` for a field, with no alternative). Checked I-SDA
+for an equivalent (`sampleData`/"sample data" — grep turned up nothing) —
+this appears to be a printer-report-specific RLU concept with no display-
+file analog to mirror, since a live screen doesn't have a comparable
+"prototype run" concept; treat real IBM RLU documentation as the primary
+spec for this one, not I-SDA.
+
+**What to do:**
+- Add an optional per-field sample-value string to the model (`FieldEntry`
+  in `src/prtfModel.ts`) — this is I-RLU-side-only "scratch" data for the
+  preview, NOT a DDS keyword and NOT written back to the DDS source at
+  all (real RLU's own sample data isn't part of the compiled printer file
+  either — it's purely a design-time aid). Consider whether this belongs
+  in the `.prtf` file itself (as a specially-marked comment RLU-style
+  tools sometimes use for round-tripping design metadata) or purely as
+  transient in-memory webview state that doesn't survive closing the
+  editor — check what real RLU actually does (does closing/reopening RLU
+  keep sample data, or is it session-only?) before choosing, since this
+  materially affects whether it needs any writer changes at all.
+- `media/webviewClient.js`: a new "Sample data" input in the field's
+  properties panel (`renderEditPanel`/`labeledInput`-shaped), and use it
+  instead of `{FIELDNAME}` in the cell text builder when present and
+  non-empty, respecting the field's own length/decimal formatting
+  (truncate/pad to the field's actual length the same way a real
+  compiled value would render, not just drop the raw string in verbatim).
+- Numeric/date fields: consider a "fill with a plausible example" default
+  generator (e.g. today's date for a date-typed field, `0.00`-shaped for
+  a numeric with decimals) as a convenience, but this is a nice-to-have,
+  not required for the core feature.
+
+**Verification:** unit tests confirming sample-data text formatting
+respects length/decimals/type the same way `prtfLayout.js`'s other
+formatting does; no writer/round-trip test needed if sample data is kept
+out of the DDS source entirely (confirm that design decision first, per
+above).
+
+### Batch II — Duplicate/clone an entire record format [OPEN]
+
+Filed in the same review as Batch GG/HH. Batch Q covers copying a single
+field/constant; Batch P covers add/rename/delete/reorder of whole record
+formats — neither clones an entire record format (header + every one of
+its fields/constants/keywords) in one action, a common real need for
+files with several similar detail/header record formats.
+
+**Reference implementation — I-SDA:** `src/dspfWriter.js`'s `copyRecord
+(dspfFile, sourceLines, record, options)` — notably simpler than Batch
+Q's per-field copy, because a record format's own fields are copied
+**byte-for-byte verbatim, unchanged** — DDS scopes field names per record
+format (not file-wide), so a copied record's fields keep their exact
+original names with no collision risk, unlike copying a single field
+into an EXISTING record (Batch Q's actual hard problem). Only the record
+format's own NAME needs a fresh non-colliding one
+(`nextAvailableRecordName`, already exists in I-RLU per Batch P/Q's own
+naming-collision logic — reuse it, don't re-derive). Implementation is
+essentially "generate a new header line with the new name (same
+conditions/keywords as the original), then splice in every one of the
+original's own field/constant/keyword-continuation source lines
+unchanged right after it."
+
+**What to do in I-RLU:** add the equivalent to `src/prtfWriter.js` (a
+`copyRecordFormat`-shaped function, or extend `prtfEdits.js`'s existing
+`addRecord`/similar machinery from Batch P), a new `WebviewEdit` kind in
+`webviewProtocol.ts`, and a "Duplicate record format" UI entry point in
+`media/webviewClient.js` (the existing record-format switcher/management
+UI from Batch P is the natural place). Reuse Batch P/Q's own
+non-colliding-name helper for the new record's name.
+
+**Verification:** parse → duplicate → regenerate round-trip test
+confirming the new record's fields/keywords are byte-identical to the
+original's except the record's own name, plus a naming-collision test
+(duplicating a record whose generated name would collide with an
+existing one, e.g. duplicating "DETAIL" twice in a row).
+
+### Batch JJ — Multi-select fields for bulk move/copy/delete [OPEN]
+
+Filed in the same review as Batch GG/HH/II. Real RLU's F14 (Copy Fields)/
+F15 (Move Fields) function keys operate on several selected fields at
+once. I-RLU's click-to-place/drag (confirmed: no `multiSelect`/
+`shiftKey`-style handling anywhere in `media/webviewClient.js`) only ever
+acts on one field/constant at a time.
+
+**Reference implementation — I-SDA:** Shift/Ctrl/Cmd-click adds to an
+existing selection (`const additive = e.shiftKey || e.ctrlKey ||
+e.metaKey`, `src/buildWebviewTemplate.js`); `getSelectedFields()` returns
+the current multi-selection; dragging any one of several already-selected
+fields calls `startGroupDrag(selectedEls, selectedFields, ...)` instead of
+the single-field `startDrag`, which moves the whole group together,
+preserving each field's relative offset from the others, and clamps the
+GROUP's own combined bounding box to stay in bounds (`clampedDeltaLine`/
+`clampedDeltaColumn` — `Math.min(bounds.maxLine - minGroupLine,
+Math.max(bounds.minLine - minGroupLine, deltaLine))`-shaped) rather than
+clamping each field independently (which would let the group visually
+compress/distort against an edge instead of moving as a rigid unit).
+
+**What to do in I-RLU:** add the equivalent click-to-add-to-selection
+modifier-key handling, a `startGroupDrag` mirroring I-SDA's own
+bounding-box-clamped group move, and multi-target versions of
+Batch Q's existing copy/delete actions (copy-selected, delete-selected)
+in `media/webviewClient.js`. This pairs naturally with Batch KK's
+boundary-clamping work below — implement whichever lands first with an
+eye toward the other reusing its clamp math rather than each inventing
+its own.
+
+**Verification:** since this is webview drag/selection UI, no real
+automated coverage is likely feasible in this project's environment (same
+documented "no headless browser in this sandbox" limitation as Batches
+V/FF) — focus on unit-testing any pure logic extracted (e.g. the group
+bounding-box clamp math itself, following the `designerOpenMode.ts`-style
+"extract the vscode/DOM-free logic into its own testable module" pattern
+this project already uses), and flag for manual verification in a real
+Extension Development Host.
+
+### Batch KK — Boundary shift-and-truncate [OPEN]
+
+Filed in the same review as Batch GG/HH/II/JJ. Real RLU's `LT(N)`/`RT(N)`
+sequence commands shift-and-truncate a field's data at the report's
+left/right boundary when a move or resize would push it out of bounds.
+I-RLU has no equivalent validation at all today — a field can be
+positioned or resized past the report's right edge (or with a negative/
+zero line or column) with no warning, no clamping, nothing.
+
+**Reference implementation — I-SDA:** partial, not a complete parity
+match — worth reading carefully rather than assuming it's a drop-in
+mirror. I-SDA's `startGroupDrag` DOES clamp a multi-field group's own
+combined bounding box to the screen's bounds during a drag (see Batch
+JJ's own writeup above for the exact math), but a close read of the
+SINGLE-field crosshair/placement code (`buildWebviewTemplate.js`, the
+`col`/`line` calculation right before `startDrag`) shows it deliberately
+clamps only to a minimum of 1 (top-left), NOT to the screen's own max
+lines/columns — its own comment says this is intentional, so hovering at
+the true edge reads the real last row/column rather than stopping short.
+Whether single-field PLACEMENT (as opposed to hover-tracking) is itself
+bounds-checked elsewhere in that file wasn't confirmed in this session's
+review — check before assuming I-SDA already fully solved this for the
+single-field case, since the group-drag clamp and the plain hover-clamp
+found so far are two different, narrower things.
+
+**What to do in I-RLU:** treat real IBM RLU's own documented `LT`/`RT`
+behavior as the primary spec (what exactly gets truncated — the field's
+declared length, or just its resolved/preview display text; does it
+prompt the person or just silently truncate; does it apply to top/bottom
+boundaries too or only left/right) rather than assuming I-SDA has a
+complete equivalent to copy. Add boundary validation to wherever fields
+are placed/resized in `media/webviewClient.js`/`src/prtfEdits.js`, using
+I-SDA's group-drag clamp math as a reference for the clamping arithmetic
+itself even though it's not a complete feature match. Natural pairing
+with Batch GG (overlap detection) — both are fundamentally "is this
+field's position/length actually valid" checks, so consider whether they
+should share a single validation pass in `prtfLayout.js` rather than two
+separate ones, once both are underway.
+
+**Verification:** unit tests for the boundary-clamp math itself (a field
+positioned/resized past each edge — right, and whichever other edges the
+real RLU behavior turns out to cover) confirming it's caught and handled
+per whatever the verified real RLU behavior specifies.
 
 ## Adding a new batch
 
