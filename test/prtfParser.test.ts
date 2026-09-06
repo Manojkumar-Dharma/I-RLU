@@ -404,3 +404,145 @@ test("afpFontMetrics: pointSizeToCpi follows IBM's documented reference point (1
   assert.equal(AfpFontMetrics.pointSizeToCpi(12), 10);
   assert.equal(AfpFontMetrics.pointSizeToCpi(6), 20);
 });
+
+// Batch BB — a constant's quoted literal is legal DDS anywhere among its
+// keywords, not only as the first token in the keyword area. The old
+// literal-extraction regex was anchored with `^`, so a literal preceded by
+// another keyword (a real, common pattern — see SCSPRT1.prtf's own
+// `SPACEB(1) 'CUSTOMER MASTER LISTING'`) left `entry.literal` undefined and
+// silently misfiled the literal as an ordinary nameless keyword token
+// instead. These tests use the exact real-world pattern that surfaced the
+// bug (see test/fixtures/scsprt1-realworld.prtf).
+
+function padR(s: string, n: number): string {
+  s = s || "";
+  return s.length >= n ? s.slice(0, n) : s + " ".repeat(n - s.length);
+}
+function padL(s: string, n: number): string {
+  s = s || "";
+  return s.length >= n ? s.slice(0, n) : " ".repeat(n - s.length) + s;
+}
+
+/** Builds one exact-column DDS positional+keyword line, per prtfModel.ts's documented column layout. */
+function buildBatchBbLine(opts: { line?: string; pos?: string; kw: string }): string {
+  let s = "";
+  s += padR("", 5); // 1-5 sequence
+  s += " "; // 6 form type
+  s += " "; // 7 comment/AND-OR
+  s += padL("", 3); // 8-10
+  s += padL("", 3); // 11-13
+  s += padL("", 3); // 14-16
+  s += padR("", 1); // 17 name type
+  s += " "; // 18
+  s += padR("", 10); // 19-28 name (blank — constant)
+  s += padR("", 1); // 29 reference flag
+  s += padL("", 5); // 30-34 length
+  s += padR("", 1); // 35 data type
+  s += padL("", 2); // 36-37 decimals
+  s += padR("", 1); // 38 usage
+  s += padL(opts.line || "", 3); // 39-41
+  s += padL(opts.pos || "", 3); // 42-44
+  s += opts.kw;
+  return s.replace(/\s+$/, "");
+}
+
+function buildBatchBbSource(recordLine: string, constantLines: string[]): string {
+  return [recordLine, ...constantLines].join("\n") + "\n";
+}
+
+test("Batch BB: a constant literal preceded by a keyword (SPACEB(1) 'CUSTOMER MASTER LISTING') is still recognized", () => {
+  const rLine =
+    padR("", 5) + " " + " " + padL("", 3) + padL("", 3) + padL("", 3) + "R" + " " + padR("TESTREC", 10);
+  const constLine = buildBatchBbLine({ line: "2", pos: "2", kw: "SPACEB(1) 'CUSTOMER MASTER LISTING'" });
+  const source = buildBatchBbSource(rLine.replace(/\s+$/, ""), [constLine]);
+
+  const model = parseSource(source);
+  const record = model.records.find((r) => r.name === "TESTREC")!;
+  const constant = record.fields.find((f) => f.kind === "constant") as any;
+  assert.ok(constant, "expected a constant entry to be parsed");
+  assert.equal(constant.literal, "CUSTOMER MASTER LISTING");
+  assert.deepEqual(
+    constant.keywords.map((k: any) => k.raw),
+    ["SPACEB(1)"]
+  );
+
+  // The writer has always normalized a constant's literal to be emitted
+  // BEFORE its keywords (see prtfWriter.js's "constant" case, which passes
+  // `entry.literal` as leading text ahead of `entry.keywords` — the same
+  // convention every OTHER constant in this codebase, including sample1.pf's
+  // own 'Invoice Date:' SPACEB(1), already follows). So a source written
+  // with the keyword first isn't byte-for-byte preserved on regenerate —
+  // it's normalized to the leading-literal form — but the important thing
+  // this fix guarantees is that NO information is lost: re-parsing the
+  // regenerated output reproduces the exact same literal and keyword set.
+  const regenerated = regenerateSource(model);
+  const reparsed = parseSource(regenerated);
+  const reparsedConstant = reparsed.records.find((r) => r.name === "TESTREC")!.fields.find((f) => f.kind === "constant") as any;
+  assert.equal(reparsedConstant.literal, "CUSTOMER MASTER LISTING");
+  assert.deepEqual(
+    reparsedConstant.keywords.map((k: any) => k.raw),
+    ["SPACEB(1)"]
+  );
+});
+
+test("Batch BB: a constant literal preceded by a keyword ('TIME:' variant) is still recognized", () => {
+  const rLine =
+    padR("", 5) + " " + " " + padL("", 3) + padL("", 3) + padL("", 3) + "R" + " " + padR("TESTREC", 10);
+  const constLine = buildBatchBbLine({ line: "92", pos: "2", kw: "SPACEB(1) 'TIME:'" });
+  const source = buildBatchBbSource(rLine.replace(/\s+$/, ""), [constLine]);
+
+  const model = parseSource(source);
+  const record = model.records.find((r) => r.name === "TESTREC")!;
+  const constant = record.fields.find((f) => f.kind === "constant") as any;
+  assert.ok(constant, "expected a constant entry to be parsed");
+  assert.equal(constant.literal, "TIME:");
+  assert.deepEqual(
+    constant.keywords.map((k: any) => k.raw),
+    ["SPACEB(1)"]
+  );
+
+  // Same normalization note as the previous test — the writer always
+  // emits a constant's literal before its keywords, so byte-for-byte
+  // preservation of a keyword-before-literal source isn't expected; a
+  // reparse-after-regenerate round trip is the correctness bar here.
+  const regenerated = regenerateSource(model);
+  const reparsed = parseSource(regenerated);
+  const reparsedConstant = reparsed.records.find((r) => r.name === "TESTREC")!.fields.find((f) => f.kind === "constant") as any;
+  assert.equal(reparsedConstant.literal, "TIME:");
+  assert.deepEqual(
+    reparsedConstant.keywords.map((k: any) => k.raw),
+    ["SPACEB(1)"]
+  );
+});
+
+test("Batch BB: a leading literal (the common case) still round-trips exactly as before", () => {
+  const rLine =
+    padR("", 5) + " " + " " + padL("", 3) + padL("", 3) + padL("", 3) + "R" + " " + padR("TESTREC", 10);
+  const constLine = buildBatchBbLine({ line: "1", pos: "5", kw: "'Invoice Date:' SPACEB(1)" });
+  const source = buildBatchBbSource(rLine.replace(/\s+$/, ""), [constLine]);
+
+  const model = parseSource(source);
+  const record = model.records.find((r) => r.name === "TESTREC")!;
+  const constant = record.fields.find((f) => f.kind === "constant") as any;
+  assert.equal(constant.literal, "Invoice Date:");
+  assert.deepEqual(
+    constant.keywords.map((k: any) => k.raw),
+    ["SPACEB(1)"]
+  );
+
+  const regenerated = regenerateSource(model);
+  assert.equal(regenerated, source);
+});
+
+test("Batch BB: the real-world SCSPRT1 SPACEB(1) 'CUSTOMER MASTER LISTING'/'TIME:' constants resolve their literal correctly", () => {
+  const fixturePathRealWorld = path.join(__dirname, "fixtures", "scsprt1-realworld.prtf");
+  const source = fs.readFileSync(fixturePathRealWorld, "utf8");
+  const model = parseSource(source);
+  const literals = model.records
+    .flatMap((r) => r.fields)
+    .filter((f) => f.kind === "constant")
+    .map((f: any) => f.literal)
+    .filter((l) => l !== undefined);
+  assert.ok(literals.includes("CUSTOMER MASTER LISTING"), "expected the keyword-preceded literal to be recognized");
+  assert.ok(literals.includes("TIME:"), "expected the keyword-preceded 'TIME:' literal to be recognized");
+});

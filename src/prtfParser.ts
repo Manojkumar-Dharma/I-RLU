@@ -349,12 +349,26 @@ export function parseSource(text: string): ParsedSource {
       sequence.push(constant);
       target = constant.keywords;
       entry = constant;
-      // Pull a leading quoted literal out of the keyword text, if present,
-      // as the constant's display text (e.g. R * 5 30'Invoice Date:').
-      const literalMatch = kwText.match(/^\s*'((?:[^']|'')*)'/);
-      if (literalMatch) {
-        constant.literal = literalMatch[1].replace(/''/g, "'");
-        kwTextForKeywords = kwText.slice(literalMatch.index! + literalMatch[0].length);
+      // Pull the constant's own quoted literal (display text) out of the
+      // keyword-area text, if present, e.g. R * 5 30'Invoice Date:'. A
+      // constant's literal is legal DDS anywhere among its keywords, not
+      // only first — e.g. `SPACEB(1) 'CUSTOMER MASTER LISTING'` is a real,
+      // common pattern (a keyword before the literal). Batch BB: tokenize
+      // the whole keyword-area text (quote-aware, via the same splitKeywords
+      // used everywhere else) instead of only matching an anchored leading
+      // literal, so a literal preceded by another keyword is still found —
+      // take the FIRST bare (nameless) quoted token anywhere in the text as
+      // the constant's literal, leaving every other token as an ordinary
+      // keyword in its original order.
+      const kwTokens = splitKeywords(kwText);
+      const literalTokenIndex = kwTokens.findIndex((tok) => tok.name === "");
+      if (literalTokenIndex !== -1) {
+        const literalTok = kwTokens[literalTokenIndex];
+        constant.literal = literalTok.params.slice(1, -1).replace(/''/g, "'");
+        kwTextForKeywords = kwTokens
+          .filter((_tok, i) => i !== literalTokenIndex)
+          .map((tok) => tok.raw)
+          .join(" ");
       }
     }
 

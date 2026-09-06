@@ -379,6 +379,46 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       a row with several different keyword types checked at once so the
       alignment is visible across every row shape together.
 
+- [x] **Batch BB — Bug fix: a constant's literal is only recognized when
+      it's the first keyword-area token.** Found in the same real-world
+      sample-file review as Batch AA/LL: `SCSPRT1.prtf` has constants like
+      `SPACEB(1) 'CUSTOMER MASTER LISTING'` — a keyword before the
+      constant's own display text, which is legal DDS (a constant's
+      literal can appear anywhere among its keywords) but not handled by
+      `prtfParser.ts`'s old literal-extraction regex, which was anchored
+      with `^` and only ever matched a LEADING literal. When a keyword
+      came first instead, `constant.literal` stayed `undefined` and the
+      quoted text silently fell through as an ordinary nameless keyword
+      token — a model-fidelity bug, not a source-corruption one (the old,
+      buggy behavior happened to round-trip byte-identical by accident):
+      the Properties panel reads `entry.literal` for a constant's "Text"
+      field, so a constant hit by this case showed blank Text for a field
+      that actually has real, compiled display text. **Fix:** the
+      constant branch now tokenizes the whole keyword-area text with the
+      existing `splitKeywords` (already quote/paren-aware, and already
+      recognized a bare quoted literal as a `name: ""` token from
+      anywhere in the text — no new tokenizer needed) instead of an
+      anchored regex, and takes the FIRST such token anywhere as the
+      literal, leaving every other token as an ordinary keyword in
+      original order. **A real trade-off found while testing, not
+      silently accepted:** the writer has always emitted a constant's
+      literal BEFORE its keywords (`emitEntryWithConditionedKeywords`'s
+      `litToken` parameter — the same convention `sample1.pf`'s own
+      `'Invoice Date:' SPACEB(1)` already follows), so once the literal
+      is correctly recognized as such, a keyword-before-literal SOURCE no
+      longer round-trips byte-for-byte on regenerate — it's normalized to
+      literal-first, same as every other constant already is. This is
+      DDS-equivalent and loses no information, just isn't literal-order-
+      preserving for this one input shape; tests assert a parse →
+      regenerate → reparse round trip reproduces the same literal/keyword
+      set rather than byte-identical text for that specific case, while
+      confirming the already-common leading-literal case is still
+      byte-identical as before. See `docs/TASKS.md` Batch BB for the full
+      writeup. 4 new tests in `test/prtfParser.test.ts` (the exact
+      `SCSPRT1.prtf` patterns, a regression guard for the pre-existing
+      leading-literal case, and a direct check against the real
+      `scsprt1-realworld.prtf` fixture); full suite now 410, all passing.
+
 ## Next up
 
 As of the RLU screen-capture review (`docs/KEYWORD-INVENTORY.md`), the
@@ -395,7 +435,7 @@ sections for the full I-SDA-reference writeups. Batches AA/BB/LL were
 filed from reviewing two real-world sample PRTF files supplied for
 keyword-usage reference: the column-6 form-type/Batch-X interaction above
 (AA, done), a constant literal not recognized when preceded by a keyword
-(BB, open), and DDS's `+n` relative-position notation being silently
+(BB, done), and DDS's `+n` relative-position notation being silently
 absolutized (LL, open — renumbered twice over two concurrent-session
 letter collisions, first CC→DD, then DD→LL, as other sessions' own work
 claimed each letter first; see the git history around this commit if the

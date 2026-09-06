@@ -103,7 +103,7 @@ vice versa.
 | Y | ~~"Add fields from database file" — browse every field in a PF/LF via Code for i and add them as named fields (mirroring I-SDA's Task L14 `fetchDatabaseFileFields`), distinct from Batch H's single-field `REF`/`REFFLD` resolution~~ | n/a (Code for i integration/UI, not a keyword) | **Done** | **H** (shared its Code-for-i-connection plumbing/UI conventions, didn't block on it) |
 | Z | ~~System-constant fields (`DATE`, `TIME`, `USER`, `SYSNAME`, `PAGNBR`) — parse as design-time placeholder text (mirroring I-SDA's `fieldDisplayText`) and add an "Add system constant" option alongside literal-text constants~~ | `DATE`, `TIME`, `PAGNBR` (`USER`/`SYSNAME` dropped — see detail section: verified against IBM's DDS reference, neither is a valid printer-file keyword) | **Done** | none |
 | AA | ~~**Bug fix:** `regenerateSource` unconditionally blanks out each line's optional column-6 form-type marker (`A`) instead of preserving whatever was already there, and rebuilds every line fresh on every edit regardless of whether it changed — the two combine to make Batch X's "Track source modifications" flag nearly the entire file as changed from a single one-field edit, on any source written in the (very common) `A`-in-column-6 style~~ | n/a (writer correctness, `src/prtfWriter.js`) | **Done** | **X** (was specifically what made X's diff-based tracking unreliable on this style of source — re-verified against it as part of this batch) |
-| BB | **Bug fix:** a constant's quoted literal is only recognized when it's the *first* token in the keyword area (`prtfParser.ts`'s literal-extraction regex is anchored with `^`) — a literal preceded by another keyword (e.g. `SPACEB(1) 'CUSTOMER MASTER LISTING'`, a common real-world pattern) parses with `entry.literal` left `undefined`, so the Properties panel shows blank Text for a constant that has real display text | n/a (parser correctness, `src/prtfParser.ts`) | Open | none |
+| BB | ~~**Bug fix:** a constant's quoted literal is only recognized when it's the *first* token in the keyword area (`prtfParser.ts`'s literal-extraction regex is anchored with `^`) — a literal preceded by another keyword (e.g. `SPACEB(1) 'CUSTOMER MASTER LISTING'`, a common real-world pattern) parses with `entry.literal` left `undefined`, so the Properties panel shows blank Text for a constant that has real display text~~ | n/a (parser correctness, `src/prtfParser.ts`) | **Done** | none |
 | CC | ~~**Bug fix:** conditioning indicators are only modeled per field/constant/record entry, not per KEYWORD — a real, common DDS/RLU technique (e.g. two mutually-exclusive `COLOR` keywords on one field, each conditioned on a different indicator, via an attached keyword-only continuation line) was silently misparsed as a bogus phantom constant entry, and even if it hadn't been, the writer had no way to round-trip per-keyword conditioning at all~~ | n/a (model/parser/writer/layout correctness, not a keyword itself — affects every keyword that can appear on its own conditioned line) | **Done** | none |
 | DD | ~~Batch CC follow-up: thread indicator state through the record/file-level geometry keywords `resolveLayout` resolves once per call (`PAGSIZE`, `CPI`/`LPI`, `LINE`/`BOX`, `OVERLAY`/`PAGSEG`/`AFPRSC`, `STRPAGGRP`/`ENDPAGGRP`/`DOCIDXTAG`/`DTASTMCMD`) — Batch CC itself only reached the per-field/constant lookups~~ | n/a (layout correctness, `src/prtfLayout.js`) | **Done** | **CC** (this is that batch's own explicitly-flagged remaining scope) |
 | EE | Render `COLOR`/`DSPATR`/`UNDERLINE`/`HIGHLIGHT` visually in the design-time page preview — these are editable via the properties panel (Batch A) and now correctly conditioned per-keyword (Batch CC/DD), but the resolved value is never actually applied to the on-screen cell text at all today (no font color, no bold/reverse-image/underline styling in `media/webviewClient.js`'s cell rendering) — so toggling an indicator on a conditioned `COLOR` pair, or just setting `COLOR` at all, has no visible effect in the designer even though the model/layout resolve it correctly | `COLOR` (Named/`*RGB`, `*CMYK`/`*CIELAB` unverified — see Batch A), `DSPATR`, `UNDERLINE`, `HIGHLIGHT` | Open | none (needs `resolveLayout` to surface a resolved style per cell, then webview CSS/rendering to apply it — no model/parser/writer change expected) |
@@ -2141,7 +2141,7 @@ nowhere near the actual edit.
   Batch LL below. That's a distinct, separately-scoped bug, not something
   this batch's fix touches or needs to touch.
 
-### Batch BB — Bug fix: a constant's literal is only recognized when it's the first keyword-area token [OPEN]
+### Batch BB — Bug fix: a constant's literal is only recognized when it's the first keyword-area token [DONE]
 
 Found in the same real-world sample-file review as Batch AA.
 `SCSPRT1.prtf` has lines like:
@@ -2183,6 +2183,58 @@ token as an ordinary keyword in original order. Add a test fixture based
 directly on the `SPACEB(1) 'literal'` pattern from `SCSPRT1.prtf` (and the
 `'TIME:'` variant) to `prtfParser.test.ts`, and confirm the round trip
 (parse → regenerate) still reproduces the original source for both.
+
+**[DONE] — Fixed as follows:**
+- `src/prtfParser.ts`'s constant branch no longer uses an anchored
+  `/^\s*'.../` regex. It now tokenizes the whole keyword-area text with the
+  existing `splitKeywords` (the same paren/quote-aware tokenizer every
+  other branch in this file already uses — `splitKeywords` already
+  recognized a bare quoted literal as a token with `name: ""`, from
+  wherever it sits in the text, so no new tokenizer logic was needed; the
+  bug was purely in the OLD anchored-regex approach never being replaced
+  with it for this one call site), finds the FIRST token with `name === ""`
+  anywhere in the text, and takes that as `constant.literal` — leaving
+  every other token, in original order, to become the constant's ordinary
+  keywords (`kwTextForKeywords` is rebuilt by re-joining every OTHER
+  token's own `raw` text).
+- **Correction to the task's own "confirm the round trip... reproduces the
+  original source" expectation, found while writing tests:** it doesn't,
+  byte-for-byte, for the keyword-before-literal case specifically — and
+  that's not a new problem this fix introduces. `prtfWriter.js`'s
+  `"constant"` case has ALWAYS passed `entry.literal` as leading text
+  ahead of `entry.keywords` (see `emitEntryWithConditionedKeywords`'s
+  `litToken` parameter) — the same normalization every OTHER constant in
+  this codebase's own fixtures already goes through (e.g. `sample1.pf`'s
+  `'Invoice Date:' SPACEB(1)`, literal first). Before this fix, a
+  keyword-before-literal line accidentally round-tripped byte-identical
+  ONLY because the bug misfiled the literal as an ordinary keyword TOKEN,
+  which the writer then re-emitted in its original relative position by
+  coincidence — not because the writer was preserving original literal/
+  keyword ordering on purpose. Once the literal is correctly recognized as
+  the entry's own `literal` field (the actual fix), it goes back through
+  the writer's existing leading-literal convention like every other
+  constant — so the writer now normalizes a keyword-before-literal source
+  to literal-first on regenerate, the same way it already normalizes
+  every other aspect of a constant's serialization. This is model-fidelity
+  correct (no data lost, DDS-equivalent, no source corruption — the
+  concern the task's own writeup was about) but not literal-order-
+  preserving byte-for-byte for this one input shape. Tests were adjusted
+  to assert this precisely: a parse → regenerate → reparse round trip
+  reproduces the exact same literal and keyword set (the correctness bar
+  that matters), rather than asserting byte-identical regenerated text for
+  the keyword-first case specifically. The already-common leading-literal
+  case (`'Invoice Date:' SPACEB(1)`-shaped) is unaffected and still
+  round-trips byte-identical, as it always did.
+- Tests added to `test/prtfParser.test.ts`: the exact `SPACEB(1)
+  'CUSTOMER MASTER LISTING'` and `SPACEB(1) 'TIME:'` patterns from
+  `SCSPRT1.prtf` (hand-built, column-exact synthetic lines, plus a direct
+  check against the real `test/fixtures/scsprt1-realworld.prtf` fixture
+  itself confirming both literals resolve correctly there), a regression
+  test confirming the pre-existing leading-literal case still round-trips
+  byte-identical, and confirmation that the keyword list excludes the
+  literal token and contains only the real keyword(s) in original order.
+- Full suite: 410 tests, all passing (406 prior + 4 new); `tsc --noEmit`
+  and `npm run compile` both clean.
 
 ### Batch CC — Per-keyword conditioning indicators [DONE]
 **The gap, confirmed by reading the code (not assumed) before writing any
