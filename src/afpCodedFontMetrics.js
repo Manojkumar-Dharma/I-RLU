@@ -61,7 +61,123 @@
  * person could find out (WRKFNTRSC) — never a confident-looking guess
  * dressed up as real data. This mirrors afpFontMetrics.js's own honesty
  * caveats for its AFM-substitute proportional-font widths.
+ *
+ * FONTNAME advance widths (getAdvanceWidth, below): resolveFontName's
+ * family/name/spacing were always resolvable offline with zero
+ * approximation (see above) — but a per-character ADVANCE WIDTH needs the
+ * named font's actual binary, which this tool has no access to (no live
+ * connection reads a real .ttf/.otf off a connected IBM i's IFS yet — see
+ * docs/ROADMAP.md's "real AFP font metrics" item). For the handful of
+ * extremely common names FONTNAME_GENERIC_FALLBACK already classifies by
+ * spacing bucket, real, permissively-licensed substitute fonts vendored at
+ * resources/fonts/ (see that directory's NOTICE.md) are parsed via
+ * src/afpTrueTypeMetrics.js's real sfnt binary parser, giving genuine
+ * per-glyph advance widths — a real font's real data, same honesty
+ * standard as afpFontMetrics.js's Adobe-AFM Helvetica/Times tables, just
+ * sourced from an actual binary font instead of a published metrics table.
+ * Same "flagged as substitute, not invented" treatment either way.
  */
+
+// --- FONTNAME advance-width substitute fonts ----------------------------
+
+// Node-only (this module also loads as a plain <script> in the browser
+// webview via window.AfpCodedFontMetrics — see the bottom of this file —
+// where `require`/`fs`/font-file reading make no sense; the webview never
+// needs FONTNAME's per-character advance widths today, only extension.ts
+// does, so this guard just keeps the browser load path a no-op instead of
+// throwing).
+// eslint-disable-next-line no-undef
+const canLoadFontFiles = typeof module !== "undefined" && !!module.exports;
+// eslint-disable-next-line no-undef
+const AfpTrueTypeMetrics = canLoadFontFiles ? require("./afpTrueTypeMetrics.js") : undefined;
+
+/**
+ * Maps FONTNAME_GENERIC_FALLBACK's three spacing buckets to a real,
+ * vendored substitute font file (resources/fonts/) and a human-readable
+ * name for that substitute, for resolutionNote text. See that directory's
+ * NOTICE.md for why these three specific fonts (Cousine/Tinos are
+ * purpose-built Courier New/Times New Roman substitutes; PT Sans fills the
+ * sans-serif bucket but is NOT purpose-built as an Arial substitute — the
+ * real Arial-compatible croscore font, Arimo, ships only as a variable
+ * font, which this fixed-per-glyph-width model can't read).
+ */
+const SUBSTITUTE_FONTS = {
+  monospace: { file: "Cousine-Regular.ttf", displayName: "Cousine" },
+  serif: { file: "Tinos-Regular.ttf", displayName: "Tinos" },
+  "sans-serif": { file: "PTSans-Regular.ttf", displayName: "PT Sans" },
+};
+
+// Parsed-font cache, keyed by filename — a font is only ever parsed once
+// per extension-host session, not once per resolveFontName/getAdvanceWidth
+// call.
+const substituteFontCache = {};
+
+/**
+ * Lazily parses (and caches) one of the vendored substitute fonts. Returns
+ * `undefined` — rather than throwing — if the file can't be read/parsed,
+ * so a packaging problem degrades to "no width data available" instead of
+ * crashing the extension host; callers already treat `undefined` as the
+ * normal "unknown width" case (see afpTrueTypeMetrics.js's own
+ * getAdvanceWidth doc comment).
+ */
+function loadSubstituteFont(filename) {
+  if (substituteFontCache[filename]) return substituteFontCache[filename];
+  if (!canLoadFontFiles) return undefined;
+  try {
+    // eslint-disable-next-line no-undef, @typescript-eslint/no-var-requires
+    const fs = require("fs");
+    // eslint-disable-next-line no-undef, @typescript-eslint/no-var-requires
+    const path = require("path");
+    // This file (compiled) lives at out/src/afpCodedFontMetrics.js —
+    // resources/fonts/ is two levels up, at the extension root.
+    const filePath = path.join(__dirname, "..", "..", "resources", "fonts", filename);
+    const buf = fs.readFileSync(filePath);
+    const font = AfpTrueTypeMetrics.parseFont(buf);
+    // Real, computed-from-the-actual-font average over the same ASCII
+    // printable range afpFontMetrics.js's PROPORTIONAL_AVG_WIDTH
+    // normalizes against — but computed from this font's own real widths
+    // rather than a hardcoded constant, so the same "1.0 == roughly one
+    // average character" cell-relative convention applies without baking
+    // in a number that only happened to be right for the Adobe AFM tables.
+    let total = 0;
+    let count = 0;
+    for (let cp = 32; cp <= 126; cp++) {
+      const w = font.getAdvanceWidth(cp);
+      if (typeof w === "number") {
+        total += w;
+        count++;
+      }
+    }
+    font.averageAdvanceWidth = count > 0 ? total / count : font.unitsPerEm / 2;
+    substituteFontCache[filename] = font;
+    return font;
+  } catch (e) {
+    return undefined;
+  }
+}
+
+/**
+ * Returns the advance width of `ch` for a FONTNAME value that falls into
+ * one of FONTNAME_GENERIC_FALLBACK's known spacing buckets, in the same
+ * "character cell" units afpFontMetrics.js's own getAdvanceWidth uses (1.0
+ * == one cell; see that function's doc comment). `name` is matched the
+ * same case-insensitive way resolveFontName matches it. Returns
+ * `undefined` — not a guessed fallback — for a name outside the known
+ * buckets, or a character the substitute font's own cmap doesn't map,
+ * mirroring afpTrueTypeMetrics.js's own "honestly report unknown" design.
+ */
+function getAdvanceWidth(name, ch) {
+  const key = String(name || "").trim().toLowerCase();
+  const bucket = FONTNAME_GENERIC_FALLBACK[key];
+  const substitute = bucket ? SUBSTITUTE_FONTS[bucket] : undefined;
+  if (!substitute) return undefined;
+  const font = loadSubstituteFont(substitute.file);
+  if (!font) return undefined;
+  const raw = font.getAdvanceWidth(ch);
+  if (raw === undefined) return undefined;
+  return raw / font.averageAdvanceWidth;
+}
+
 
 // --- FONTNAME --------------------------------------------------------
 
@@ -110,15 +226,32 @@ function resolveFontName(name) {
   const key = trimmed.toLowerCase();
   const known = FONTNAME_GENERIC_FALLBACK[key];
   const fallback = known || "sans-serif";
+  const substitute = known ? SUBSTITUTE_FONTS[known] : undefined;
   return {
     name: trimmed,
     family: '"' + trimmed.replace(/"/g, "") + '", ' + fallback,
     spacing: known === "monospace" ? "fixed" : known ? "proportional" : undefined,
     weight: undefined,
     style: undefined,
-    isPlaceholderMetrics: false, // this IS the real, named font — no substitution happening for the family itself
+    // Name/family/spacing are exact — see this module's own header — but
+    // any per-character advance width this entry's data feeds into (via
+    // this file's own getAdvanceWidth, below) comes from a real but
+    // DIFFERENT font (a vendored substitute), not `trimmed`'s own binary.
+    // true here mirrors afpFontMetrics.js's isPlaceholderMetrics meaning
+    // for its own proportional-FGID case: "real data, but a substitute's,
+    // not a verified match." Unknown names get false — not because
+    // they're MORE trustworthy, but because there's no substitute
+    // attached at all for them to be flagged about (getAdvanceWidth
+    // returns undefined for any name outside the three known buckets).
+    isPlaceholderMetrics: !!known,
     resolutionNote: known
-      ? undefined
+      ? "Name/family are the exact FONTNAME value; per-character advance widths (where used) come from " +
+        substitute.displayName +
+        "'s real metrics as an open-licensed " +
+        known +
+        " substitute — see resources/fonts/NOTICE.md — not " +
+        (trimmed || "this font") +
+        "'s own font file, which this tool has no access to."
       : "Rendered using the exact name from FONTNAME; this specific font's spacing/weight aren't independently verified.",
   };
 }
@@ -224,6 +357,6 @@ function resolveFontCharacterSet(fontCharacterSetValue) {
   };
 }
 
-const mod = { FONTNAME_GENERIC_FALLBACK, resolveFontName, KNOWN_CODED_FONTS, resolveCodedFont, resolveFontCharacterSet };
+const mod = { FONTNAME_GENERIC_FALLBACK, resolveFontName, getAdvanceWidth, KNOWN_CODED_FONTS, resolveCodedFont, resolveFontCharacterSet };
 if (typeof module !== "undefined" && module.exports) module.exports = mod;
 if (typeof window !== "undefined") window.AfpCodedFontMetrics = mod;

@@ -87,7 +87,7 @@ vice versa.
 | I | ~~`UOM` modeling~~ **done elsewhere** (see `i-rlu.unitOfMeasure` setting, `docs/ROADMAP.md`) + file-level SKIPA/SKIPB *AFPDS validation | `SKIPA`, `SKIPB` (validation only) | **Done** (validation landed as part of Batch F — see `prtfEngine.js`'s `validateFileLevelKeywords`) | none |
 | J | ~~Compile command: library/source-file/member picker~~ | n/a (tooling) | **Done** | none |
 | K | Packaging (`.vsix`) | n/a (tooling) | **Done** | ideally after A–I land, but can be prepped early |
-| L | Real AFP font metrics | n/a (data) | Mostly done — FGID identification resolved; proportional widths now use real published Adobe AFM data (metric-compatible substitute fonts, not verified IBM FGID resource extraction); FONTNAME fully resolved, CDEFNT/FNTCHRSET honestly partially resolved (documented prefix + small verified table; full resolution needs a live IBM i, see REQUIREMENTS.md §9) | none |
+| L | Real AFP font metrics | n/a (data) | Mostly done — FGID identification resolved; proportional widths now use real published Adobe AFM data (metric-compatible substitute fonts, not verified IBM FGID resource extraction); FONTNAME fully resolved (name/family/spacing offline, PLUS real per-character advance widths from real vendored substitute TrueType fonts — see "FONTNAME real advance widths" below), CDEFNT/FNTCHRSET honestly partially resolved (documented prefix + small verified table; full resolution needs a live IBM i, see REQUIREMENTS.md §9) | none |
 | M | ~~**Bug fix:** writer emits wrong continuation character when wrapping mid-token~~ | n/a (parser/writer correctness) | **Done** | none |
 | N | ~~`BARCODE` mutual-exclusion validation~~ | `BARCODE` (validation vs. `FONT`, `EDTCDE`, `EDTWRD`, `DATE`, `TIME`, `PAGNBR`, etc.) | **Done** | **C** |
 | O | Real AFP resource rendering (actual pixel content for page segments/overlays) | `PAGSEG`, `OVERLAY` (record-level) | Blocked — needs external resource files, see REQUIREMENTS.md §8 | **E** |
@@ -104,7 +104,10 @@ vice versa.
 | Z | ~~System-constant fields (`DATE`, `TIME`, `USER`, `SYSNAME`, `PAGNBR`) — parse as design-time placeholder text (mirroring I-SDA's `fieldDisplayText`) and add an "Add system constant" option alongside literal-text constants~~ | `DATE`, `TIME`, `PAGNBR` (`USER`/`SYSNAME` dropped — see detail section: verified against IBM's DDS reference, neither is a valid printer-file keyword) | **Done** | none |
 | AA | **Bug fix:** `regenerateSource` unconditionally blanks out each line's optional column-6 form-type marker (`A`) instead of preserving whatever was already there, and rebuilds every line fresh on every edit regardless of whether it changed — the two combine to make Batch X's "Track source modifications" flag nearly the entire file as changed from a single one-field edit, on any source written in the (very common) `A`-in-column-6 style | n/a (writer correctness, `src/prtfWriter.js`) | Open | **X** (this is specifically what makes X's diff-based tracking unreliable on this style of source — fix this first, or re-verify X against it afterward) |
 | BB | **Bug fix:** a constant's quoted literal is only recognized when it's the *first* token in the keyword area (`prtfParser.ts`'s literal-extraction regex is anchored with `^`) — a literal preceded by another keyword (e.g. `SPACEB(1) 'CUSTOMER MASTER LISTING'`, a common real-world pattern) parses with `entry.literal` left `undefined`, so the Properties panel shows blank Text for a constant that has real display text | n/a (parser correctness, `src/prtfParser.ts`) | Open | none |
-| CC | ~~**Bug fix:** properties/keywords column rows inconsistent — checkboxes stretched to the value-input width, some rows put the checkbox before its label and others after, several rows had no row wrapper at all~~ | n/a (webview UI/CSS, `media/webviewClient.js` + `src/buildWebviewTemplate.js`) | **Done** | none |
+| CC | ~~**Bug fix:** conditioning indicators are only modeled per field/constant/record entry, not per KEYWORD — a real, common DDS/RLU technique (e.g. two mutually-exclusive `COLOR` keywords on one field, each conditioned on a different indicator, via an attached keyword-only continuation line) was silently misparsed as a bogus phantom constant entry, and even if it hadn't been, the writer had no way to round-trip per-keyword conditioning at all~~ | n/a (model/parser/writer/layout correctness, not a keyword itself — affects every keyword that can appear on its own conditioned line) | **Done** | none |
+| DD | ~~Batch CC follow-up: thread indicator state through the record/file-level geometry keywords `resolveLayout` resolves once per call (`PAGSIZE`, `CPI`/`LPI`, `LINE`/`BOX`, `OVERLAY`/`PAGSEG`/`AFPRSC`, `STRPAGGRP`/`ENDPAGGRP`/`DOCIDXTAG`/`DTASTMCMD`) — Batch CC itself only reached the per-field/constant lookups~~ | n/a (layout correctness, `src/prtfLayout.js`) | **Done** | **CC** (this is that batch's own explicitly-flagged remaining scope) |
+| EE | Render `COLOR`/`DSPATR`/`UNDERLINE`/`HIGHLIGHT` visually in the design-time page preview — these are editable via the properties panel (Batch A) and now correctly conditioned per-keyword (Batch CC/DD), but the resolved value is never actually applied to the on-screen cell text at all today (no font color, no bold/reverse-image/underline styling in `media/webviewClient.js`'s cell rendering) — so toggling an indicator on a conditioned `COLOR` pair, or just setting `COLOR` at all, has no visible effect in the designer even though the model/layout resolve it correctly | `COLOR` (Named/`*RGB`, `*CMYK`/`*CIELAB` unverified — see Batch A), `DSPATR`, `UNDERLINE`, `HIGHLIGHT` | Open | none (needs `resolveLayout` to surface a resolved style per cell, then webview CSS/rendering to apply it — no model/parser/writer change expected) |
+| FF | ~~**Bug fix:** properties/keywords column rows inconsistent — checkboxes stretched to the value-input width, some rows put the checkbox before its label and others after, several rows had no row wrapper at all~~ | n/a (webview UI/CSS, `media/webviewClient.js` + `src/buildWebviewTemplate.js`) | **Done** | none |
 
 ## Batch detail
 
@@ -889,6 +892,91 @@ work needed one small adjustment (the FONTNAME quoting fix above) but was
 otherwise unaffected — it's about letting the user *set* these keywords'
 values through the UI, which is a separate concern from resolving their
 real metrics for rendering.
+
+**[FONTNAME real advance widths — DONE, as follows]:**
+
+At the time the section above was written, `resolveFontName`'s
+family/name/spacing were fully resolved but deliberately carried NO
+per-character advance-width data at all — the investigation that opened
+this batch's CDEFNT/FNTCHRSET/FONTNAME work found nothing downstream
+called `AfpFontMetrics.getAdvanceWidth`-style glyph widths, so there was
+nothing to wire FONTNAME's own widths into. This follow-up adds that
+capability for real, prompted by a direct request to look into it
+alongside investigating IBM i's own custom-TrueType-font-upload feature
+(FONTNAME can reference a font uploaded straight to the IFS, no purchased
+host font package required — see REQUIREMENTS.md for that research).
+
+**Why this is solvable at all despite FONTNAME's named font itself being
+just as inaccessible as CDEFNT/FNTCHRSET's:** a `FONTNAME`-referenced font
+is an ordinary TrueType/OpenType (`.ttf`/`.otf`) file — a well-documented,
+public binary format (unlike CDEFNT/FNTCHRSET's IBM-internal font-resource
+data, which IBM's own documentation says has no universal decode table at
+all). That means real glyph metrics for the *generic idea* of "a TrueType
+font in FONTNAME_GENERIC_FALLBACK's monospace/serif/sans-serif buckets"
+are obtainable from any real font in that category — not this tool
+inventing data, but reading someone else's real font file for real.
+
+**Implementation:**
+- New `src/afpTrueTypeMetrics.js`: a from-scratch sfnt (TrueType/OpenType)
+  binary parser — reads the table directory, `head` (unitsPerEm), `hhea`/
+  `hmtx` (real per-glyph advance widths), and `cmap` (formats 4 and 12,
+  Unicode codepoint → glyph ID). Deliberately scoped to metrics only — no
+  glyph-outline (`glyf`/`CFF`/`loca`) parsing, since advance width is all
+  layout/preview work needs and outline parsing is substantially more
+  involved for no payoff here. Verified correct by cross-checking its
+  output against `fontTools` (the industry-standard Python font library)
+  across the full ASCII printable range (32-126) on three real fonts
+  during development — **zero mismatches**, not spot-checked on a couple
+  of characters and assumed correct elsewhere.
+- Three real, unmodified, SIL OFL 1.1-licensed fonts vendored at
+  `resources/fonts/` (a shipped runtime location — confirmed present in
+  `vsce ls`'s packaged-file list, not just a test fixture) — sourced from
+  the official `google/fonts` repository: **Cousine** (Courier New
+  substitute, monospace — purpose-built for this by the same Ascender/
+  Google lineage as the well-known "croscore" fonts), **Tinos** (Times New
+  Roman substitute, serif — same lineage), and **PT Sans** (fills the
+  sans-serif bucket, but honestly NOT claimed as an Arial-metric match —
+  the real Arial-compatible croscore font, Arimo, is only distributed as a
+  variable font in the current `google/fonts` repo, which a fixed-
+  per-glyph-width model can't read). Full provenance, commit hash, and
+  license text in `resources/fonts/NOTICE.md`.
+- `src/afpCodedFontMetrics.js` gained `getAdvanceWidth(name, ch)`, mapping
+  a FONTNAME value through the same `FONTNAME_GENERIC_FALLBACK` bucket
+  `resolveFontName` already uses, to a lazily-parsed-and-cached vendored
+  substitute font, returning a width in the same "1.0 == one character
+  cell" normalized units `afpFontMetrics.js`'s own `getAdvanceWidth` uses —
+  computed as a REAL average over that font's own ASCII-range widths
+  (not a hardcoded constant like `afpFontMetrics.js`'s
+  `PROPORTIONAL_AVG_WIDTH`, since a real font file is available to compute
+  it from directly here). Returns `undefined` — never a guessed
+  approximation — for a name outside the three known buckets, matching
+  this project's existing honesty convention.
+- `resolveFontName`'s own `isPlaceholderMetrics`/`resolutionNote` updated
+  for known names: previously `false`/`undefined` (reasoned as "the
+  family IS the real font, no substitution happening"), now `true` with a
+  note explicitly naming which substitute font and pointing at
+  `resources/fonts/NOTICE.md` — because real substitute advance-width data
+  is now attached behind the scenes, and this project's own precedent
+  (`afpFontMetrics.js`'s identical flag for its AFM-substitute
+  proportional widths) is to flag that honestly rather than let a
+  substitute's data ride under an unqualified "not a placeholder" label.
+  Updated `test/afpCodedFontMetrics.test.ts`'s existing assertions
+  in place to match, with the reasoning for the change documented
+  in the test file itself, not just silently flipped.
+- **Tests:** `test/afpTrueTypeMetrics.test.ts` (7 tests) — parses all
+  three real vendored fonts and asserts concrete values (including the
+  "every printable ASCII character resolves to a defined width" and
+  "an unmapped Private-Use-Area codepoint returns undefined" cases).
+  `test/afpCodedFontMetrics.test.ts` gained 4 new `getAdvanceWidth` tests
+  plus updates to the pre-existing `resolveFontName` assertions above.
+- Full suite: 375 tests, all passing on a clean install (`rm -rf
+  node_modules out && npm install && npm test`); `tsc --noEmit` clean;
+  `npx vsce ls` confirmed all five `resources/fonts/` files (three `.ttf`,
+  `NOTICE.md`, `LICENSE-OFL-1.1.txt`) are included in the packaged
+  extension, and a direct `require()` against the real compiled
+  `out/src/afpCodedFontMetrics.js` (not just the TypeScript source)
+  confirmed the `../../resources/fonts` runtime path resolves correctly
+  from its actual on-disk location.
 
 ### Batch M — Fix writer's continuation-character bug [DONE]
 **Found by:** `test/prtfFixtures.test.ts`'s round-trip test against
@@ -2070,7 +2158,212 @@ directly on the `SPACEB(1) 'literal'` pattern from `SCSPRT1.prtf` (and the
 `'TIME:'` variant) to `prtfParser.test.ts`, and confirm the round trip
 (parse → regenerate) still reproduces the original source for both.
 
-### Batch CC — Bug fix: properties-panel row layout consistency [DONE]
+### Batch CC — Per-keyword conditioning indicators [DONE]
+**The gap, confirmed by reading the code (not assumed) before writing any
+fix:** real DDS/RLU conditioning is per PHYSICAL LINE, not just per field/
+constant/record. A field's own definition line has one set of up to 3
+conditioning indicators governing the field as a whole (already modeled,
+via `FieldEntry`/`ConstantEntry`/`RecordFormatEntry.conditions`) — but a
+*separate*, ADDITIONAL physical line can attach one or more further
+keyword(s) to that SAME field, with its OWN independent conditioning
+(blank name/type/length/usage/line/position columns, just conditioning +
+keyword text). The classic real-world use: two mutually-exclusive `COLOR`
+keywords on one field, one active under indicator 05, the other under
+`N05`. `Keyword` had no `conditions` field at all, and the parser treated
+ANY blank-name line inside a record as a brand-new constant, unconditionally
+— so a real conditioned-keyword-continuation line for an existing field
+silently became a bogus, invisible "constant" entry (no literal, no
+Location), and the field never got the keyword at all. Verified this
+empirically against a hand-built, column-exact DDS snippet before touching
+any code.
+
+**Fix — model, parser, writer, and (partially) layout:**
+- `prtfModel.ts`: `Keyword` gained an optional `conditions` field,
+  independent of its owning entry's own `conditions` — never inferred or
+  defaulted from the entry's conditions, since the two are genuinely
+  independent in real DDS. Undefined/empty means "no conditioning of its
+  own" (the overwhelming common case — inline on the entry's own header
+  line, or a plain +/- text-wrap continuation of it).
+- `prtfParser.ts`: a blank-name line inside a record with NO length/type/
+  decimals/usage/line/position AND at least one existing field/constant to
+  attach to is now recognized as an attached keyword-only line and merged
+  into the PRECEDING entry's keywords (tagged with that line's own
+  conditions), instead of becoming a new `ConstantEntry`. A genuine
+  constant (has a Location, or nothing precedes it) is unaffected — this
+  only changes classification for the specific "all positional columns
+  blank" shape a real constant can't have (a constant always needs at
+  least a Location to be placed at all). Also correctly handles the
+  attached line's own +/- wrap continuation.
+- `prtfWriter.js`: new `groupKeywordsByConditions` groups a keywords array
+  into consecutive runs sharing the same conditioning, and new
+  `emitEntryWithConditionedKeywords` emits the entry's own header line
+  (carrying any leading UNconditioned keyword run, plus a constant's
+  literal token) followed by each differently-conditioned group on its own
+  blank-positional line(s) with its own conditioning slots — replacing the
+  old `emitWithKeywords(positional, keywordsToText(entry.keywords))` call
+  in every one of `regenerateSource`'s field/constant/record/fileLevel
+  cases, which used to flatten every keyword onto the entry's own header
+  line regardless of any per-keyword conditioning, silently collapsing and
+  losing it on any edit.
+- `prtfLayout.js`/`prtfKeywordHelpers.js`: `collectIndicators` now also
+  walks keyword-level `conditions` (an indicator referenced ONLY via an
+  attached keyword wouldn't otherwise appear in the indicator-toggle panel
+  at all). New `activeKeywords`/`findActiveKeyword`/`findAllActiveKeywords`
+  helpers filter a keywords array down to what's active under a given
+  indicator state, applied to: `resolveConstantPlaceholder` (`DATE`/`TIME`/
+  `PAGNBR`), the per-entry `SKIPB`/`SPACEB`/`SKIPA`/`SPACEA`/`BARCODE`
+  lookups, and `resolveFont`'s FONT/CDEFNT/FNTCHRSET/FONTNAME cascade
+  (across all three of its entry/record/fileLevel levels) — so toggling an
+  indicator in the toolbar now correctly switches whether a conditionally-
+  attached keyword actually takes effect in the resolved layout, the same
+  way real RLU's own indicator-toggle preview works.
+- **Deliberately NOT done in this batch** (flagging honestly rather than
+  silently leaving a gap): `resolveFont`'s per-keyword-conditioning support
+  only reaches keywords looked up BY that function; page-level geometry
+  this file resolves via `record`/`fileLevel`-level lookups it does NOT
+  thread `indicatorState` through yet — `PAGSIZE`, `CPI`/`LPI` outside the
+  font cascade, `LINE`/`BOX`, `OVERLAY`/`PAGSEG`/`AFPRSC`, and the page-
+  group keywords — would need the same treatment to fully match real RLU,
+  left as a follow-up given how much larger a refactor threading
+  `indicatorState` through every remaining call site would be versus the
+  field/constant-level cases fixed here (which cover the realistic common
+  case of conditioning a specific field's own attributes). Separately —
+  **not a conditioning gap, a pre-existing and unrelated one** — `COLOR`/
+  `DSPATR` aren't rendered visually in the page preview AT ALL yet
+  (editable in the properties panel, but no on-screen color/attribute
+  effect), conditioned or not; toggling an indicator on a conditioned
+  `COLOR` pair won't be visually apparent until that separate rendering
+  work exists.
+- Tests: new `test/prtfConditionedKeywords.test.ts`, 11 tests — parser
+  (attached line recognized as keywords not a phantom constant; inline
+  keywords carry no conditions of their own; a genuine constant with a
+  real Location is unaffected; the attached line's own +/- continuation is
+  preserved), round-trip (two independently-conditioned keywords on one
+  field; an unconditioned run followed by a conditioned one), writer
+  (`groupKeywordsByConditions`, `emitEntryWithConditionedKeywords`'s column
+  layout), `collectIndicators` (keyword-only-referenced indicator still
+  found), and layout (`DATE` and `SKIPB` toggling correctly per their own
+  conditioning). Also manually verified round-trip fidelity is still
+  byte-identical against all three real fixture files
+  (`sample1.pf`/`sample-scs.pf`/`sample-afpds.pf`) after this change. Full
+  suite: 375 tests, all passing (11 new, 364 pre-existing unchanged).
+
+### Batch DD — Batch CC follow-up: geometry keyword conditioning [DONE]
+Threads `indicatorState` through the record/file-level keyword lookups
+`resolveLayout` resolves ONCE per call (as opposed to the per-field/
+constant loop Batch CC itself already covered): `resolvePageSize`
+(`PAGSIZE`), `resolveCpiLpi` (`CPI`/`LPI`), the `LINE`/`BOX` geometry list,
+`resolveResourcePlaceholders` (`OVERLAY`/`PAGSEG`/`AFPRSC`), and
+`collectPageGroupMetadata` (`STRPAGGRP`/`ENDPAGGRP`/`DOCIDXTAG`/
+`DTASTMCMD`) all now use `findActiveKeyword`/`findAllActiveKeywords`
+instead of the plain, condition-blind `findKeyword`/`findAllKeywords`.
+
+**A real bug found in Batch CC's OWN fix while writing this batch's
+tests, not assumed:** Batch CC's `isAttachedKeywordLine` detection in
+`prtfParser.ts` only ever attached a conditioned keyword-only line to the
+record's most recently added FIELD or CONSTANT — there was no path to
+attach one directly to the RECORD FORMAT ITSELF (a keyword-only
+conditioned line appearing right after `R RECORDNAME`, before any field
+has been seen yet). Since `PAGSIZE`/`CPI`/`LPI`/`LINE`/`BOX`/`OVERLAY`/
+`STRPAGGRP` etc. are RECORD-level keywords, not field-level, a
+conditioned variant of any of them is exactly this shape — Batch CC's own
+parser fix would have silently misparsed it as a phantom constant, the
+same failure mode Batch CC itself existed to fix, just one level up.
+Caught by writing this batch's own test for a conditioned `PAGSIZE`
+before any field existed and seeing it fail the same way Batch CC's
+original repro did. Fixed by widening the owner resolution to
+`currentRecord.fields.length > 0 ? <last field/constant> : currentRecord`
+instead of only ever the former.
+
+**A second, smaller gap fixed the same way:** file-level keyword lines
+(before any record format is opened) were correctly captured as file-
+level keywords already, but a file-level line's OWN conditioning
+(`conditions`, already parsed off that line either way) was computed and
+then discarded rather than attached to the keyword — real DDS rarely
+conditions file-level keywords, but the syntax permits it, and there's no
+principled reason to special-case dropping it now that the general
+mechanism exists. Fixed the same way as the record/field case: tagged
+directly when pushing (or via `pendingConditions` for a continuing line).
+
+**Also fixed while here:** `findActiveKeyword` (added in Batch CC) used
+first-match-wins semantics, inherited from `findKeyword`. That's wrong for
+exactly the pattern this whole feature exists for — an unconditioned
+DEFAULT keyword followed by a conditioned OVERRIDE of the SAME keyword
+(e.g. `PAGSIZE(66 132)` then a conditioned `PAGSIZE(88 198)`) — both are
+"active" once the override's indicator is on (the default is
+unconditionally active by definition), so first-match-wins would always
+return the default and the override would never visibly take effect.
+Caught by this batch's own PAGSIZE test failing with the default value
+even with the indicator on. Changed to last-active-match-wins, matching
+how a person reading the DDS top-to-bottom would expect a later,
+conditioned line to override an earlier default — a genuine behavioral
+fix, not just a threading exercise, and it doesn't change any
+single-occurrence case (which every pre-existing use of `findActiveKeyword`
+was).
+
+**Still not done (unrelated to conditioning, flagged in Batch CC's own
+writeup already):** `COLOR`/`DSPATR` still aren't rendered visually in the
+page preview at all, conditioned or not — a separate, pre-existing gap.
+
+Tests: 8 new in `test/prtfConditionedKeywords.test.ts` (`PAGSIZE`, `LINE`,
+`OVERLAY`, `STRPAGGRP`, `CPI` toggling; attaching to the record itself
+before any field; that attachment's own round-trip; file-level
+conditioning capture). Manually re-verified byte-identical round-trip
+against all three real fixture files. Full suite: 394 tests, all passing.
+
+### Batch EE — Render COLOR/DSPATR/UNDERLINE/HIGHLIGHT visually [OPEN]
+
+**The gap:** `COLOR`, `DSPATR`, `UNDERLINE`, and `HIGHLIGHT` are all
+editable via the properties panel (Batch A) and are now correctly
+resolved per-keyword-conditioning (Batch CC/DD — `findActiveKeyword`
+already picks the right one out of several conditioned variants). But
+none of that resolved value is ever applied to the actual rendered cell
+text in `media/webviewClient.js`'s page preview — `renderPage` draws a
+cell's text in whatever the browser's default color/weight is,
+regardless of what `COLOR`/`DSPATR`/etc. say. Confirmed by grepping
+`media/webviewClient.js` and `src/prtfLayout.js` for `COLOR`/`DSPATR`/
+`color:` before writing docs/TASKS.md's Batch CC entry — no rendering
+code touches these keywords at all today, only the properties-panel
+editing UI does. Practical effect: setting `COLOR(RED)` on a field, or
+toggling an indicator between two conditioned `COLOR` values, does
+literally nothing visible in the designer even though the underlying
+model and layout resolution are both already correct.
+
+**What to do:**
+- `src/prtfLayout.js`'s `resolveLayout` should resolve a per-cell style
+  object (analogous to how it already resolves `font`/`fontDisplay` via
+  `resolveFont`/`resolveFontDisplay`) from `findActiveKeyword(entry.keywords,
+  "COLOR", indicatorState)` / `"DSPATR"` / `"UNDERLINE"` / `"HIGHLIGHT"`,
+  cascading record→file level the same way `resolveFont` does (DDS allows
+  all four at record level too, as record-level defaults fields inherit).
+- `COLOR`'s parameter is one of IBM's fixed named colors (`BLU`, `RED`,
+  `PNK`, `GRN`, `TRQ`, `YLW`, `WHT`) or (per Batch A's own writeup)
+  `*RGB`/unverified `*CMYK`/`*CIELAB` — map the named set to CSS colors
+  directly; treat `*RGB` etc. the same "approximate, not verified" way
+  this file already treats other under-specified keywords (see the file's
+  banner comment).
+  `DSPATR` values worth mapping to CSS: `HI` (bold-ish/emphasis — AFPDS
+  doesn't have a real terminal-style "high intensity", so bold is a
+  reasonable visual stand-in), `RI` (reverse image — swap foreground/
+  background), `BL` (blink — CSS `animation`, or skip as out of scope for
+  a static preview), `ND`/`PC`/`UL` (non-display/position-cursor/underline
+  — `UL` overlaps with the standalone `UNDERLINE` keyword; confirm against
+  IBM's DDS reference whether both can appear together and if so how they
+  compose, rather than assuming).
+- `media/webviewClient.js`'s cell-rendering code (`renderPage`) applies
+  the resolved style (`color`, `font-weight`/`text-decoration`, etc.) to
+  each cell's text node.
+- Add tests: `resolveLayout` resolves the right color/attribute per cell,
+  including a conditioned-`COLOR`-pair case exercising the same
+  indicator-toggle mechanism Batch CC/DD's own tests already cover for
+  other keywords (reuse `test/prtfConditionedKeywords.test.ts`'s
+  `buildLine`/`buildSource` helpers rather than re-inventing them).
+- No model/parser/writer change expected — `COLOR`/`DSPATR`/`UNDERLINE`/
+  `HIGHLIGHT` already parse, store, and round-trip correctly today (Batch
+  A); this is purely "resolve + render", the same shape Batch L
+  (continued)'s FONT/CDEFNT/FNTCHRSET/FONTNAME work already took.
+
+### Batch FF — Bug fix: properties-panel row layout consistency [DONE]
 
 Reported by Manojkumar-dharma: "right panel is not correctly organized,
 check box and text box are improperly placed. Range them in a way it is
@@ -2087,6 +2380,76 @@ every properties-panel row was affected by at least one of them):
    `appendOverlayRow`, `appendPagsegRow`, `appendAfprscRow`,
    `appendDocidxtagRow`). Browsers do respect explicit width/height on a
    checkbox's own box, so this stretched every one of them from its
+   native ~13px to 140px. Fixed by excluding
+   `input[type="checkbox"]` from the width rule and giving it its own
+   `width: auto` rule.
+2. **Label columns didn't line up row to row.** `.ind-label`/
+   `.pfield-label` (the checkbox+name / label portion of a row) had no
+   width of their own — sized purely to their own text content — so a
+   row's value input started at a different x-position depending on how
+   long THAT row's keyword name happened to be (e.g. "DFT" vs
+   "FLTFIXDEC"), instead of every row's value column lining up at the
+   same offset. Fixed by giving `.ind-label`, a new `.prop-label`, and
+   `.pfield-label` a shared fixed `flex: 0 0 104px` (104px comfortably
+   fits every keyword name in this codebase's own
+   `docs/KEYWORD-INVENTORY.md` — longest is `FLTFIXDEC`, 9 chars — with
+   `text-overflow: ellipsis` as a safety net for anything longer).
+   `labeledInput`/`labeledSelect` (`media/webviewClient.js`) previously
+   appended their label text as a bare DOM text node rather than an
+   element — text nodes aren't selectable in CSS at all, so there was no
+   way to give THEIR label column the same width until the raw text got
+   wrapped in an actual `<span class="prop-label">`.
+3. **Multi-input rows overflowed and wrapped unevenly.** The old fixed
+   `width: 140px` per value input, with no shared space-splitting, meant
+   a row with 2+ inputs on one line (EDTCDE's edit-code select + fill
+   character; MSGCON's four params) needed 280–560px of value-input
+   width alone — several times the ~300px usable width inside the
+   340px-wide `.side-col` — guaranteeing an uneven wrap that looked
+   different depending on how many inputs a given row happened to have.
+   Changed to `flex: 1 1 70px`, so a row's own input(s) share whatever
+   width is actually available evenly, still wrapping to a second line
+   as a cohesive group when they genuinely don't fit, rather than each
+   competing independently at a size that assumed it had the whole row.
+
+**Two further structural bugs found along the way** (not CSS — no CSS
+fix could have addressed either):
+- **Reversed checkbox/label order.** Three standalone Y/N toggles — the
+  barcode "Asterisk (CODE3OF9)" row, and Batch H's "Reference a field"/
+  "Use referenced values" rows — built their `<label class="prop-row">`
+  as `[text, checkbox]` instead of the `.ind-label` convention's
+  `[checkbox, text]` used by every other toggle in the panel. Combined
+  with `.prop-row`'s old `justify-content: space-between`, this pushed
+  those three checkboxes all the way to the row's right edge with their
+  text flush left, instead of sitting right next to their text like
+  every other toggle. Restructured all three to the standard
+  checkbox-first `.ind-label` shape.
+- **Four rows with no wrapper at all.** `appendOverlayRow`,
+  `appendPagsegRow`, `appendAfprscRow`, and `appendDocidxtagRow` (all
+  Batch E) appended their 3–5 value inputs directly to the panel
+  container with `container.appendChild(i)` — no `.prop-row` div, no
+  shared width/alignment rules, no visual grouping with the checkbox
+  above them at all. `appendMsgconRow` and `appendColorRow` (both Batch
+  A) already did this correctly (their value inputs go into their own
+  `.prop-row` div); the four Batch E rows just hadn't followed that
+  existing pattern. Fixed by wrapping each one's inputs in a
+  `valuesRow = el("div", { class: "prop-row" })`, matching MSGCON/COLOR.
+
+**Verification:** `npx tsc --noEmit` clean; full suite 368/368 passing
+(364 previous + 4 new in `test/webviewLayout.test.ts`). The new tests
+lock in the specific CSS rules (checkbox exclusion, shared label-column
+flex-basis, shared value-input flex-basis) and, since the four-rows-with-
+no-wrapper bug is structural rather than CSS, a source-text shape check
+confirming those four functions build a `.prop-row` around their value
+inputs rather than appending them bare — same "can't prove real layout,
+so lock in the specific mechanism instead" approach `webviewLayout.test.ts`
+already used for the `#root` scroll-chain fix (Batch V). **No real-browser
+verification was possible in this session** (same sandbox limitation
+documented since Batch V — no usable headless browser here). **Please
+verify in a real Extension Development Host**, ideally against a field
+or record with several different keyword types checked at once (a mix
+of flag/text/select keywords, EDTCDE, and at least one AFP resource
+keyword like OVERLAY) so the alignment is visible across every row shape
+at once, not just one at a time.
 
 ## Adding a new batch
 

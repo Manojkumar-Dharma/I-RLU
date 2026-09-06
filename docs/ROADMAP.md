@@ -291,7 +291,47 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       freshly-parsed system-constant. 7 new tests
       (`test/prtfBatchZ.test.ts`); full suite now 347 tests, all passing.
 
-- [x] **Batch CC — Bug fix: properties-panel row layout consistency.**
+- [x] **Batch CC — Per-keyword conditioning indicators.** Real DDS/RLU
+      lets a keyword-only continuation line (blank name/type/position,
+      just its own conditioning) attach ADDITIONAL, independently-
+      conditioned keyword(s) to an existing field/constant — e.g. two
+      mutually-exclusive `COLOR` keywords on one field, each active under
+      a different indicator. `Keyword` had no `conditions` field at all,
+      and the parser was misparsing every such line as a bogus phantom
+      constant. `Keyword.conditions` added (independent of the owning
+      entry's own conditions), parser now correctly attaches these lines
+      to the preceding entry, and the writer (`groupKeywordsByConditions`/
+      `emitEntryWithConditionedKeywords`) now round-trips per-keyword
+      conditioning instead of silently flattening/losing it. Indicator
+      toggling in the toolbar now also correctly switches `DATE`/`TIME`/
+      `PAGNBR`, `SKIPB`/`SPACEB`/`SKIPA`/`SPACEA`/`BARCODE`, and the FONT
+      cascade when conditioned this way. NOT yet done: threading indicator
+      state through `PAGSIZE`/`LINE`/`BOX`/`OVERLAY`/`PAGSEG`/`AFPRSC`/
+      page-group geometry, and — separately, pre-existing — `COLOR`/
+      `DSPATR` still aren't visually rendered in the preview at all. See
+      `docs/TASKS.md` Batch CC for the full writeup. 11 new tests; full
+      suite now 375, all passing.
+
+- [x] **Batch DD — Batch CC follow-up: geometry keyword conditioning.**
+      Threaded indicator state through the record/file-level lookups
+      `resolveLayout` resolves once per call — `PAGSIZE`, `CPI`/`LPI`,
+      `LINE`/`BOX`, `OVERLAY`/`PAGSEG`/`AFPRSC`, and `STRPAGGRP`/
+      `ENDPAGGRP`/`DOCIDXTAG`/`DTASTMCMD` — completing what Batch CC left
+      as its own explicitly-flagged remaining scope. Found and fixed two
+      real bugs along the way, not just plumbing: Batch CC's own attached-
+      keyword-line detection had no path to attach a conditioned line to
+      the RECORD FORMAT ITSELF (only ever to a field/constant), which
+      matters a lot here since PAGSIZE/CPI/LINE/etc. are record-level
+      keywords; and `findActiveKeyword` used first-match-wins semantics,
+      which silently defeats the common "unconditioned default + a
+      conditioned override of the same keyword" authoring pattern (fixed
+      to last-active-match-wins). Also captured file-level keywords' own
+      conditioning, previously computed and discarded. See `docs/TASKS.md`
+      Batch DD for the full writeup. 8 new tests; full suite now 394, all
+      passing; byte-identical round-trip re-verified against all three
+      real fixture files.
+
+- [x] **Batch FF — Bug fix: properties-panel row layout consistency.**
       Reported: "check box and text box are improperly placed... Range
       them in a way it is easy and uniform." Three independent CSS bugs
       in the shared `.prop-row` rule set — checkboxes stretched to 140px
@@ -305,11 +345,12 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       reverse order from every other toggle, and four AFP-resource rows
       (`appendOverlayRow`/`appendPagsegRow`/`appendAfprscRow`/
       `appendDocidxtagRow`) appended their value inputs with no row
-      wrapper at all. See `docs/TASKS.md` Batch CC for the full
+      wrapper at all. See `docs/TASKS.md` Batch FF for the full
       root-cause writeup. `test/webviewLayout.test.ts` extended with 4
       new tests (CSS rule shape + a source-text structural check for the
-      four bare-appendChild rows); full suite now 368 tests, all
-      passing. **Please verify in a real Extension Development Host**
+      four bare-appendChild rows); full suite now 368 tests at the time
+      (394 after Batch CC/DD landed on top), all passing.
+      **Please verify in a real Extension Development Host**
       (no headless browser available in this sandbox) — ideally against
       a row with several different keyword types checked at once so the
       alignment is visible across every row shape together.
@@ -565,7 +606,18 @@ ownership per batch):
       *substitute* font's published metrics, applied as the best available
       proxy for IBM's own FGID-named fonts, not a verified byte-for-byte
       extraction of IBM's own FGID resource data (this tool has no access
-      to that).
+      to that). **Follow-up:** `FONTNAME` (which references an actual
+      TrueType/OpenType font by name, a well-documented public binary
+      format unlike CDEFNT/FNTCHRSET's IBM-internal resource data) now
+      also gets real per-character advance widths — a from-scratch sfnt
+      binary parser (`src/afpTrueTypeMetrics.js`, verified against
+      `fontTools` across the full ASCII range with zero mismatches) reads
+      three real, SIL OFL-licensed substitute fonts vendored at
+      `resources/fonts/` (Cousine/Tinos/PT Sans — see that directory's
+      `NOTICE.md`). Same honesty convention as the AFM tables above:
+      flagged as a real substitute's real data, not a verified match for
+      the exact named font. See `docs/TASKS.md` Batch L's
+      "FONTNAME real advance widths" subsection for the full writeup.
       **`CDEFNT`/`FNTCHRSET`/`FONTNAME` resolution — also now done,** on
       investigation turning out to need a much smaller lift than the
       TTF-fetch-from-a-live-IBM-i direction earlier versions of this note

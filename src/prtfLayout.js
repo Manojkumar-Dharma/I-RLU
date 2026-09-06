@@ -33,7 +33,7 @@
 // eslint-disable-next-line no-undef
 const AfpFontMetrics = typeof module !== "undefined" && module.exports ? require("./afpFontMetrics.js") : window.AfpFontMetrics;
 // eslint-disable-next-line no-undef
-const { findKeyword, findAllKeywords, numericParam, paramTokens, isFieldRef, toNumber, toInches } =
+const { findKeyword, findAllKeywords, findActiveKeyword, findAllActiveKeywords, numericParam, paramTokens, isFieldRef, toNumber, toInches } =
   typeof module !== "undefined" && module.exports ? require("./prtfKeywordHelpers.js") : window.PrtfKeywordHelpers;
 // eslint-disable-next-line no-undef
 const { resolveReferenceTarget } =
@@ -63,9 +63,9 @@ const AfpCodedFontMetrics =
  * jobs may differ per font, so this is a rendering approximation, not a
  * production measurement.
  */
-function resolveCpiLpi(record, fileLevel) {
-  const cpiKw = findKeyword(record.keywords, "CPI") || findKeyword(fileLevel.keywords, "CPI");
-  const lpiKw = findKeyword(record.keywords, "LPI") || findKeyword(fileLevel.keywords, "LPI");
+function resolveCpiLpi(record, fileLevel, indicatorState) {
+  const cpiKw = findActiveKeyword(record.keywords, "CPI", indicatorState) || findActiveKeyword(fileLevel.keywords, "CPI", indicatorState);
+  const lpiKw = findActiveKeyword(record.keywords, "LPI", indicatorState) || findActiveKeyword(fileLevel.keywords, "LPI", indicatorState);
   return { cpi: numericParam(cpiKw, 10), lpi: numericParam(lpiKw, 6) };
 }
 
@@ -107,25 +107,25 @@ function parseFontKeyword(kw) {
  * Returns a `mode`-tagged object; see resolveFontDisplay below for how
  * each mode becomes the final renderable font identity.
  */
-function resolveFont(entry, record, fileLevel) {
+function resolveFont(entry, record, fileLevel, indicatorState) {
   for (const level of [entry, record, fileLevel]) {
-    const fontKw = findKeyword(level.keywords, "FONT");
+    const fontKw = findActiveKeyword(level.keywords, "FONT", indicatorState);
     if (fontKw) return Object.assign({ mode: "fgid" }, parseFontKeyword(fontKw));
 
-    const cdefntKw = findKeyword(level.keywords, "CDEFNT");
+    const cdefntKw = findActiveKeyword(level.keywords, "CDEFNT", indicatorState);
     if (cdefntKw) {
       const inner = String(cdefntKw.params || "").replace(/^\(/, "").replace(/\)$/, "").trim();
       const value = inner.split(/\s+/)[0] || "";
       return { mode: "cdefnt", value, approximate: isFieldRef(value) };
     }
 
-    const fntchrsetKw = findKeyword(level.keywords, "FNTCHRSET");
+    const fntchrsetKw = findActiveKeyword(level.keywords, "FNTCHRSET", indicatorState);
     if (fntchrsetKw) {
       const toks = paramTokens(fntchrsetKw);
       return { mode: "fntchrset", fontCharacterSet: toks[0] || "", codePage: toks[1] || "", approximate: isFieldRef(toks[0]) };
     }
 
-    const fontnameKw = findKeyword(level.keywords, "FONTNAME");
+    const fontnameKw = findActiveKeyword(level.keywords, "FONTNAME", indicatorState);
     if (fontnameKw) {
       // FONTNAME's value is DDS-quoted (see prtfWebviewLogic.js's
       // parseFontSpecKeyword/buildFontSpecParamsFromValues for the fix to
@@ -310,11 +310,11 @@ function parseBarcodeGeometry(kw, lpi, uom) {
  * is rendered, even though the properties panel (media/webviewClient.js)
  * only edits by keyword name and so only reaches the first.
  */
-function resolveResourcePlaceholders(record, cpi, lpi, uom) {
+function resolveResourcePlaceholders(record, cpi, lpi, uom, indicatorState) {
   return [
-    ...findAllKeywords(record.keywords, "OVERLAY").map((kw) => parseOverlay(kw, cpi, lpi, uom)),
-    ...findAllKeywords(record.keywords, "PAGSEG").map((kw) => parsePagseg(kw, cpi, lpi, uom)),
-    ...findAllKeywords(record.keywords, "AFPRSC").map((kw) => parseAfprsc(kw, cpi, lpi, uom)),
+    ...findAllActiveKeywords(record.keywords, "OVERLAY", indicatorState).map((kw) => parseOverlay(kw, cpi, lpi, uom)),
+    ...findAllActiveKeywords(record.keywords, "PAGSEG", indicatorState).map((kw) => parsePagseg(kw, cpi, lpi, uom)),
+    ...findAllActiveKeywords(record.keywords, "AFPRSC", indicatorState).map((kw) => parseAfprsc(kw, cpi, lpi, uom)),
   ];
 }
 
@@ -325,28 +325,28 @@ function resolveResourcePlaceholders(record, cpi, lpi, uom) {
  * on the printed page, so unlike resolveResourcePlaceholders above they
  * don't get row/col geometry).
  */
-function collectPageGroupMetadata(record) {
+function collectPageGroupMetadata(record, indicatorState) {
   const items = [];
-  findAllKeywords(record.keywords, "STRPAGGRP").forEach((kw) => {
+  findAllActiveKeywords(record.keywords, "STRPAGGRP", indicatorState).forEach((kw) => {
     const inner = String(kw.params || "").replace(/^\(/, "").replace(/\)$/, "").trim();
     items.push({ keyword: "STRPAGGRP", summary: inner ? "Start page group " + inner : "Start page group" });
   });
-  findAllKeywords(record.keywords, "ENDPAGGRP").forEach(() => {
+  findAllActiveKeywords(record.keywords, "ENDPAGGRP", indicatorState).forEach(() => {
     items.push({ keyword: "ENDPAGGRP", summary: "End page group" });
   });
-  findAllKeywords(record.keywords, "DOCIDXTAG").forEach((kw) => {
+  findAllActiveKeywords(record.keywords, "DOCIDXTAG", indicatorState).forEach((kw) => {
     const t = paramTokens(kw);
     items.push({ keyword: "DOCIDXTAG", summary: t.length ? "Index tag: " + t.join(" ") : "Index tag" });
   });
-  findAllKeywords(record.keywords, "DTASTMCMD").forEach((kw) => {
+  findAllActiveKeywords(record.keywords, "DTASTMCMD", indicatorState).forEach((kw) => {
     const inner = String(kw.params || "").replace(/^\(/, "").replace(/\)$/, "").trim();
     items.push({ keyword: "DTASTMCMD", summary: inner ? "Data stream command: " + inner : "Data stream command" });
   });
   return items;
 }
 
-function resolvePageSize(record, fileLevel) {
-  const kw = findKeyword(record.keywords, "PAGSIZE") || findKeyword(fileLevel.keywords, "PAGSIZE");
+function resolvePageSize(record, fileLevel, indicatorState) {
+  const kw = findActiveKeyword(record.keywords, "PAGSIZE", indicatorState) || findActiveKeyword(fileLevel.keywords, "PAGSIZE", indicatorState);
   let lines = 66;
   let cols = 132;
   if (kw) {
@@ -376,9 +376,9 @@ function resolvePageSize(record, fileLevel) {
 // here; see docs/ROADMAP.md/docs/REQUIREMENTS.md for this correction,
 // same honesty-over-silently-dropping-scope treatment as the earlier
 // fictitious DRAW keyword correction (docs/TASKS.md's Batch history).
-function resolveConstantPlaceholder(entry) {
+function resolveConstantPlaceholder(entry, indicatorState) {
   if (entry.literal !== undefined) return undefined;
-  if (findKeyword(entry.keywords, "DATE")) {
+  if (findActiveKeyword(entry.keywords, "DATE", indicatorState)) {
     // DATE's own *Y/*YY parameter controls a 2- vs 4-digit year (see
     // KEYWORD-INVENTORY.md / IBM's DATE keyword description) — approximate
     // that shape with the platform's local date string rather than
@@ -386,10 +386,10 @@ function resolveConstantPlaceholder(entry) {
     // file's other EDTCDE/EDTWRD-adjacent approximations).
     return new Date().toLocaleDateString();
   }
-  if (findKeyword(entry.keywords, "TIME")) {
+  if (findActiveKeyword(entry.keywords, "TIME", indicatorState)) {
     return new Date().toLocaleTimeString();
   }
-  if (findKeyword(entry.keywords, "PAGNBR")) {
+  if (findActiveKeyword(entry.keywords, "PAGNBR", indicatorState)) {
     return "1";
   }
   return undefined;
@@ -409,12 +409,12 @@ function resolveLayout(model, recordName, indicatorState, uom) {
   const record = model.records.find((r) => r.name === recordName) || model.records[0];
   if (!record) return null;
 
-  const { lines: pageLines, cols: pageCols } = resolvePageSize(record, model.fileLevel);
-  const { cpi, lpi } = resolveCpiLpi(record, model.fileLevel);
+  const { lines: pageLines, cols: pageCols } = resolvePageSize(record, model.fileLevel, indicatorState);
+  const { cpi, lpi } = resolveCpiLpi(record, model.fileLevel, indicatorState);
 
   const draws = [
-    ...findAllKeywords(record.keywords, "LINE").map((kw) => parseLineGeometry(kw, cpi, lpi, uom)),
-    ...findAllKeywords(record.keywords, "BOX").map((kw) => parseBoxGeometry(kw, cpi, lpi, uom)),
+    ...findAllActiveKeywords(record.keywords, "LINE", indicatorState).map((kw) => parseLineGeometry(kw, cpi, lpi, uom)),
+    ...findAllActiveKeywords(record.keywords, "BOX", indicatorState).map((kw) => parseBoxGeometry(kw, cpi, lpi, uom)),
   ];
 
   // Batch E (docs/TASKS.md) — AFP page-group / resource keyword
@@ -422,8 +422,8 @@ function resolveLayout(model, recordName, indicatorState, uom) {
   // AFPRSC, rendered as labeled boxes); `pageGroupKeywords` are the
   // non-positioned ones (STRPAGGRP/ENDPAGGRP/DOCIDXTAG/DTASTMCMD, surfaced
   // as a badge list instead — see collectPageGroupMetadata's own comment).
-  const resources = resolveResourcePlaceholders(record, cpi, lpi, uom);
-  const pageGroupKeywords = collectPageGroupMetadata(record);
+  const resources = resolveResourcePlaceholders(record, cpi, lpi, uom, indicatorState);
+  const pageGroupKeywords = collectPageGroupMetadata(record, indicatorState);
 
   let cursorLine = 1;
   let cursorCol = 1;
@@ -436,8 +436,8 @@ function resolveLayout(model, recordName, indicatorState, uom) {
       continue;
     }
 
-    const skipB = findKeyword(entry.keywords, "SKIPB");
-    const spaceB = findKeyword(entry.keywords, "SPACEB");
+    const skipB = findActiveKeyword(entry.keywords, "SKIPB", indicatorState);
+    const spaceB = findActiveKeyword(entry.keywords, "SPACEB", indicatorState);
     if (skipB) cursorLine = numericParam(skipB, cursorLine);
     if (spaceB) cursorLine += numericParam(spaceB, 0);
 
@@ -449,7 +449,7 @@ function resolveLayout(model, recordName, indicatorState, uom) {
     // field's design-time length is the placeholder text's length, not the
     // entry.length||1 fallback that only makes sense for a truly blank
     // constant).
-    const constantPlaceholder = entry.kind === "constant" ? resolveConstantPlaceholder(entry) : undefined;
+    const constantPlaceholder = entry.kind === "constant" ? resolveConstantPlaceholder(entry, indicatorState) : undefined;
 
     const length =
       entry.kind === "field"
@@ -459,8 +459,8 @@ function resolveLayout(model, recordName, indicatorState, uom) {
         : constantPlaceholder
         ? constantPlaceholder.length
         : entry.length || 1;
-    const barcodeKw = entry.kind === "field" ? findKeyword(entry.keywords, "BARCODE") : undefined;
-    const font = resolveFont(entry, record, model.fileLevel);
+    const barcodeKw = entry.kind === "field" ? findActiveKeyword(entry.keywords, "BARCODE", indicatorState) : undefined;
+    const font = resolveFont(entry, record, model.fileLevel, indicatorState);
     const fontDisplay = resolveFontDisplay(font);
 
     cells.push({
@@ -516,8 +516,8 @@ function resolveLayout(model, recordName, indicatorState, uom) {
     cursorLine = line;
     cursorCol = position + length;
 
-    const skipA = findKeyword(entry.keywords, "SKIPA");
-    const spaceA = findKeyword(entry.keywords, "SPACEA");
+    const skipA = findActiveKeyword(entry.keywords, "SKIPA", indicatorState);
+    const spaceA = findActiveKeyword(entry.keywords, "SPACEA", indicatorState);
     if (skipA) cursorLine = numericParam(skipA, cursorLine);
     if (spaceA) cursorLine += numericParam(spaceA, 0);
   }
@@ -548,7 +548,17 @@ function collectIndicators(record) {
   const set = new Set();
   const visit = (conditions) => (conditions || []).forEach((c) => set.add(c.indicator));
   visit(record.conditions);
-  for (const f of record.fields) visit(f.conditions);
+  for (const kw of record.keywords || []) visit(kw.conditions);
+  for (const f of record.fields) {
+    visit(f.conditions);
+    // An indicator referenced ONLY by an attached keyword's own
+    // conditioning (see prtfModel.ts's Keyword.conditions comment) — e.g.
+    // two mutually-exclusive COLOR keywords on one field, each on its own
+    // indicator, with the field's own line left unconditioned — wouldn't
+    // otherwise show up in the toggle panel at all, so there'd be no way
+    // to preview the field switching between them.
+    for (const kw of f.keywords) visit(kw.conditions);
+  }
   return Array.from(set).sort();
 }
 

@@ -63,12 +63,12 @@ test("webview layout: the height-constraint chain from body down to .side-col ha
   }
 });
 
-// Batch CC — "check box and text box are improperly placed" / "Range them
+// Batch FF — "check box and text box are improperly placed" / "Range them
 // in a way it is easy and uniform". Real browser layout is needed to prove
 // rows actually line up (unavailable in this sandbox), so these lock in
 // the specific CSS rules the fix depends on, the same documented-gap
 // pattern the two tests above already use for the #root fix.
-test("webview layout (Batch CC): checkboxes inside .prop-row are excluded from the value-input width rule", () => {
+test("webview layout (Batch FF): checkboxes inside .prop-row are excluded from the value-input width rule", () => {
   const css = extractCss(getWebviewHtml("testnonce"));
   const checkboxRuleMatch = css.match(/\.prop-row input\[type="checkbox"\]\s*\{([^}]*)\}/);
   assert.ok(checkboxRuleMatch, ".prop-row has no dedicated input[type=checkbox] rule — checkboxes risk being stretched by the value-input width rule again");
@@ -77,7 +77,7 @@ test("webview layout (Batch CC): checkboxes inside .prop-row are excluded from t
   assert.ok(valueInputRuleMatch, ".prop-row's value-input rule must explicitly exclude input[type=checkbox] via :not()");
 });
 
-test("webview layout (Batch CC): the label/checkbox column has a fixed width shared by every row shape", () => {
+test("webview layout (Batch FF): the label/checkbox column has a fixed width shared by every row shape", () => {
   const css = extractCss(getWebviewHtml("testnonce"));
   // .ind-label (checkbox rows), .prop-label (labeledInput/labeledSelect's
   // wrapped text label), and .pfield-label (pFieldRow) must all resolve to
@@ -89,7 +89,7 @@ test("webview layout (Batch CC): the label/checkbox column has a fixed width sha
   assert.match(combinedRuleMatch![1], /flex\s*:\s*0 0 \d+px/, "the label column must have a fixed (non-growing, non-shrinking) flex-basis");
 });
 
-test("webview layout (Batch CC): value inputs share row width proportionally instead of each claiming a fixed 140px", () => {
+test("webview layout (Batch FF): value inputs share row width proportionally instead of each claiming a fixed 140px", () => {
   const css = extractCss(getWebviewHtml("testnonce"));
   const valueInputRuleMatch = css.match(/\.prop-row input:not\(\[type="checkbox"\]\), \.prop-row select\s*\{([^}]*)\}/);
   assert.ok(valueInputRuleMatch);
@@ -108,7 +108,7 @@ test("webview layout (Batch CC): value inputs share row width proportionally ins
 // specific "bare appendChild with no row wrapper at all" shape (which
 // isn't a CSS problem the rules above could ever catch, however correct
 // they are) doesn't silently come back.
-test("webview layout (Batch CC): OVERLAY/PAGSEG/AFPRSC/DOCIDXTAG's value inputs are wrapped in their own .prop-row, not appended bare", () => {
+test("webview layout (Batch FF): OVERLAY/PAGSEG/AFPRSC/DOCIDXTAG's value inputs are wrapped in their own .prop-row, not appended bare", () => {
   const source = fs.readFileSync(path.join(__dirname, "../../media/webviewClient.js"), "utf8");
   for (const fnName of ["appendOverlayRow", "appendPagsegRow", "appendAfprscRow", "appendDocidxtagRow"]) {
     const fnMatch = source.match(new RegExp("function " + fnName + "\\([^)]*\\) \\{([\\s\\S]*?)\\n  \\}\\n"));
