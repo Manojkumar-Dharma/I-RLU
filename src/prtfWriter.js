@@ -28,6 +28,21 @@ function padLeftNum(num, len) {
   return s.length >= len ? s.slice(-len) : " ".repeat(len - s.length) + s;
 }
 
+/**
+ * Same right-justified padding as padLeftNum, but for DDS's RELPOS `+n`
+ * relative-position notation (see prtfModel.ts's FieldEntry.relativePosition
+ * doc comment) — the `+` is part of the padded value itself, not a
+ * separate column, e.g. `2` -> ` +2` (matches real-world source: see
+ * test/fixtures/scsprt1-realworld.prtf's own `+2`/`+1` entries, right-
+ * justified within the same 3-column field an absolute number uses).
+ * IBM's own RELPOS reference caps this at 0-99, so it always fits.
+ */
+function padLeftRelative(num, len) {
+  if (num === undefined || num === null || num === "") return " ".repeat(len);
+  const s = "+" + String(num);
+  return s.length >= len ? s.slice(-len) : " ".repeat(len - s.length) + s;
+}
+
 function conditionSlots(conditions) {
   const slots = ["   ", "   ", "   "]; // 3 blank columns per slot when no condition is present
   (conditions || []).slice(0, 3).forEach((c, i) => {
@@ -38,7 +53,7 @@ function conditionSlots(conditions) {
   return slots;
 }
 
-function buildPositional({ nameType, name, reference, length, dataType, decimalPositions, usage, lineNo, position, conditions, formType }) {
+function buildPositional({ nameType, name, reference, length, dataType, decimalPositions, usage, lineNo, position, relativePosition, conditions, formType }) {
   const [c1, c2, c3] = conditionSlots(conditions);
   let s = "";
   s += "     "; // 1-5 sequence number (left blank; most shops let the editor/compiler ignore it)
@@ -56,7 +71,7 @@ function buildPositional({ nameType, name, reference, length, dataType, decimalP
   s += padLeftNum(decimalPositions, 2); // 36-37
   s += padRight(usage || "", 1); // 38
   s += padLeftNum(lineNo, 3); // 39-41
-  s += padLeftNum(position, 3); // 42-44
+  s += relativePosition ? padLeftRelative(position, 3) : padLeftNum(position, 3); // 42-44 — Batch LL: `+n` (RELPOS) vs. a plain absolute column
   return s; // exactly 44 chars
 }
 
@@ -273,6 +288,7 @@ function regenerateSource(model) {
           usage: entry.usage,
           lineNo: entry.line,
           position: entry.position,
+          relativePosition: entry.relativePosition,
           conditions: entry.conditions,
           formType: entry.formType,
         });
@@ -280,7 +296,7 @@ function regenerateSource(model) {
         break;
       }
       case "constant": {
-        const positional = buildPositional({ lineNo: entry.line, position: entry.position, conditions: entry.conditions, formType: entry.formType });
+        const positional = buildPositional({ lineNo: entry.line, position: entry.position, relativePosition: entry.relativePosition, conditions: entry.conditions, formType: entry.formType });
         const litToken = entry.literal !== undefined ? "'" + String(entry.literal).replace(/'/g, "''") + "'" : undefined;
         outLines.push(...emitEntryWithConditionedKeywords(positional, entry.keywords, litToken, entry.formType));
         break;

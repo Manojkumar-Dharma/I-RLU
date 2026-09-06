@@ -4,6 +4,8 @@ import { WebviewEdit } from "./webviewProtocol";
 const { upsertReffldKeyword } = require("./prtfWriter.js");
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const PrtfEngine = require("./prtfEngine.js");
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const PrtfLayout = require("./prtfLayout.js");
 
 /**
  * Finds the field or constant with the given stable id, along with its
@@ -113,6 +115,85 @@ function makeIdGenerator(model: ParsedSource): () => string {
 }
 
 /**
+ * Batch KK (docs/TASKS.md) — boundary shift-and-truncate.
+ *
+ * Real RLU's `LT(N)`/`RT(N)` sequence commands (per IBM's own AS/400
+ * "Report Layout Guide"): "Type RT(N) to shift and truncate data on the
+ * Right Side if crossing the Boundaries" / "Type LT(N) to shift and
+ * truncate data on the Left side if crossing the Boundaries." I-RLU has
+ * no sequence-command area (it's a live drag/drop grid, not SEU-style
+ * typed commands), so there's no direct `LT(N)`/`RT(N)` equivalent to
+ * reproduce verbatim — this applies the same underlying principle
+ * ("crossing a boundary clips the data instead of silently overflowing
+ * it") to the move/resize paths I-RLU actually has: dragging a field
+ * (the `move` edit kind) and changing its length in the properties panel
+ * (`updateField`'s `edit.length`).
+ *
+ * Scoped to the RIGHT/left column boundary only (the report's own
+ * width), not the bottom of the page — unlike a fixed page width, going
+ * past PAGSIZE's line count doesn't clip anything on a printer file, it
+ * just continues onto a later page (SKIPB/SPACEB already push content
+ * down across pages this way), so there's no equivalent "truncate" to
+ * apply vertically. This matches the batch's own description ("past the
+ * report's right edge") and real RLU's LT/RT commands, which are
+ * explicitly Left/Right (horizontal) only.
+ */
+
+/**
+ * The report's own column width for boundary purposes. Deliberately
+ * checks only the record/file level's UNCONDITIONED `PAGSIZE`
+ * (indicatorState `{}`) — `applyEditToModel` is a static, one-shot model
+ * mutation with no live preview-toggle context the way `resolveLayout`
+ * has (see Batch DD's `indicatorState` threading), so a `PAGSIZE` that's
+ * itself conditioned to a different width per indicator is a narrow edge
+ * case this structural boundary check doesn't attempt to track live.
+ */
+export function reportWidthCols(model: ParsedSource, record: RecordFormatEntry): number {
+  return PrtfLayout.resolvePageSize(record, model.fileLevel, {}).cols;
+}
+
+/**
+ * Clamps a field/constant's own column extent to `[1, pageCols]`,
+ * returning the corrected `{position, length}`. `position` is only ever
+ * pulled UP to 1 if it somehow arrived below it (I-RLU's own drag math
+ * already clamps to column 1 client-side — see
+ * `prtfWebviewLogic.js`'s `pixelToLineCol` — so this is defense-in-depth
+ * for any edit message that didn't come through that path, e.g. a
+ * pasted/synthetic one); the RIGHT edge is enforced by shortening
+ * `length` so the field's data never extends past `pageCols`, matching
+ * RT(N)'s own "shift and TRUNCATE" behavior rather than silently
+ * shifting the position itself back to make it fit.
+ */
+export function clampToReportWidth(position: number, length: number | undefined, pageCols: number): { position: number; length: number } {
+  let pos = Math.max(1, Math.floor(position) || 1);
+  let len = Math.max(1, Math.floor(length === undefined ? 1 : length) || 1);
+  if (pos > pageCols) pos = pageCols; // degenerate: boundary itself narrower than the field's own start
+  const maxLen = pageCols - pos + 1;
+  if (len > maxLen) len = Math.max(1, maxLen);
+  return { position: pos, length: len };
+}
+
+/**
+ * Constant literal-text equivalent of clampToReportWidth above: a
+ * constant has no separate `length` attribute (see `prtfModel.ts`'s
+ * `ConstantEntry` — its width IS its literal text's own length), so
+ * "truncating" a constant means trimming characters off the END of the
+ * literal string that would otherwise fall past the boundary — the
+ * literal reading of RLU's own "truncate DATA" wording, since a
+ * constant's literal text is its data. Undefined/empty literals (a
+ * system-constant field like DATE/TIME/PAGNBR with no literal token at
+ * all — see Batch Z) pass through untouched; there's no text to
+ * truncate.
+ */
+export function clampConstantToReportWidth(position: number, literal: string | undefined, pageCols: number): { position: number; literal: string | undefined } {
+  const pos = Math.max(1, Math.floor(position) || 1);
+  if (literal === undefined || literal === "") return { position: pos, literal };
+  const maxLen = Math.max(0, pageCols - pos + 1);
+  const truncated = literal.length > maxLen ? literal.slice(0, maxLen) : literal;
+  return { position: pos, literal: truncated };
+}
+
+/**
  * Mutates `model` in place to apply one structured edit from the webview.
  * Every edit kind follows the same shape: find the target by id/recordName,
  * mutate it, and (for delete/addField/addConstant) keep model.sequence in
@@ -138,21 +219,53 @@ export function applyEditToModel(model: ParsedSource, edit: WebviewEdit): boolea
     case "move": {
       const found = findEntryById(model, edit.id);
       if (!found) return false;
-      found.entry.line = edit.line;
-      found.entry.position = edit.position;
+      // Batch KK — see clampToReportWidth/clampConstantToReportWidth above.
+      const pageCols = reportWidthCols(model, found.record);
+      if (found.entry.kind === "field") {
+        const clamped = clampToReportWidth(edit.position, found.entry.length, pageCols);
+        found.entry.line = edit.line;
+        found.entry.position = clamped.position;
+        found.entry.length = clamped.length;
+      } else {
+        const clamped = clampConstantToReportWidth(edit.position, found.entry.literal, pageCols);
+        found.entry.line = edit.line;
+        found.entry.position = clamped.position;
+        found.entry.literal = clamped.literal;
+      }
+      // Batch LL (docs/TASKS.md): moving a field always supplies a
+      // concrete new absolute column (a drag, or a numeric edit) — never
+      // "keep whatever relative offset this had before, just at a new
+      // spot" — so this fixes the field at that absolute column, same as
+      // updateField/updateConstant below.
+      if (found.entry.kind === "field" || found.entry.kind === "constant") found.entry.relativePosition = false;
       return true;
     }
     case "updateField": {
       const found = findEntryById(model, edit.id);
       if (!found || found.entry.kind !== "field") return false;
+      // Batch KK — a length change (resize) is a boundary risk exactly
+      // like a move is; clamp against the record's own report width the
+      // same way.
+      const pageCols = reportWidthCols(model, found.record);
+      const clamped = clampToReportWidth(edit.position, edit.length, pageCols);
       Object.assign(found.entry, {
         name: edit.name,
-        length: edit.length,
+        length: clamped.length,
         dataType: edit.dataType,
         decimalPositions: edit.decimalPositions,
         usage: edit.usage,
         line: edit.line,
-        position: edit.position,
+        position: clamped.position,
+        // Batch LL (docs/TASKS.md): the properties panel's Position input
+        // always sends the RESOLVED absolute column (prtfLayout.js's
+        // resolveLayout already turned a `+n` into a real number for
+        // display — see cell.position there), never the original `+n`
+        // text — so any Save here fixes the field at that absolute
+        // column. This was already happening silently before this
+        // batch's fix (the panel has always round-tripped `cell.position`
+        // this way); now it's an intentional, documented choice instead
+        // of an accidental side effect.
+        relativePosition: false,
       });
       // Batch H (docs/TASKS.md) — "Reference a field" Y/N toggle (position
       // 29 'R'). `edit.reference` is only sent when the toggle itself was
@@ -175,6 +288,12 @@ export function applyEditToModel(model: ParsedSource, edit: WebviewEdit): boolea
     case "updateConstant": {
       const found = findEntryById(model, edit.id);
       if (!found || found.entry.kind !== "constant") return false;
+      // Batch KK — clamp position/literal to the report's own width the
+      // same way move/updateField do, BEFORE the Batch Z empty-Text-means-
+      // no-literal normalization below (an empty literal has nothing to
+      // truncate either way, so ordering doesn't change that case).
+      const pageCols = reportWidthCols(model, found.record);
+      const clamped = clampConstantToReportWidth(edit.position, edit.literal || undefined, pageCols);
       // Batch Z (docs/TASKS.md) fix: an empty Text input used to write
       // literal: "" unconditionally, which — for a system-constant field
       // (DATE/TIME/PAGNBR, no literal at all in real DDS — see prtfWriter.js's
@@ -185,7 +304,7 @@ export function applyEditToModel(model: ParsedSource, edit: WebviewEdit): boolea
       // being undefined in the first place (see prtfParser.ts's constant
       // branch, which only sets .literal when a quoted token is actually
       // present).
-      Object.assign(found.entry, { literal: edit.literal || undefined, line: edit.line, position: edit.position });
+      Object.assign(found.entry, { literal: clamped.literal, line: edit.line, position: clamped.position, relativePosition: false });
       return true;
     }
     case "delete": {
@@ -306,6 +425,11 @@ export function applyEditToModel(model: ParsedSource, edit: WebviewEdit): boolea
     case "addConstant": {
       const record = model.records.find((r) => r.name === edit.recordName);
       if (!record) return false;
+      // Batch KK — a freshly placed field/constant can land off the
+      // report's right edge from a single click exactly the same way a
+      // dragged/resized one can; clamp here too rather than leaving addField/
+      // addConstant as an unguarded gap in the same boundary check.
+      const pageCols = reportWidthCols(model, record);
       // Batch Q (docs/TASKS.md) — the actual point of "copy a field/
       // constant" is that its keywords come along too, not just its
       // position/type. edit.sourceKeywords carries name/params pairs only
@@ -332,6 +456,17 @@ export function applyEditToModel(model: ParsedSource, edit: WebviewEdit): boolea
           sourceLineIndex: -1,
         });
       }
+      // Batch KK — computed once, used by whichever branch below applies.
+      // edit.kind is a shared "addField" | "addConstant" here, so it isn't
+      // narrowed inside these two calls the way it is inside the ternary
+      // branches below — check it explicitly rather than accessing
+      // edit.length/edit.literal directly on the union.
+      const clampedField = clampToReportWidth(edit.position, edit.kind === "addField" ? edit.length : undefined, pageCols);
+      const clampedConstant = clampConstantToReportWidth(
+        edit.position,
+        edit.kind === "addConstant" ? (edit.systemConstantKeyword ? undefined : edit.literal || undefined) : undefined,
+        pageCols
+      );
       const newEntry: FieldEntry | ConstantEntry =
         edit.kind === "addField"
           ? {
@@ -346,12 +481,12 @@ export function applyEditToModel(model: ParsedSource, edit: WebviewEdit): boolea
               // cases, so this keeps their prior hardcoded-false
               // behavior unchanged).
               reference: !!edit.reference,
-              length: edit.length,
+              length: clampedField.length,
               dataType: edit.dataType,
               decimalPositions: edit.decimalPositions,
               usage: edit.usage,
               line: edit.line,
-              position: edit.position,
+              position: clampedField.position,
               conditions: [],
               keywords: copiedKeywords,
             }
@@ -366,9 +501,9 @@ export function applyEditToModel(model: ParsedSource, edit: WebviewEdit): boolea
               // Text field on a plain literal-text add means the same
               // thing a freshly-parsed blank constant would (undefined,
               // not ""), matching the updateConstant fix above.
-              literal: edit.systemConstantKeyword ? undefined : edit.literal || undefined,
+              literal: clampedConstant.literal,
               line: edit.line,
-              position: edit.position,
+              position: clampedConstant.position,
               conditions: [],
               keywords: copiedKeywords,
             };

@@ -124,6 +124,24 @@ export interface FieldEntry extends BaseEntry {
   usage?: string;
   line?: number;
   position?: number;
+  /**
+   * True when this entry's position (columns 42-44) was written as DDS's
+   * `+n` relative-position notation rather than a plain absolute column —
+   * see IBM's RELPOS keyword reference: leaving the line number blank and
+   * giving position a `+n` value (0-99) means "n spaces after the end of
+   * the previous field on this line", resolved for real at CRTPRTF
+   * compile time, not an absolute column. `position` above still holds
+   * just the plain numeric part (the `n`) either way — this flag tells
+   * the writer to re-emit it as `+n` instead of a bare number
+   * (prtfWriter.js's buildPositional) and tells prtfLayout.js's
+   * resolveLayout to resolve it relative to the running cursor column
+   * instead of treating it as already-absolute (see that function's own
+   * comment for why "line left blank" — a documented RELPOS requirement —
+   * guarantees the running cursor is still valid for this entry's line).
+   * Undefined/false for an ordinary absolute position, including every
+   * freshly-added entry.
+   */
+  relativePosition?: boolean;
   conditions: ConditioningIndicator[];
   keywords: Keyword[];
   /**
@@ -156,6 +174,8 @@ export interface ConstantEntry extends BaseEntry {
   literal?: string;
   line?: number;
   position?: number;
+  /** See FieldEntry's own `relativePosition` doc comment — identical meaning here. */
+  relativePosition?: boolean;
   conditions: ConditioningIndicator[];
   keywords: Keyword[];
 }
