@@ -563,7 +563,18 @@ ownership per batch):
       *substitute* font's published metrics, applied as the best available
       proxy for IBM's own FGID-named fonts, not a verified byte-for-byte
       extraction of IBM's own FGID resource data (this tool has no access
-      to that).
+      to that). **Follow-up:** `FONTNAME` (which references an actual
+      TrueType/OpenType font by name, a well-documented public binary
+      format unlike CDEFNT/FNTCHRSET's IBM-internal resource data) now
+      also gets real per-character advance widths — a from-scratch sfnt
+      binary parser (`src/afpTrueTypeMetrics.js`, verified against
+      `fontTools` across the full ASCII range with zero mismatches) reads
+      three real, SIL OFL-licensed substitute fonts vendored at
+      `resources/fonts/` (Cousine/Tinos/PT Sans — see that directory's
+      `NOTICE.md`). Same honesty convention as the AFM tables above:
+      flagged as a real substitute's real data, not a verified match for
+      the exact named font. See `docs/TASKS.md` Batch L's
+      "FONTNAME real advance widths" subsection for the full writeup.
       **`CDEFNT`/`FNTCHRSET`/`FONTNAME` resolution — also now done,** on
       investigation turning out to need a much smaller lift than the
       TTF-fetch-from-a-live-IBM-i direction earlier versions of this note

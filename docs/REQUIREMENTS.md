@@ -224,6 +224,51 @@ previously described it; anything not in the small verified table gets an
 honest note rather than a guess. See `src/afpCodedFontMetrics.js` for the
 full resolution logic and sourcing.
 
+**`FONTNAME` real advance widths — resolved** (see `docs/TASKS.md` Batch
+L's "FONTNAME real advance widths" subsection for the full writeup). A
+`FONTNAME`-referenced font is an ordinary TrueType/OpenType binary — a
+well-documented public format, unlike CDEFNT/FNTCHRSET's IBM-internal
+resource data — so real per-character advance widths for the small set of
+extremely common names `FONTNAME_GENERIC_FALLBACK` already buckets by
+spacing (monospace/serif/sans-serif) are now backed by an actual sfnt
+binary parser (`src/afpTrueTypeMetrics.js`) reading three real,
+permissively-licensed substitute fonts (Cousine/Tinos/PT Sans, vendored at
+`resources/fonts/`), rather than no width data at all. Same honest caveat
+as the AFM tables above: real data, but a substitute font's, not a
+verified match for the exact named font.
+
+**Related research: custom TrueType/OpenType fonts on IBM i (informs the
+above, doesn't change it).** Modern IBM i supports `FONTNAME` referencing
+a TrueType/OpenType font uploaded directly to the IFS — no purchased host
+font package (`5769-FN1`, `5733-B45`) required, unlike the older DBCS
+raster/outline packages. Confirmed via IBM's own documentation and support
+notes:
+- Workflow: generate a spooled file with `DEVTYPE(*AFPDS)`, reference the
+  IFS-resident font by name via `FONTNAME`, print it.
+- If no code page is specified alongside the font, IBM i assumes UTF-16;
+  the font name must match exactly, including case and blanks.
+- **Host Print Transform (HPT) does not support `.otf` fonts with
+  `FONTNAME`** — HPT is TTF-only. `.otf` needs a real PSF/IPDS printer
+  with TrueType/OpenType support to render at all. Worth remembering if a
+  future person reports an `.otf` `FONTNAME` reference "not working" on an
+  HPT-based (non-PSF/IPDS) setup — that's the documented HPT limitation,
+  not a bug in this tool's own DDS parsing/rendering.
+- On genuine PSF/IPDS hardware there's a separate real font-installation
+  process (adding the font to the resource library, updating that
+  library's resource access table, generating an object identifier,
+  setting permissions) — a printer/host-configuration concern, not
+  something DDS source or this tool's own preview needs to model.
+- Why this doesn't change the resolution above: since a `FONTNAME`-
+  referenced TrueType/OpenType font is just an ordinary font file
+  regardless of which upload path put it on the IFS, real metrics for it
+  come from parsing that binary format directly (see
+  `afpTrueTypeMetrics.js`) — not from anything specific to the upload
+  mechanism itself. The moment a live connection can fetch a real font
+  file off a connected IBM i's IFS (still not implemented — see
+  `docs/ROADMAP.md`'s "real AFP font metrics" item), the same parser
+  would read it unmodified, exact FONTNAME match and all, in place of
+  today's bucketed substitute.
+
 ## 10. System-constant fields (Batch Z) — USER/SYSNAME correction
 
 Batch Z (docs/TASKS.md) was filed to cover five keywords together — `DATE`,

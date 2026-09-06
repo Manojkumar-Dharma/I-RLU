@@ -87,7 +87,7 @@ vice versa.
 | I | ~~`UOM` modeling~~ **done elsewhere** (see `i-rlu.unitOfMeasure` setting, `docs/ROADMAP.md`) + file-level SKIPA/SKIPB *AFPDS validation | `SKIPA`, `SKIPB` (validation only) | **Done** (validation landed as part of Batch F — see `prtfEngine.js`'s `validateFileLevelKeywords`) | none |
 | J | ~~Compile command: library/source-file/member picker~~ | n/a (tooling) | **Done** | none |
 | K | Packaging (`.vsix`) | n/a (tooling) | **Done** | ideally after A–I land, but can be prepped early |
-| L | Real AFP font metrics | n/a (data) | Mostly done — FGID identification resolved; proportional widths now use real published Adobe AFM data (metric-compatible substitute fonts, not verified IBM FGID resource extraction); FONTNAME fully resolved, CDEFNT/FNTCHRSET honestly partially resolved (documented prefix + small verified table; full resolution needs a live IBM i, see REQUIREMENTS.md §9) | none |
+| L | Real AFP font metrics | n/a (data) | Mostly done — FGID identification resolved; proportional widths now use real published Adobe AFM data (metric-compatible substitute fonts, not verified IBM FGID resource extraction); FONTNAME fully resolved (name/family/spacing offline, PLUS real per-character advance widths from real vendored substitute TrueType fonts — see "FONTNAME real advance widths" below), CDEFNT/FNTCHRSET honestly partially resolved (documented prefix + small verified table; full resolution needs a live IBM i, see REQUIREMENTS.md §9) | none |
 | M | ~~**Bug fix:** writer emits wrong continuation character when wrapping mid-token~~ | n/a (parser/writer correctness) | **Done** | none |
 | N | ~~`BARCODE` mutual-exclusion validation~~ | `BARCODE` (validation vs. `FONT`, `EDTCDE`, `EDTWRD`, `DATE`, `TIME`, `PAGNBR`, etc.) | **Done** | **C** |
 | O | Real AFP resource rendering (actual pixel content for page segments/overlays) | `PAGSEG`, `OVERLAY` (record-level) | Blocked — needs external resource files, see REQUIREMENTS.md §8 | **E** |
@@ -889,6 +889,91 @@ work needed one small adjustment (the FONTNAME quoting fix above) but was
 otherwise unaffected — it's about letting the user *set* these keywords'
 values through the UI, which is a separate concern from resolving their
 real metrics for rendering.
+
+**[FONTNAME real advance widths — DONE, as follows]:**
+
+At the time the section above was written, `resolveFontName`'s
+family/name/spacing were fully resolved but deliberately carried NO
+per-character advance-width data at all — the investigation that opened
+this batch's CDEFNT/FNTCHRSET/FONTNAME work found nothing downstream
+called `AfpFontMetrics.getAdvanceWidth`-style glyph widths, so there was
+nothing to wire FONTNAME's own widths into. This follow-up adds that
+capability for real, prompted by a direct request to look into it
+alongside investigating IBM i's own custom-TrueType-font-upload feature
+(FONTNAME can reference a font uploaded straight to the IFS, no purchased
+host font package required — see REQUIREMENTS.md for that research).
+
+**Why this is solvable at all despite FONTNAME's named font itself being
+just as inaccessible as CDEFNT/FNTCHRSET's:** a `FONTNAME`-referenced font
+is an ordinary TrueType/OpenType (`.ttf`/`.otf`) file — a well-documented,
+public binary format (unlike CDEFNT/FNTCHRSET's IBM-internal font-resource
+data, which IBM's own documentation says has no universal decode table at
+all). That means real glyph metrics for the *generic idea* of "a TrueType
+font in FONTNAME_GENERIC_FALLBACK's monospace/serif/sans-serif buckets"
+are obtainable from any real font in that category — not this tool
+inventing data, but reading someone else's real font file for real.
+
+**Implementation:**
+- New `src/afpTrueTypeMetrics.js`: a from-scratch sfnt (TrueType/OpenType)
+  binary parser — reads the table directory, `head` (unitsPerEm), `hhea`/
+  `hmtx` (real per-glyph advance widths), and `cmap` (formats 4 and 12,
+  Unicode codepoint → glyph ID). Deliberately scoped to metrics only — no
+  glyph-outline (`glyf`/`CFF`/`loca`) parsing, since advance width is all
+  layout/preview work needs and outline parsing is substantially more
+  involved for no payoff here. Verified correct by cross-checking its
+  output against `fontTools` (the industry-standard Python font library)
+  across the full ASCII printable range (32-126) on three real fonts
+  during development — **zero mismatches**, not spot-checked on a couple
+  of characters and assumed correct elsewhere.
+- Three real, unmodified, SIL OFL 1.1-licensed fonts vendored at
+  `resources/fonts/` (a shipped runtime location — confirmed present in
+  `vsce ls`'s packaged-file list, not just a test fixture) — sourced from
+  the official `google/fonts` repository: **Cousine** (Courier New
+  substitute, monospace — purpose-built for this by the same Ascender/
+  Google lineage as the well-known "croscore" fonts), **Tinos** (Times New
+  Roman substitute, serif — same lineage), and **PT Sans** (fills the
+  sans-serif bucket, but honestly NOT claimed as an Arial-metric match —
+  the real Arial-compatible croscore font, Arimo, is only distributed as a
+  variable font in the current `google/fonts` repo, which a fixed-
+  per-glyph-width model can't read). Full provenance, commit hash, and
+  license text in `resources/fonts/NOTICE.md`.
+- `src/afpCodedFontMetrics.js` gained `getAdvanceWidth(name, ch)`, mapping
+  a FONTNAME value through the same `FONTNAME_GENERIC_FALLBACK` bucket
+  `resolveFontName` already uses, to a lazily-parsed-and-cached vendored
+  substitute font, returning a width in the same "1.0 == one character
+  cell" normalized units `afpFontMetrics.js`'s own `getAdvanceWidth` uses —
+  computed as a REAL average over that font's own ASCII-range widths
+  (not a hardcoded constant like `afpFontMetrics.js`'s
+  `PROPORTIONAL_AVG_WIDTH`, since a real font file is available to compute
+  it from directly here). Returns `undefined` — never a guessed
+  approximation — for a name outside the three known buckets, matching
+  this project's existing honesty convention.
+- `resolveFontName`'s own `isPlaceholderMetrics`/`resolutionNote` updated
+  for known names: previously `false`/`undefined` (reasoned as "the
+  family IS the real font, no substitution happening"), now `true` with a
+  note explicitly naming which substitute font and pointing at
+  `resources/fonts/NOTICE.md` — because real substitute advance-width data
+  is now attached behind the scenes, and this project's own precedent
+  (`afpFontMetrics.js`'s identical flag for its AFM-substitute
+  proportional widths) is to flag that honestly rather than let a
+  substitute's data ride under an unqualified "not a placeholder" label.
+  Updated `test/afpCodedFontMetrics.test.ts`'s existing assertions
+  in place to match, with the reasoning for the change documented
+  in the test file itself, not just silently flipped.
+- **Tests:** `test/afpTrueTypeMetrics.test.ts` (7 tests) — parses all
+  three real vendored fonts and asserts concrete values (including the
+  "every printable ASCII character resolves to a defined width" and
+  "an unmapped Private-Use-Area codepoint returns undefined" cases).
+  `test/afpCodedFontMetrics.test.ts` gained 4 new `getAdvanceWidth` tests
+  plus updates to the pre-existing `resolveFontName` assertions above.
+- Full suite: 375 tests, all passing on a clean install (`rm -rf
+  node_modules out && npm install && npm test`); `tsc --noEmit` clean;
+  `npx vsce ls` confirmed all five `resources/fonts/` files (three `.ttf`,
+  `NOTICE.md`, `LICENSE-OFL-1.1.txt`) are included in the packaged
+  extension, and a direct `require()` against the real compiled
+  `out/src/afpCodedFontMetrics.js` (not just the TypeScript source)
+  confirmed the `../../resources/fonts` runtime path resolves correctly
+  from its actual on-disk location.
 
 ### Batch M — Fix writer's continuation-character bug [DONE]
 **Found by:** `test/prtfFixtures.test.ts`'s round-trip test against
