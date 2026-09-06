@@ -228,6 +228,14 @@ export function parseSource(text: string): ParsedSource {
     const length = lengthRaw ? parseInt(lengthRaw, 10) : undefined;
     const decimalPositions = decRaw ? parseInt(decRaw, 10) : undefined;
     const lineNo = lineRaw ? parseInt(lineRaw, 10) : undefined;
+    // DDS's RELPOS-style relative positioning: a leading '+' in the
+    // position field (columns 42-44) means "n spaces after the end of the
+    // previous field on this line" rather than an absolute column — see
+    // FieldEntry's own `relativePosition` doc comment (prtfModel.ts) for
+    // the full citation and how this flows through to the writer/layout.
+    // parseInt itself handles the leading '+' fine (parseInt("+2", 10) ===
+    // 2) — the flag is the only thing that would otherwise be lost.
+    const relativePosition = posRaw.startsWith("+");
     const position = posRaw ? parseInt(posRaw, 10) : undefined;
 
     let target: Keyword[];
@@ -309,6 +317,7 @@ export function parseSource(text: string): ParsedSource {
         usage,
         line: lineNo,
         position,
+        relativePosition,
         conditions,
         keywords: [],
         formType: col(line, 6),
@@ -341,6 +350,7 @@ export function parseSource(text: string): ParsedSource {
         sourceLineIndex: idx,
         line: lineNo,
         position,
+        relativePosition,
         conditions,
         keywords: [],
         formType: col(line, 6),

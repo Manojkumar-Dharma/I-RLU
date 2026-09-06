@@ -612,11 +612,14 @@ filed from reviewing two real-world sample PRTF files supplied for
 keyword-usage reference: the column-6 form-type/Batch-X interaction above
 (AA, done), a constant literal not recognized when preceded by a keyword
 (BB, done), and DDS's `+n` relative-position notation being silently
-absolutized (LL, open — renumbered twice over two concurrent-session
+absolutized (LL, done — renumbered twice over two concurrent-session
 letter collisions, first CC→DD, then DD→LL, as other sessions' own work
 claimed each letter first; see the git history around this commit if the
 renaming itself is ever confusing) — see `docs/TASKS.md`'s Batch AA/BB/LL
-detail sections. Summary of everything else (see TASKS.md for full detail,
+sections. Batch LL is also done as of this session — `relativePosition`
+threaded through the model/parser/writer, plus `resolveLayout` resolving
+a `+n` field's real preview column against the running cursor.
+Summary of everything else (see TASKS.md for full detail,
 acceptance criteria, and file-level
 ownership per batch):
 

@@ -113,7 +113,8 @@ vice versa.
 | II | Duplicate/clone an entire record format (all its fields/constants/keywords in one action) — Batch Q covers a single field, Batch P covers add/rename/delete/reorder of record formats, neither clones a whole one | n/a (tooling/UI, not a keyword) | **Done** | none |
 | JJ | Multi-select fields for bulk move/copy/delete — real RLU's F14/F15 (Copy Fields/Move Fields) operate on several selected fields at once; today's click-to-place/drag is one-field-at-a-time only | n/a (webview UI, not a keyword) | In progress | **Q** (bulk version of its single-field copy) |
 | KK | Boundary shift-and-truncate (real RLU's `LT`/`RT`) — moving/resizing a field past the report's right edge has no validation at all today; a field can end up positioned off-page silently | n/a (layout correctness, not a keyword) | **Done** | **GG** (done) |
-| LL | **Bug fix:** a field's `+n` relative-position notation (DDS positions 42-44) is read by `parseInt` as a plain absolute number, silently discarding the "this is relative, not absolute" semantic — round-tripping such a field relocates it to a fixed, usually-wrong absolute column | n/a (parser/model/writer correctness, `src/prtfParser.ts`/`src/prtfModel.ts`/`src/prtfWriter.js`) | Open | none |
+| LL | **Bug fix:** a field's `+n` relative-position notation (DDS positions 42-44) is read by `parseInt` as a plain absolute number, silently discarding the "this is relative, not absolute" semantic — round-tripping such a field relocates it to a fixed, usually-wrong absolute column | n/a (parser/model/writer correctness, `src/prtfParser.ts`/`src/prtfModel.ts`/`src/prtfWriter.js`) | **Done** | none |
+
 
 ## Batch detail
 
@@ -458,10 +459,14 @@ vice versa.
 - All three helpers exported directly for isolated unit testing, same convention Batch GG's `detectFieldOverlaps` already established.
 - Key files: `src/prtfLayout.js` (`resolvePageSize` exported), `src/prtfEdits.ts`, `test/prtfBatchKK.test.ts` (22 tests: pure `clampToReportWidth`/`clampConstantToReportWidth`/`reportWidthCols` unit tests covering within-bounds/right-edge-truncation/left-edge-clamp/degenerate/undefined-length cases, plus `applyEditToModel` integration tests for move/resize/add on both fields and constants). Full suite now 468, all passing.
 
-### Batch LL — Bug fix: DDS's `+n` relative-position notation is silently absolutized [OPEN]
-- Found during Batch AA's own real-world round-trip testing against `SCSPRT1.prtf` — a field's `+2` position (DDS positions 42-44, meaning "2 spaces after the previous field ends" per IBM's `RELPOS` reference) round-tripped as a plain absolute `2`.
-- Root cause: `prtfParser.ts` reads the position field via `sub(line, 42, 44).trim()` then `parseInt(posRaw, 10)` — `parseInt("+2", 10)` returns `2`, silently discarding the relative-vs-absolute distinction. `buildPositional`/`padLeftNum` then write that number back as a plain absolute value with no `+`, relocating the field on any round-trip even without the person touching its line/position.
-- What to do: thread a `relativePosition?: boolean` flag through `FieldEntry`/`ConstantEntry` (`src/prtfModel.ts`), captured by the parser instead of discarding the sign, re-emitted by `buildPositional`/`padLeftNum` as `+n` when set. Confirm against IBM's reference whether the *line* number field (39-41) allows the same `+n` marker — don't assume position-only. Check what the "move field" UI in `media/webviewClient.js` should do with this (does dragging silently convert to absolute — check I-SDA's handling of the same DDS convention on display files first). Add round-trip tests using the real-world fixtures (`scsprt1-realworld.prtf`/`afpprt1-realworld.prtf`, both already contain real `+n` fields), since those are what caught this.
+### Batch LL — Bug fix: DDS's `+n` relative-position notation is silently absolutized [DONE]
+- Found during Batch AA's own real-world round-trip testing against `scsprt1-realworld.prtf` — a field's `+2` position round-tripped as a plain absolute `2`.
+- Root cause: `parseInt("+2", 10)` returns `2`, silently discarding the relative-vs-absolute distinction; the writer then re-emitted a plain absolute value.
+- Confirmed against IBM's RELPOS reference: the `+n` marker is position-only (42-44) — the line number field (39-41) must be left BLANK whenever `+n` is used, never itself a relative marker.
+- Fixed: `FieldEntry`/`ConstantEntry` gained `relativePosition?: boolean` (`src/prtfModel.ts`); the parser captures it instead of discarding the sign; `buildPositional` gained a `padLeftRelative` counterpart to `padLeftNum`, re-emitting `+n` right-justified in the 3-column field when set.
+- `resolveLayout` (`src/prtfLayout.js`) now resolves a relative field's real preview column as `cursorCol + n` instead of treating `n` as already-absolute — correct because RELPOS's own "line must be blank" rule guarantees the running cursor is still valid for that field's line. Approximates (doesn't fully replicate) IBM's own compile-time algorithm, which additionally accounts for DBCS/font-width edge cases.
+- `applyEditToModel`'s `move`/`updateField`/`updateConstant` (`src/prtfEdits.ts`) now clear `relativePosition` whenever a position is written back — the properties panel's Position input always shows/sends the *resolved* absolute column (never the original `+n` text), so any Save already silently fixed a relative field at an absolute column before this fix too; now it's an intentional, documented choice instead of an accidental side effect.
+- Key files: `src/prtfModel.ts`, `src/prtfParser.ts`, `src/prtfWriter.js`, `src/prtfLayout.js`, `src/prtfEdits.ts`, `test/prtfBatchLL.test.ts` (8 tests, including two against the real-world fixture files).
 
 ## Adding a new batch
 

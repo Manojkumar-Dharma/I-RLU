@@ -653,7 +653,20 @@ function resolveLayout(model, recordName, indicatorState, uom) {
     if (spaceB) cursorLine += numericParam(spaceB, 0);
 
     const line = entry.line || cursorLine;
-    const position = entry.position || cursorCol;
+    // Batch LL (docs/TASKS.md) — DDS's RELPOS-style `+n` relative
+    // position: entry.position holds just the plain `n` in this case (see
+    // FieldEntry's own relativePosition doc comment, prtfModel.ts), so it
+    // needs to be resolved against the running cursor column — cursorCol
+    // is guaranteed to already reflect the end of the previous field ON
+    // THIS SAME LINE, because RELPOS requires the line number to be left
+    // blank whenever +n is used (IBM's own RELPOS reference), which is
+    // exactly what makes `entry.line || cursorLine` above resolve to
+    // cursorLine rather than some unrelated line. This mirrors (doesn't
+    // fully replicate) IBM's own compile-time RELPOS resolution — real
+    // CRTPRTF also accounts for DBCS/font-width edge cases this doesn't
+    // attempt to model; see IBM's RELPOS reference for the full case
+    // table. An ordinary absolute position is unaffected.
+    const position = entry.relativePosition ? cursorCol + (entry.position || 0) : entry.position || cursorCol;
 
     // Batch Z (docs/TASKS.md) — resolved once per constant so both `text`
     // and `length` below agree on the same placeholder (a system-constant
@@ -682,6 +695,16 @@ function resolveLayout(model, recordName, indicatorState, uom) {
       text: entry.kind === "constant" ? entry.literal || constantPlaceholder || "" : entry.name,
       line,
       position,
+      // Batch LL (docs/TASKS.md) — flags that `position` above is a
+      // RESOLVED value for a RELPOS `+n` entry, not this entry's own
+      // literal absolute column. Surfaced so the webview's properties
+      // panel can note that Saving will fix this field at that resolved
+      // absolute column (see prtfEdits.ts's updateField/updateConstant/
+      // move — every Save already round-trips the panel's numeric
+      // Position field straight back into the model, which is why this
+      // was silently happening even before this batch's fix; now it's an
+      // intentional, flagged choice rather than an accidental one).
+      relativePosition: !!entry.relativePosition,
       length,
       // Extra properties so the webview's edit panel can prefill a form
       // without a second round trip to the extension host.

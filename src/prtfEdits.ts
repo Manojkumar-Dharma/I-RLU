@@ -232,6 +232,12 @@ export function applyEditToModel(model: ParsedSource, edit: WebviewEdit): boolea
         found.entry.position = clamped.position;
         found.entry.literal = clamped.literal;
       }
+      // Batch LL (docs/TASKS.md): moving a field always supplies a
+      // concrete new absolute column (a drag, or a numeric edit) — never
+      // "keep whatever relative offset this had before, just at a new
+      // spot" — so this fixes the field at that absolute column, same as
+      // updateField/updateConstant below.
+      if (found.entry.kind === "field" || found.entry.kind === "constant") found.entry.relativePosition = false;
       return true;
     }
     case "updateField": {
@@ -250,6 +256,16 @@ export function applyEditToModel(model: ParsedSource, edit: WebviewEdit): boolea
         usage: edit.usage,
         line: edit.line,
         position: clamped.position,
+        // Batch LL (docs/TASKS.md): the properties panel's Position input
+        // always sends the RESOLVED absolute column (prtfLayout.js's
+        // resolveLayout already turned a `+n` into a real number for
+        // display — see cell.position there), never the original `+n`
+        // text — so any Save here fixes the field at that absolute
+        // column. This was already happening silently before this
+        // batch's fix (the panel has always round-tripped `cell.position`
+        // this way); now it's an intentional, documented choice instead
+        // of an accidental side effect.
+        relativePosition: false,
       });
       // Batch H (docs/TASKS.md) — "Reference a field" Y/N toggle (position
       // 29 'R'). `edit.reference` is only sent when the toggle itself was
@@ -288,7 +304,7 @@ export function applyEditToModel(model: ParsedSource, edit: WebviewEdit): boolea
       // being undefined in the first place (see prtfParser.ts's constant
       // branch, which only sets .literal when a quoted token is actually
       // present).
-      Object.assign(found.entry, { literal: clamped.literal, line: edit.line, position: clamped.position });
+      Object.assign(found.entry, { literal: clamped.literal, line: edit.line, position: clamped.position, relativePosition: false });
       return true;
     }
     case "delete": {
