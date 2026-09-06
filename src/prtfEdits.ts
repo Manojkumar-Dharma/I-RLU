@@ -732,14 +732,33 @@ export function applyEditToModel(model: ParsedSource, edit: WebviewEdit): boolea
     // Batch JJ — bulk move/delete/copy for a multi-selected set of
     // fields/constants (see webviewProtocol.ts's comment on these three
     // edit kinds for the delta-based design and the same-record-only
-    // bulkCopy scope boundary).
+    // bulkCopy scope boundary). bulkMove/bulkCopy both apply the same
+    // Batch KK report-width clamp and Batch LL relativePosition=false fix
+    // "move" and "updateConstant" already apply — a bulk drag/copy is
+    // just as capable of landing a field/constant off-page, or of
+    // silently reinterpreting a `+n` relative field as if it were still
+    // relative after a drag, as a single move is.
     case "bulkMove": {
       let changed = false;
       for (const id of edit.ids) {
         const found = findEntryById(model, id);
         if (!found) continue; // stale id (e.g. already deleted by a prior edit in the same batch) — skip, don't fail the whole bulk operation
-        found.entry.line = (found.entry.line || 0) + edit.deltaLine;
-        found.entry.position = (found.entry.position || 0) + edit.deltaPosition;
+        const pageCols = reportWidthCols(model, found.record);
+        const newLine = (found.entry.line || 0) + edit.deltaLine;
+        const newPosition = (found.entry.position || 0) + edit.deltaPosition;
+        if (found.entry.kind === "field") {
+          const clamped = clampToReportWidth(newPosition, found.entry.length, pageCols);
+          found.entry.line = newLine;
+          found.entry.position = clamped.position;
+          found.entry.length = clamped.length;
+          found.entry.relativePosition = false;
+        } else {
+          const clamped = clampConstantToReportWidth(newPosition, found.entry.literal, pageCols);
+          found.entry.line = newLine;
+          found.entry.position = clamped.position;
+          found.entry.literal = clamped.literal;
+          found.entry.relativePosition = false;
+        }
         changed = true;
       }
       return changed;
@@ -759,6 +778,7 @@ export function applyEditToModel(model: ParsedSource, edit: WebviewEdit): boolea
     case "bulkCopy": {
       const record = model.records.find((r) => r.name === edit.recordName);
       if (!record) return false;
+      const pageCols = reportWidthCols(model, record);
       const nextId = makeIdGenerator(model);
       let changed = false;
       for (const id of edit.ids) {
@@ -785,18 +805,24 @@ export function applyEditToModel(model: ParsedSource, edit: WebviewEdit): boolea
         }));
         let clone: FieldEntry | ConstantEntry;
         if (src.kind === "field") {
+          const clamped = clampToReportWidth(newPosition, src.length, pageCols);
           clone = {
             kind: "field",
             id: nextId(),
             sourceLineIndex: -1,
             name: nextAvailableFieldName(record, src.name),
             reference: src.reference,
-            length: src.length,
+            length: clamped.length,
             dataType: src.dataType,
             decimalPositions: src.decimalPositions,
             usage: src.usage,
             line: newLine,
-            position: newPosition,
+            position: clamped.position,
+            // Batch LL — a copy lands at a concrete new absolute column
+            // (the source's own column plus the delta), same reasoning as
+            // "move"/"updateField" fixing relativePosition to false: this
+            // is never "keep whatever relative offset the SOURCE had".
+            relativePosition: false,
             // Batch JJ v1: the source's OWN entry-level conditioning
             // (unrelated to the keyword-level conditions cloned above)
             // isn't carried over, same limitation Batch Q's single-field
@@ -807,13 +833,15 @@ export function applyEditToModel(model: ParsedSource, edit: WebviewEdit): boolea
             keywords: clonedKeywords,
           };
         } else {
+          const clamped = clampConstantToReportWidth(newPosition, src.literal, pageCols);
           clone = {
             kind: "constant",
             id: nextId(),
             sourceLineIndex: -1,
-            literal: src.literal,
+            literal: clamped.literal,
             line: newLine,
-            position: newPosition,
+            position: clamped.position,
+            relativePosition: false,
             conditions: [],
             keywords: clonedKeywords,
           };

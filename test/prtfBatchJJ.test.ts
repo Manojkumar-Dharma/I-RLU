@@ -111,6 +111,46 @@ test("applyEditToModel: bulkMove leaves QTY (not in ids) untouched", () => {
   assert.equal(qty.position, 25);
 });
 
+// Batch KK/LL integration — bulkMove/bulkCopy must apply the SAME
+// report-width boundary clamp and relativePosition=false fix the single
+// "move"/"updateConstant" edit kinds already apply (Batch KK/LL landed on
+// origin/main while this batch was in progress; see this file's own
+// bulkMove/bulkCopy comments in src/prtfEdits.ts for why a bulk drag/copy
+// is just as capable of pushing a field off-page, or of stranding a
+// stale `relativePosition: true`, as a single move already was before
+// those two batches fixed it).
+
+test("applyEditToModel: bulkMove clamps a field's length when the delta pushes it past the report's right edge (PAGSIZE(66 132) -> pageCols 132)", () => {
+  const model = buildModel();
+  const custname = findByName(model, "CUSTNAME"); // length 30, starts at position 10
+  const changed = applyEditToModel(model, { kind: "bulkMove", ids: [custname.id], deltaLine: 0, deltaPosition: 100 });
+  assert.equal(changed, true);
+  assert.equal(custname.position, 110);
+  assert.equal(custname.length, 23); // 132 - 110 + 1
+});
+
+test("applyEditToModel: bulkMove sets relativePosition to false on a moved field", () => {
+  const model = buildModel();
+  const custname = findByName(model, "CUSTNAME");
+  (custname as any).relativePosition = true; // simulate a field that was parsed with a `+n` position
+  applyEditToModel(model, { kind: "bulkMove", ids: [custname.id], deltaLine: 0, deltaPosition: 1 });
+  assert.equal(custname.relativePosition, false);
+});
+
+test("applyEditToModel: bulkMove truncates a constant's literal when the delta pushes it past the report's right edge", () => {
+  const model = buildModel();
+  const constant = findConstant(model); // 'Total:' (6 chars) at position 10
+  applyEditToModel(model, { kind: "bulkMove", ids: [constant.id], deltaLine: 0, deltaPosition: 125 }); // -> position 135, past pageCols 132
+  // clampConstantToReportWidth only floors position to >= 1 (unlike
+  // clampToReportWidth's field version, it does NOT clamp position DOWN
+  // to pageCols) — maxLen goes to 0 once position > pageCols, so the
+  // literal is truncated to empty rather than the position being pulled
+  // back in bounds. Matches clampConstantToReportWidth's own documented
+  // behavior (src/prtfEdits.ts).
+  assert.equal((constant as any).position, 135);
+  assert.equal((constant as any).literal, "");
+});
+
 // --- bulkDelete -----------------------------------------------------------
 
 test("applyEditToModel: bulkDelete removes every id from both record.fields and model.sequence", () => {
@@ -230,6 +270,28 @@ test("applyEditToModel: bulkCopy silently skips an id belonging to a DIFFERENT r
   const footerFieldCount = footer.fields.filter((f) => f.kind === "field").length;
   assert.equal(footerFieldCount, 1);
   assert.equal(total.line, 1); // untouched
+});
+
+test("applyEditToModel: bulkCopy clamps the clone's length when the delta pushes it past the report's right edge", () => {
+  const model = buildModel();
+  const header = model.records.find((r) => r.name === "HEADER")!;
+  const custname = findByName(model, "CUSTNAME"); // length 30, starts at position 10
+  applyEditToModel(model, { kind: "bulkCopy", recordName: "HEADER", ids: [custname.id], deltaLine: 1, deltaPosition: 100 });
+  const clone = header.fields.find((f): f is FieldEntry => f.kind === "field" && f !== custname && f.name.startsWith("CUSTNAME"))!;
+  assert.equal(clone.position, 110);
+  assert.equal(clone.length, 23); // 132 - 110 + 1
+});
+
+test("applyEditToModel: bulkCopy sets relativePosition to false on the clone even when the source was relative", () => {
+  const model = buildModel();
+  const header = model.records.find((r) => r.name === "HEADER")!;
+  const custname = findByName(model, "CUSTNAME");
+  (custname as any).relativePosition = true; // simulate a source field parsed with a `+n` position
+  applyEditToModel(model, { kind: "bulkCopy", recordName: "HEADER", ids: [custname.id], deltaLine: 1, deltaPosition: 1 });
+  const clone = header.fields.find((f): f is FieldEntry => f.kind === "field" && f !== custname && f.name.startsWith("CUSTNAME"))!;
+  assert.equal(clone.relativePosition, false);
+  // The SOURCE's own relativePosition is untouched by copying it.
+  assert.equal((custname as any).relativePosition, true);
 });
 
 test("applyEditToModel: bulkCopy on an unknown recordName returns false", () => {
