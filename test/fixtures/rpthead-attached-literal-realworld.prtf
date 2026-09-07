@@ -1,0 +1,16 @@
+     A          R RPTHEAD
+     A                                    32
+     A                                      'Customer Aging Report'
+     A          R RPTCOLHD
+     A                                      SPACEB(001)
+     A                                     3
+     A                                      'Cust ID'
+     A                                   +10
+     A                                      'Customer Name'
+     A                                   +32
+     A                                      'Outstanding Balance'
+     A          R RPTDETAIL
+     A                                      SPACEB(001)
+     A            R_CUST         7S 0O     3
+     A            R_NAME        30A  O   +10
+     A            R_BAL         11S 2O   +15

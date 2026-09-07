@@ -546,3 +546,125 @@ test("Batch BB: the real-world SCSPRT1 SPACEB(1) 'CUSTOMER MASTER LISTING'/'TIME
   assert.ok(literals.includes("CUSTOMER MASTER LISTING"), "expected the keyword-preceded literal to be recognized");
   assert.ok(literals.includes("TIME:"), "expected the keyword-preceded 'TIME:' literal to be recognized");
 });
+
+// Batch MM — Bug fix: a constant's own literal is frequently split onto its
+// own physical "attached keyword" continuation line in real-world PRTF
+// source — a line carrying just LINE/POSITION (which, having no name
+// either, is what actually creates the constant), followed immediately by
+// a line with EVERY positional column blank except the keyword area,
+// carrying nothing but the quoted literal:
+//   A                    32
+//   A                      'Customer Aging Report'
+// Before this fix, `isAttachedKeywordLine`'s branch in src/prtfParser.ts
+// always pushed a bare (nameless) token straight onto the owning entry's
+// `keywords` — correct for a genuine additional keyword (e.g. a second
+// COLOR()), but for a still-literal-less constant this left
+// `entry.literal` permanently undefined. prtfLayout.js's `resolveLayout`
+// renders a constant's cell text as `entry.literal || constantPlaceholder
+// || ""` (see its own comment), so the field silently rendered as an
+// EMPTY cell with no error anywhere — reported directly against the
+// exact fixture reproduced in
+// test/fixtures/rpthead-attached-literal-realworld.prtf (RPTHEAD/
+// RPTCOLHD rendering empty).
+
+test("Batch MM: a constant literal on its own attached-keyword line (position-only header line, literal-only line) is recognized", () => {
+  const rLine = padR("", 5) + " " + " " + padL("", 3) + padL("", 3) + padL("", 3) + "R" + " " + padR("TESTREC", 10);
+  const posOnlyLine = buildBatchBbLine({ pos: "32", kw: "" }); // creates the constant: no name, position 32, no literal yet
+  const literalOnlyLine = buildBatchBbLine({ kw: "'Customer Aging Report'" }); // attached line: every positional column blank, just the literal
+  const source = buildBatchBbSource(rLine.replace(/\s+$/, ""), [posOnlyLine, literalOnlyLine]);
+
+  const model = parseSource(source);
+  const record = model.records.find((r) => r.name === "TESTREC")!;
+  assert.equal(record.fields.length, 1, "the position-only line and the literal-only line together should form exactly ONE constant, not two entries");
+  const constant = record.fields[0] as any;
+  assert.equal(constant.kind, "constant");
+  assert.equal(constant.position, 32);
+  assert.equal(constant.literal, "Customer Aging Report");
+  assert.deepEqual(constant.keywords, [], "the literal token must NOT also be left behind as an ordinary nameless keyword");
+});
+
+test("Batch MM: an attached-keyword line still behaves as a plain extra-keyword attachment when the owner already has a literal", () => {
+  // Guards against over-fixing: a SECOND bare-quoted token attached to a
+  // constant that already has a literal (not expected in real DDS, and
+  // not what this fix is for) must NOT silently overwrite the first
+  // literal — it's left as an ordinary keyword instead, same as any other
+  // unrecognized attached content would be.
+  const rLine = padR("", 5) + " " + " " + padL("", 3) + padL("", 3) + padL("", 3) + "R" + " " + padR("TESTREC", 10);
+  const literalLine = buildBatchBbLine({ pos: "5", kw: "'First'" });
+  const attachedLine = buildBatchBbLine({ kw: "'Second'" });
+  const source = buildBatchBbSource(rLine.replace(/\s+$/, ""), [literalLine, attachedLine]);
+
+  const model = parseSource(source);
+  const record = model.records.find((r) => r.name === "TESTREC")!;
+  const constant = record.fields[0] as any;
+  assert.equal(constant.literal, "First");
+  assert.deepEqual(
+    constant.keywords.map((k: any) => k.raw),
+    ["'Second'"]
+  );
+});
+
+test("Batch MM: an attached-keyword line targeting a FIELD (not a constant) is unaffected — an ordinary extra keyword, same as before this fix", () => {
+  const rLine = padR("", 5) + " " + " " + padL("", 3) + padL("", 3) + padL("", 3) + "R" + " " + padR("TESTREC", 10);
+  let fieldLine = "";
+  fieldLine += padR("", 5) + " " + " " + padL("", 3) + padL("", 3) + padL("", 3);
+  fieldLine += " " + " " + padR("CUSTNAME", 10) + " " + padL("30", 5) + "A" + padL("", 2) + " " + padL("1", 3) + padL("5", 3);
+  const attachedLine = buildBatchBbLine({ kw: "COLOR(*BLU)" });
+  const source = buildBatchBbSource(rLine.replace(/\s+$/, "") + "\n" + fieldLine.replace(/\s+$/, ""), [attachedLine]);
+
+  const model = parseSource(source);
+  const record = model.records.find((r) => r.name === "TESTREC")!;
+  const field = record.fields.find((f) => f.kind === "field") as any;
+  assert.ok(field, "expected CUSTNAME field to be parsed");
+  assert.deepEqual(
+    field.keywords.map((k: any) => k.raw),
+    ["COLOR(*BLU)"]
+  );
+});
+
+test("Batch MM: round trip — regenerate then reparse preserves the literal and produces the same result as a single-line constant", () => {
+  const rLine = padR("", 5) + " " + " " + padL("", 3) + padL("", 3) + padL("", 3) + "R" + " " + padR("TESTREC", 10);
+  const posOnlyLine = buildBatchBbLine({ pos: "10", kw: "" });
+  const literalOnlyLine = buildBatchBbLine({ kw: "'Report Title'" });
+  const source = buildBatchBbSource(rLine.replace(/\s+$/, ""), [posOnlyLine, literalOnlyLine]);
+
+  const model = parseSource(source);
+  const regenerated = regenerateSource(model);
+  const reparsed = parseSource(regenerated);
+  const reparsedConstant = reparsed.records.find((r) => r.name === "TESTREC")!.fields[0] as any;
+  assert.equal(reparsedConstant.literal, "Report Title");
+  assert.equal(reparsedConstant.position, 10);
+});
+
+test("Batch MM: the exact reported real-world fixture — RPTHEAD/RPTCOLHD's constants all resolve non-empty literals", () => {
+  const fixturePathRealWorld = path.join(__dirname, "fixtures", "rpthead-attached-literal-realworld.prtf");
+  const source = fs.readFileSync(fixturePathRealWorld, "utf8");
+  const model = parseSource(source);
+
+  const rptHead = model.records.find((r) => r.name === "RPTHEAD")!;
+  assert.equal(rptHead.fields.length, 1);
+  assert.equal((rptHead.fields[0] as any).literal, "Customer Aging Report");
+
+  const rptColHd = model.records.find((r) => r.name === "RPTCOLHD")!;
+  assert.equal(rptColHd.fields.length, 3);
+  assert.deepEqual(
+    rptColHd.fields.map((f: any) => f.literal),
+    ["Cust ID", "Customer Name", "Outstanding Balance"]
+  );
+  // SPACEB(001) belongs to the RECORD (no field/constant existed yet when
+  // that attached-keyword line was seen), not to the first constant.
+  assert.deepEqual(
+    rptColHd.keywords.map((k: any) => k.raw),
+    ["SPACEB(001)"]
+  );
+
+  // RPTDETAIL's named fields (R_CUST/R_NAME/R_BAL) were never affected by
+  // this bug (they carry their own name, so isAttachedKeywordLine never
+  // applied to them) — confirms the fix didn't touch that path.
+  const rptDetail = model.records.find((r) => r.name === "RPTDETAIL")!;
+  assert.deepEqual(
+    rptDetail.fields.map((f: any) => f.name),
+    ["R_CUST", "R_NAME", "R_BAL"]
+  );
+});
+

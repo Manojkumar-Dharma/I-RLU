@@ -111,6 +111,31 @@ function splitKeywords(text: string): { name: string; params: string; raw: strin
   return tokens;
 }
 
+/**
+ * Pulls the first bare (nameless) quoted token — a constant's own literal
+ * text — out of an already-tokenized keyword-area list, returning the
+ * extracted literal (with doubled single-quotes unescaped, same as any
+ * other DDS literal) and the remaining tokens' raw text rejoined for
+ * ordinary keyword parsing, or `null` if no bare token is present. Shared
+ * by both the "line that creates a new constant" path and the "attached
+ * keyword line targeting an already-created, still-literal-less constant"
+ * path below — a constant's literal is legal DDS anywhere among its
+ * keywords, not only on its own header line (see Batch BB's own
+ * same-line version of this same "literal not just first" fix).
+ */
+function extractLiteralFromTokens(kwTokens: { name: string; params: string; raw: string }[]): { literal: string; remainingRaw: string } | null {
+  const literalTokenIndex = kwTokens.findIndex((tok) => tok.name === "");
+  if (literalTokenIndex === -1) return null;
+  const literalTok = kwTokens[literalTokenIndex];
+  return {
+    literal: literalTok.params.slice(1, -1).replace(/''/g, "'"),
+    remainingRaw: kwTokens
+      .filter((_tok, i) => i !== literalTokenIndex)
+      .map((tok) => tok.raw)
+      .join(" "),
+  };
+}
+
 export function parseSource(text: string): ParsedSource {
   const lineEnding: "\n" | "\r\n" = text.includes("\r\n") ? "\r\n" : "\n";
   const rawLines = text.split(/\r\n|\n/);
@@ -331,14 +356,40 @@ export function parseSource(text: string): ParsedSource {
       target = owner.keywords;
       entry = owner;
       const lineConditions = conditions.length ? conditions : undefined;
+      // Root-cause fix (reported: RPTHEAD/RPTCOLHD-style records rendering
+      // with empty constant text): a constant's own literal is very
+      // commonly split across two physical lines in real-world PRTF
+      // source — a "header" line carrying just LINE/POSITION (which,
+      // having no name either, creates the constant itself, below), then
+      // an attached-keyword-only line carrying nothing but the quoted
+      // literal, e.g.:
+      //   A                    32
+      //   A                      'Customer Aging Report'
+      // Before this fix, an attached-keyword line's tokens were always
+      // pushed straight onto `owner.keywords` (via `splitKeywords`
+      // further down) with no literal-extraction at all — fine for a
+      // genuine additional keyword like a second COLOR(), but for a
+      // still-literal-less constant it left `owner.literal` permanently
+      // undefined, and prtfLayout.js's `resolveLayout` renders a
+      // constant's cell text as `entry.literal || constantPlaceholder ||
+      // ""` (see its own comment) — so the field just rendered as an
+      // empty cell with no visible error anywhere. Only applies when the
+      // owner is a constant that doesn't already have a literal (a
+      // constant only ever has ONE literal — a second bare-quoted token
+      // showing up on a later attached line is not expected in real DDS
+      // and is left as an ordinary keyword rather than silently
+      // overwriting the first).
+      const extraction = owner.kind === "constant" && owner.literal === undefined ? extractLiteralFromTokens(splitKeywords(kwText)) : null;
+      const kwTextForAttached = extraction ? extraction.remainingRaw : kwText;
+      if (extraction) (owner as ConstantEntry).literal = extraction.literal;
       if (continues) {
         pendingKeywordTarget = target;
-        pendingKeywordText = kwText;
+        pendingKeywordText = kwTextForAttached;
         pendingJoinWithSpace = joinWithSpace;
         pendingStartLine = idx;
         pendingConditions = lineConditions;
-      } else if (kwText.trim() !== "") {
-        for (const tok of splitKeywords(kwText)) {
+      } else if (kwTextForAttached.trim() !== "") {
+        for (const tok of splitKeywords(kwTextForAttached)) {
           target.push({ name: tok.name, params: tok.params, raw: tok.raw, sourceLineIndex: idx, conditions: lineConditions });
         }
       }
@@ -371,14 +422,10 @@ export function parseSource(text: string): ParsedSource {
       // the constant's literal, leaving every other token as an ordinary
       // keyword in its original order.
       const kwTokens = splitKeywords(kwText);
-      const literalTokenIndex = kwTokens.findIndex((tok) => tok.name === "");
-      if (literalTokenIndex !== -1) {
-        const literalTok = kwTokens[literalTokenIndex];
-        constant.literal = literalTok.params.slice(1, -1).replace(/''/g, "'");
-        kwTextForKeywords = kwTokens
-          .filter((_tok, i) => i !== literalTokenIndex)
-          .map((tok) => tok.raw)
-          .join(" ");
+      const extraction = extractLiteralFromTokens(kwTokens);
+      if (extraction) {
+        constant.literal = extraction.literal;
+        kwTextForKeywords = extraction.remainingRaw;
       }
     }
 
