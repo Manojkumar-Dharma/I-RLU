@@ -11,6 +11,7 @@ import {
   buildCrtprtfCommand,
 } from "./prtfCompileTarget";
 import { DesignerOpenMode, normalizeDesignerOpenMode } from "./designerOpenMode";
+import { isLikelyPrintFilePath } from "./prtfCodeLens";
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { regenerateSource, upsertReffldKeyword, applyModificationTracking, buildModTag } = require("./prtfWriter.js");
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -26,6 +27,33 @@ function getNonce(): string {
   for (let i = 0; i < 32; i++) text += possible.charAt(Math.floor(Math.random() * possible.length));
   return text;
 }
+
+/**
+ * Matches local .pf/.prtf/.rlu files by extension (any case — the source
+ * this project targets comes from an IBM i, which is itself
+ * case-insensitive about member/streamfile names), PLUS remote IBM i
+ * source members and IFS streamfiles opened through Code for i (scheme
+ * `member`/`streamfile` — see https://codefori.github.io/docs/dev/examples/).
+ * Those two schemes don't reliably carry a matching resourceExtname in
+ * every case (same situation I-SDA's own extension.ts documents for its
+ * own identical DDS_LANGUAGE_SELECTOR), so the scheme match here is
+ * intentionally broad; isLikelyPrintFilePath (prtfCodeLens.ts) is the
+ * actual precise filter inside the provider below. 'dds.pf'/'dds.prtf'
+ * are the language IDs the (optional) companion "IBMi Languages"
+ * extension assigns to physical-file and printer-file source
+ * respectively — verified against that extension's own published
+ * source-type table rather than assumed (its `.pf`/`.dds` files are
+ * `dds.pf`, distinct from `.prtf`'s own `dds.prtf`); included alongside
+ * the file-pattern match as the same defense-in-depth double coverage
+ * I-SDA's own selector uses.
+ */
+const PRTF_LANGUAGE_SELECTOR: vscode.DocumentSelector = [
+  { scheme: "file", pattern: "**/*.{pf,PF,prtf,PRTF,rlu,RLU}" },
+  { language: "dds.pf" },
+  { language: "dds.prtf" },
+  { scheme: "member" },
+  { scheme: "streamfile" },
+];
 
 /**
  * Batch X (docs/TASKS.md) — the "Track source modifications" feature's
@@ -968,6 +996,29 @@ export function activate(context: vscode.ExtensionContext): void {
   );
   context.subscriptions.push(vscode.commands.registerCommand("i-rlu.compilePrtf", () => compilePrtf(context)));
   context.subscriptions.push(vscode.commands.registerCommand("i-rlu.setCompileTarget", () => setCompileTarget(context)));
+
+  // Convenience: an "Open iRLU" link above the first line whenever the
+  // active file looks like a printer file — same one-click shortcut
+  // I-SDA's own "$(open-preview) Open Screen Design" CodeLens already
+  // offers for display files, requested directly against a real-world
+  // screenshot of a remote QDDSSRC/ARRPT01.PRTF member (see
+  // isLikelyPrintFilePath's own comment for why a `member:` URI's path
+  // is checked the same way a local file's is).
+  context.subscriptions.push(
+    vscode.languages.registerCodeLensProvider(PRTF_LANGUAGE_SELECTOR, {
+      provideCodeLenses(document) {
+        if (!isLikelyPrintFilePath(document.uri.path)) return [];
+        const range = new vscode.Range(0, 0, 0, 0);
+        return [
+          new vscode.CodeLens(range, {
+            title: "$(open-preview) Open iRLU Designer",
+            command: "i-rlu.openDesigner",
+            arguments: [document.uri],
+          }),
+        ];
+      },
+    })
+  );
 }
 
 export function deactivate(): void {
