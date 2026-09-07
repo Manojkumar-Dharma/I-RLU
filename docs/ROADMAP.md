@@ -663,6 +663,37 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       `test/fixtures/rpthead-attached-literal-realworld.prtf`; full suite
       now 502, all passing.
 
+- [x] **Batch NN — "Open iRLU" CodeLens above printer-file source.**
+      Requested directly against a real-world screenshot of a remote Code
+      for i member (`MANOJKUMAR/QDDSSRC/ARRPT01.PRTF`) already showing
+      I-SDA's own equivalent CodeLens for display files; I-RLU had no
+      CodeLens at all before this, only the right-click menu/editor-title
+      button/Command Palette entry — none as discoverable as a link
+      sitting right above the source. New `src/prtfCodeLens.ts`'s
+      `isLikelyPrintFilePath` is a pure-logic filter (same
+      extracted-for-testability pattern as `designerOpenMode.ts`/
+      `prtfCompileTarget.ts`) that checks a document's URI path extension
+      directly rather than VS Code's own `resourceExtname` context key,
+      which I-SDA's own `extension.ts` already documents as unreliable
+      for `member:`/`streamfile:` scheme URIs — scoped to the exact same
+      extension set `package.json`'s `customEditors`/`menus` already
+      recognize (`.pf`/`.prtf`/`.rlu`, case-insensitive), not a new,
+      inconsistent surface. New `PRTF_LANGUAGE_SELECTOR` and a
+      `registerCodeLensProvider` call in `extension.ts`'s `activate()`
+      reuse the existing `i-rlu.openDesigner` command — no new command
+      needed — and pass `document.uri` explicitly, a small robustness
+      improvement over I-SDA's own implicit reliance on
+      `activeTextEditor`. See `docs/TASKS.md` Batch NN for the full
+      writeup. 6 new tests in `test/prtfCodeLens.test.ts` (every
+      recognized extension, the exact reported member: path, streamfile:
+      paths, rejection of unrelated/legacy extensions, and the
+      extension-must-be-at-the-end edge case); full suite now 508, all
+      passing. **No real-browser/EDH verification possible in this
+      sandbox** for the actual CodeLens rendering and click-through —
+      please verify visually in a real Extension Development Host,
+      ideally against the exact remote member from the reported
+      screenshot.
+
 ## Next up
 
 As of the RLU screen-capture review (`docs/KEYWORD-INVENTORY.md`), the
