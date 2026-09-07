@@ -637,6 +637,32 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       actual Ctrl/Cmd-click and group-drag interactions — please verify
       visually in a real Extension Development Host.**
 
+- [x] **Batch MM — Bug fix: constant literal on its own attached-keyword
+      line renders empty.** Reported directly by the person against a
+      real-world fixture — `RPTHEAD`/`RPTCOLHD` rendered with every field
+      showing empty text. Root cause: a constant's own literal is very
+      commonly split across two physical lines in real-world PRTF source
+      — a "header" line carrying just LINE/POSITION (which, having no
+      name either, is what actually creates the constant), followed by an
+      attached-keyword-only line (every positional column blank) carrying
+      nothing but the quoted literal. `src/prtfParser.ts`'s
+      `isAttachedKeywordLine` branch always pushed that second line's
+      tokens straight onto the owning entry's `keywords` array — correct
+      for a genuine additional keyword, but for a still-literal-less
+      constant this left `entry.literal` permanently undefined, and
+      `resolveLayout` renders a constant's cell text from `entry.literal`
+      — so the field silently rendered empty, with no error anywhere.
+      Fixed by extracting Batch BB's existing literal-detection logic into
+      a shared helper and applying it in the `isAttachedKeywordLine`
+      branch too, guarded to only fire when the owner is a constant that
+      doesn't already have a literal (so a genuine second keyword, or a
+      stray unexpected second bare-quoted token, is never silently
+      dropped or overwritten). See `docs/TASKS.md` Batch MM for the full
+      writeup. 5 new tests in `test/prtfParser.test.ts`, including the
+      exact reported fixture saved as
+      `test/fixtures/rpthead-attached-literal-realworld.prtf`; full suite
+      now 502, all passing.
+
 ## Next up
 
 As of the RLU screen-capture review (`docs/KEYWORD-INVENTORY.md`), the
