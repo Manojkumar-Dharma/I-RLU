@@ -13,6 +13,15 @@
  * of not preserving incidental original whitespace inside an edited
  * entry's own line — untouched entries are byte-identical, which is what
  * matters for round-trip safety.
+ *
+ * Batch PP (docs/TASKS.md) extends that same "leave what wasn't touched
+ * alone" principle one level deeper, inside a changed entry: an entry's
+ * keyword-bearing physical lines are no longer flattened and rewrapped
+ * from scratch on every regenerate (see emitEntryWithConditionedKeywords/
+ * packKeywordsPreservingLines below) — a keyword that's untouched since
+ * parse keeps the exact physical line it already occupied, so adding or
+ * editing one keyword doesn't disturb that same entry's other, unrelated
+ * keyword lines either.
  */
 
 const LINE_WIDTH = 80; // last column the DDS compiler itself ever reads
@@ -108,32 +117,212 @@ function groupKeywordsByConditions(keywords) {
 }
 
 /**
- * Emits an entry's positional line plus its keywords, correctly splitting
- * off any keyword group that carries its own independent conditioning
- * (see groupKeywordsByConditions) onto separate, blank-positional line(s)
- * of its own rather than folding every keyword onto the entry's own
- * header line the way plain `emitWithKeywords(positional, keywordsToText(...))`
- * used to (data loss for any entry with a conditioned attached-keyword
- * line — see docs/TASKS.md's conditioning-indicators batch for the full
- * writeup of why). `leadingText` (used for a constant's literal token) is
- * always emitted on the entry's OWN header line, ahead of any of its
- * unconditioned keywords, never split onto its own conditioned line —a
- * constant's literal isn't itself a separately-conditionable keyword.
+ * Batch PP (docs/TASKS.md) — reconstructs, from the ORIGINAL source text
+ * (`rawLines`, i.e. `ParsedSource.rawLines`), the full physical-line range
+ * a keyword continuation run occupied, by following DDS's own column-80
+ * continuation marker exactly the way prtfParser.ts's `keywordAreaOf`
+ * already does when parsing — this is the writer's read-side mirror of
+ * that same convention, used only to check whether an untouched run of
+ * keywords can be reproduced byte-for-byte rather than repacked.
  */
-function emitEntryWithConditionedKeywords(positional44, keywords, leadingText, formType) {
+function originalRunRange(rawLines, startLine) {
+  let end = startLine;
+  while (end < rawLines.length - 1) {
+    const contChar = (rawLines[end] || "")[79]; // col 80, 0-based index 79
+    if (contChar === "-" || contChar === "+") end++;
+    else break;
+  }
+  return [startLine, end];
+}
+
+/**
+ * Reconstructs the keyword-area TEXT (cols 45-80) a continuation run's
+ * original physical lines represent, honoring DDS's '-' (implies a joining
+ * space) vs '+' (no space) continuation semantics — same distinction
+ * prtfParser.ts's `keywordAreaOf` draws. Used only to compare against the
+ * CURRENT keyword set's raw text for that run, to decide verbatim-safety;
+ * see packKeywordsPreservingLines' own comment and this batch's
+ * docs/TASKS.md writeup for why byte-for-byte reproduction matters (an
+ * untouched entry, or an untouched run within a touched entry, must never
+ * be silently reflowed).
+ */
+function originalRunKeywordText(rawLines, start, end) {
+  let text = "";
+  for (let i = start; i <= end; i++) {
+    const line = rawLines[i] || "";
+    const isLast = i === end;
+    const chunk = (line.length > 44 ? line.slice(44, isLast ? 80 : 79) : "").replace(/\s+$/, "");
+    if (i === start) {
+      text = chunk;
+    } else {
+      const prevContChar = (rawLines[i - 1] || "")[79];
+      text += (prevContChar === "+" ? "" : " ") + chunk;
+    }
+  }
+  return text.trim();
+}
+
+/**
+ * Splits a (same-conditions) keyword list into consecutive runs sharing
+ * the same real `sourceLineIndex`; a keyword with no real sourceLineIndex
+ * (freshly added or edited — see packKeywordsPreservingLines' own comment
+ * on that convention) is "dirty" and every consecutive stretch of dirty
+ * keywords forms its own run too, so a downstream caller can decide
+ * verbatim-vs-packed treatment per run.
+ */
+function splitIntoSourceLineRuns(keywords) {
+  const runs = [];
+  for (const kw of keywords || []) {
+    const sli = kw.sourceLineIndex != null && kw.sourceLineIndex !== -1 ? kw.sourceLineIndex : null;
+    const last = runs[runs.length - 1];
+    if (last && last.sourceLineIndex === sli) {
+      last.keywords.push(kw);
+    } else {
+      runs.push({ sourceLineIndex: sli, keywords: [kw] });
+    }
+  }
+  return runs;
+}
+
+/**
+ * Batch PP (docs/TASKS.md) — emits ONE conditions-group's keyword lines
+ * (see groupKeywordsByConditions), preferring exact byte-for-byte reuse of
+ * the group's ORIGINAL physical source lines wherever nothing in them
+ * changed, and falling back to packKeywordsPreservingLines/
+ * emitGroupKeywordLines (a fresh repack) only for the keywords that were
+ * actually added, edited, or had a sibling removed from their shared
+ * original line.
+ *
+ * Why this exists at all, on top of packKeywordsPreservingLines: that
+ * function's own `sourceLineIndex`-anchor packing is necessarily
+ * approximate for anything that originally SPANNED multiple physical
+ * lines, because prtfParser.ts assigns one `sourceLineIndex` per keyword
+ * continuation RUN, not per individual physical line within it (a
+ * keyword's own params can themselves straddle a wrap, e.g.
+ * `PAGSEG(COMPLOGO -` / `0.5 0.5)` in real hand-authored source) — so an
+ * entirely untouched entry could still come out re-wrapped slightly
+ * differently by pure anchor-based packing alone. Verbatim reuse sidesteps
+ * that by comparing the CURRENT keyword set's raw text against the
+ * ORIGINAL text for that exact physical-line range and only trusting a
+ * byte-for-byte splice when they match exactly (which also safely catches
+ * "a sibling on this same original line was removed", since a removal
+ * shortens the current text and the comparison then correctly fails).
+ *
+ * `freshPrefix44` (columns 1-44) is always freshly computed by the caller
+ * (buildPositional) and always wins on the group's own first physical
+ * line, even when that line is otherwise verbatim-safe — position/length/
+ * name etc. can change independently of the keywords, so columns 1-44
+ * can never be trusted from old source text. Every other line either
+ * reuses the ORIGINAL line whole (verbatim segments) or gets the standard
+ * blank+formType continuation prefix (packed segments).
+ */
+function emitGroupKeywordLines(freshPrefix44, groupKeywords, formType, rawLines, leadingText) {
+  const runs = splitIntoSourceLineRuns(groupKeywords);
+  const segments = []; // { kind: "verbatim", start, end } | { kind: "packed", keywords }
+  let pendingPacked = [];
+  const flushPacked = () => {
+    if (pendingPacked.length) {
+      segments.push({ kind: "packed", keywords: pendingPacked });
+      pendingPacked = [];
+    }
+  };
+  // leadingText (a constant's literal) has no sourceLineIndex of its own —
+  // it's part of whichever original physical line the group's first run
+  // occupied, so it's folded into that run's own verbatim comparison
+  // (below) rather than tracked as a separate run; if that comparison
+  // fails (or there's no first run at all), it's prepended to the packed
+  // fallback instead, exactly once.
+  //
+  // Real DDS source can legitimately place a keyword BEFORE a constant's
+  // own literal on its header line (e.g. `2SPACEB(1) 'SOME TEXT'` — seen
+  // verbatim in test/fixtures/scsprt1-realworld.prtf) even though this
+  // writer, like the one it replaced, always emits the literal first for
+  // freshly-packed content. Since verbatim-safety only cares whether the
+  // CURRENT content matches the ORIGINAL text, not which order produced
+  // it, the comparison tries both orderings before giving up — otherwise
+  // an entirely untouched entry using that convention would wrongly be
+  // sent through the packer (which changes the order back to
+  // literal-first) instead of being spliced byte-for-byte.
+  let leadingConsumed = !leadingText;
+  for (const run of runs) {
+    if (run.sourceLineIndex !== null && rawLines) {
+      const [start, end] = originalRunRange(rawLines, run.sourceLineIndex);
+      const original = originalRunKeywordText(rawLines, start, end);
+      const runText = run.keywords.map(keywordRaw).join(" ");
+      const literalFirst = !leadingConsumed ? (runText ? leadingText + " " + runText : leadingText) : runText;
+      const keywordFirst = !leadingConsumed && runText ? runText + " " + leadingText : literalFirst;
+      if (original === literalFirst || original === keywordFirst) {
+        flushPacked();
+        segments.push({ kind: "verbatim", start, end });
+        leadingConsumed = true;
+        continue;
+      }
+    }
+    if (!leadingConsumed) {
+      pendingPacked.push({ sourceLineIndex: -1, raw: leadingText });
+      leadingConsumed = true;
+    }
+    pendingPacked.push(...run.keywords);
+  }
+  if (!leadingConsumed) pendingPacked.push({ sourceLineIndex: -1, raw: leadingText });
+  flushPacked();
+  if (segments.length === 0) segments.push({ kind: "packed", keywords: [] });
+
+  // Flatten every segment into one ordered list of physical lines, each
+  // either a verbatim original rawLines index or a packed token group.
+  const physicalLines = []; // { verbatimLine: number } | { tokens: string[] }
+  for (const seg of segments) {
+    if (seg.kind === "verbatim") {
+      for (let i = seg.start; i <= seg.end; i++) physicalLines.push({ verbatimLine: i });
+    } else {
+      for (const tokens of packKeywordsPreservingLines(seg.keywords)) physicalLines.push({ tokens });
+    }
+  }
+  if (physicalLines.length === 0) physicalLines.push({ tokens: [] });
+
+  const contPrefixChars = new Array(44).fill(" ");
+  if (formType) contPrefixChars[5] = formType;
+  const contPrefix = contPrefixChars.join("");
+
+  return physicalLines.map((pl, i) => {
+    if (pl.verbatimLine !== undefined) {
+      const raw = rawLines[pl.verbatimLine] || "";
+      if (i === 0) return (freshPrefix44 + padTo(raw, 80).slice(44)).replace(/\s+$/, "");
+      return raw.replace(/\s+$/, "");
+    }
+    const prefix = i === 0 ? freshPrefix44 : contPrefix;
+    const body = padRight(pl.tokens.join(" "), KEYWORD_WIDTH) + " "; // col 79 blank
+    const hasMore = i < physicalLines.length - 1;
+    return (prefix + body + (hasMore ? "-" : " ")).replace(/\s+$/, "");
+  });
+}
+
+function padTo(str, len) {
+  str = str == null ? "" : String(str);
+  return str.length >= len ? str : str + " ".repeat(len - str.length);
+}
+
+/**
+ * Batch PP (docs/TASKS.md) — each conditions-group's keywords are handed
+ * to emitGroupKeywordLines (not emitWithKeywords/keywordsToText) so that
+ * adding or editing one keyword doesn't reflow every OTHER physical line
+ * this entry already had; see emitGroupKeywordLines' own comment for the
+ * full mechanism (verbatim reuse of untouched original lines, falling
+ * back to packKeywordsPreservingLines only for what actually changed).
+ */
+function emitEntryWithConditionedKeywords(positional44, keywords, leadingText, formType, rawLines) {
   const groups = groupKeywordsByConditions(keywords);
   const firstGroup = groups[0];
   const firstIsUnconditioned = !firstGroup || !firstGroup.conditions;
-  const headerKeywordText = firstIsUnconditioned && firstGroup ? keywordsToText(firstGroup.keywords) : "";
-  const headerText = leadingText ? (headerKeywordText ? leadingText + " " + headerKeywordText : leadingText) : headerKeywordText;
-  const lines = emitWithKeywords(positional44, headerText, formType);
+  const headerKeywords = firstIsUnconditioned && firstGroup ? firstGroup.keywords : [];
+  const lines = emitGroupKeywordLines(positional44, headerKeywords, formType, rawLines, leadingText);
   const restGroups = firstIsUnconditioned ? groups.slice(1) : groups;
   for (const group of restGroups) {
     // Batch AA — an attached conditioned-keyword line is its own separate
     // physical line of the SAME entry, so it carries the same formType
     // char too, not a hardcoded blank.
     const groupPositional = buildPositional({ conditions: group.conditions, formType });
-    lines.push(...emitWithKeywords(groupPositional, keywordsToText(group.keywords), formType));
+    lines.push(...emitGroupKeywordLines(groupPositional, group.keywords, formType, rawLines));
   }
   return lines;
 }
@@ -258,6 +447,84 @@ function emitWithKeywords(positional44, keywordText, formType) {
   return lines.map((l) => l.replace(/\s+$/, ""));
 }
 
+const KEYWORD_WIDTH = 34; // columns 45-78; col 79 unused, col 80 reserved for +/- (see emitWithKeywords' own copy of this constant above, kept separate rather than shared so neither function's tests can be affected by touching the other)
+
+function keywordRaw(kw) {
+  return kw.raw != null ? kw.raw : kw.name + (kw.params || "");
+}
+
+/**
+ * Batch PP (docs/TASKS.md) — packs a same-conditions keyword run into
+ * physical-line token groups, preferring to keep each keyword on the SAME
+ * physical line it already occupied in the source (tracked per keyword via
+ * Keyword.sourceLineIndex, prtfModel.ts/prtfParser.ts) rather than
+ * flattening the whole run and re-wrapping it from scratch on every edit —
+ * see docs/TASKS.md Batch PP for the full "why" and the Batch AA repro
+ * this is closing the root cause of (one keyword add flagged 67/93 lines
+ * as changed, because `emitWithKeywords` above rebuilds an entry's entire
+ * keyword-line block on every regenerate, discarding original wrap
+ * points).
+ *
+ * A keyword is "preserved" when its own `sourceLineIndex` is a real (>= 0)
+ * value; every add/update case in prtfEdits.ts already resets a keyword's
+ * `sourceLineIndex` to -1 the moment it creates or changes that keyword's
+ * content (the convention `setRecordKeyword` established before this
+ * batch existed) — that's exactly the signal this function relies on to
+ * tell "never touched since parse" apart from "just added or edited."
+ *
+ * Packing rule, walking `keywords` in array order (which already reflects
+ * "unchanged keywords keep their original relative order; edits replace
+ * in place or land at the end" — prtfEdits.ts never reorders a keyword
+ * list on its own): a DIRTY keyword (no real sourceLineIndex) always tries
+ * to join whichever physical line is currently being built, since it has
+ * no original position of its own to protect. A PRESERVED keyword joins
+ * the line currently being built only if that line hasn't already
+ * collected content from a DIFFERENT original line — otherwise it starts
+ * a line of its own. Either way a keyword only ever joins the current line
+ * if the combined text still fits the KEYWORD_WIDTH-column keyword area;
+ * overflow starts a new line exactly like the flat wrap above always has.
+ *
+ * Net effect: adding one new keyword to an entry appends it to the last
+ * existing physical line if there's room (or starts one new line if not)
+ * without touching any earlier, unrelated line; editing one keyword among
+ * several that shared an original line only reflows that one physical
+ * line, never the entry's other, untouched lines. Uses each keyword's own
+ * `raw`/`name`+`params` directly (never re-joins into one string and
+ * re-tokenizes it the way `emitWithKeywords` above does) — a keyword like
+ * `LINE`/`BOX` has its own un-quoted internal spaces (e.g.
+ * `LINE(4 3 5 *HRZ .01)`), which `tokenizeKeywordText` would otherwise
+ * split mid-keyword if a wrap point happened to fall inside it; working
+ * keyword-object-by-keyword-object sidesteps that risk entirely for this,
+ * the only path `regenerateSource` actually uses. The one exception: if a
+ * SINGLE keyword's own full text is longer than KEYWORD_WIDTH by itself
+ * (a long `FNTCHRSET`/`PAGSEG`/etc.), there is no way to fit it on one
+ * physical line at all — DDS itself has no representation for that except
+ * splitting mid-keyword across a continuation, so only in that specific,
+ * unavoidable circumstance does this fall back to the same quote-aware
+ * whitespace splitting `tokenizeKeywordText` uses, and only for that one
+ * keyword's own text.
+ */
+function packKeywordsPreservingLines(keywords) {
+  const lines = []; // { tokens: string[], anchorLine: number|null }[]
+  for (const kw of keywords || []) {
+    const raw = keywordRaw(kw);
+    const preservedLine = kw.sourceLineIndex != null && kw.sourceLineIndex !== -1 ? kw.sourceLineIndex : null;
+    const pieces = raw.length > KEYWORD_WIDTH ? tokenizeKeywordText(raw) : [raw];
+    for (const piece of pieces) {
+      const last = lines[lines.length - 1];
+      const combined = last ? (last.tokens.length ? last.tokens.join(" ") + " " + piece : piece) : piece;
+      const anchorCompatible = !last || preservedLine === null || last.anchorLine === null || last.anchorLine === preservedLine;
+      if (last && anchorCompatible && combined.length <= KEYWORD_WIDTH) {
+        last.tokens.push(piece);
+        if (preservedLine !== null && last.anchorLine === null) last.anchorLine = preservedLine;
+      } else {
+        lines.push({ tokens: [piece], anchorLine: preservedLine });
+      }
+    }
+  }
+  return lines.map((l) => l.tokens);
+}
+
 function regenerateSource(model) {
   const outLines = [];
   for (const entry of model.sequence) {
@@ -270,12 +537,12 @@ function regenerateSource(model) {
         break;
       case "fileLevel": {
         const positional = buildPositional({ formType: entry.formType });
-        outLines.push(...emitEntryWithConditionedKeywords(positional, entry.keywords, undefined, entry.formType));
+        outLines.push(...emitEntryWithConditionedKeywords(positional, entry.keywords, undefined, entry.formType, model.rawLines));
         break;
       }
       case "record": {
         const positional = buildPositional({ nameType: "R", name: entry.name, conditions: entry.conditions, formType: entry.formType });
-        outLines.push(...emitEntryWithConditionedKeywords(positional, entry.keywords, undefined, entry.formType));
+        outLines.push(...emitEntryWithConditionedKeywords(positional, entry.keywords, undefined, entry.formType, model.rawLines));
         break;
       }
       case "field": {
@@ -292,13 +559,13 @@ function regenerateSource(model) {
           conditions: entry.conditions,
           formType: entry.formType,
         });
-        outLines.push(...emitEntryWithConditionedKeywords(positional, entry.keywords, undefined, entry.formType));
+        outLines.push(...emitEntryWithConditionedKeywords(positional, entry.keywords, undefined, entry.formType, model.rawLines));
         break;
       }
       case "constant": {
         const positional = buildPositional({ lineNo: entry.line, position: entry.position, relativePosition: entry.relativePosition, conditions: entry.conditions, formType: entry.formType });
         const litToken = entry.literal !== undefined ? "'" + String(entry.literal).replace(/'/g, "''") + "'" : undefined;
-        outLines.push(...emitEntryWithConditionedKeywords(positional, entry.keywords, litToken, entry.formType));
+        outLines.push(...emitEntryWithConditionedKeywords(positional, entry.keywords, litToken, entry.formType, model.rawLines));
         break;
       }
       default:
@@ -473,4 +740,11 @@ module.exports = {
   buildModTag,
   appendModTag,
   applyModificationTracking,
+  // Batch PP (docs/TASKS.md) — exported directly so they're unit-testable
+  // in isolation, same rationale as emitWithKeywords/tokenizeKeywordText
+  // above.
+  packKeywordsPreservingLines,
+  emitGroupKeywordLines,
+  originalRunRange,
+  originalRunKeywordText,
 };

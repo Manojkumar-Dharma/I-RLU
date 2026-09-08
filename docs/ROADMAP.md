@@ -731,6 +731,40 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       code. Please verify the drag-to-move/drag-to-resize interactions
       visually in a real Extension Development Host.
 
+- [x] **Batch PP — bug fix: keyword regeneration disturbed unrelated,
+      untouched physical lines.** Flagged directly by Manoj: editing or
+      adding one keyword changed lines that had nothing to do with the
+      edit. Root cause: `regenerateSource` (`src/prtfWriter.js`) rebuilt an
+      entry's ENTIRE keyword-line block from scratch on every regenerate,
+      discarding original wrap points even for untouched keywords — the
+      exact mechanism behind Batch AA's own repro (one `COLOR` add flagged
+      67/93 lines as changed). Checked I-SDA's own `dspfWriter.js` for the
+      equivalent problem: architected completely differently there
+      (targeted line-array splice per field, never a whole-file
+      regenerate) — adopting that wholesale would be a much larger rewrite
+      than this batch's scope, so instead this brings the same "leave what
+      wasn't touched alone" principle one level deeper into I-RLU's own
+      whole-model-regenerate architecture, down to individual keyword-
+      bearing physical lines within a changed entry. New
+      `emitGroupKeywordLines` compares each conditions-group's original
+      continuation-run text (reconstructed from `ParsedSource.rawLines`
+      via new `originalRunRange`/`originalRunKeywordText`, mirroring
+      `prtfParser.ts`'s own column/continuation conventions) against the
+      current keyword set for that run — an exact match means those
+      original physical lines are spliced back byte-for-byte; anything
+      new/edited/removed falls through to new `packKeywordsPreservingLines`,
+      which packs using each keyword's own raw text as an atomic unit
+      (never re-tokenizing by whitespace, which would otherwise split a
+      multi-parameter keyword like `LINE`/`BOX`/`FNTCHRSET` mid-parameter —
+      a real, separate latent bug found and fixed along the way, confirmed
+      against real hand-authored source where `PAGSEG(COMPLOGO 0.5 0.5)`
+      legitimately wraps mid-keyword). Also found and fixed: real DDS
+      source can legitimately place a keyword BEFORE a constant's own
+      literal (confirmed verbatim in `test/fixtures/scsprt1-realworld.prtf`),
+      so the verbatim comparison tries both orderings before giving up.
+      See `docs/TASKS.md` Batch PP for the full writeup. 13 new tests in
+      `test/prtfBatchPP.test.ts`; full suite now 567, all passing.
+
 - [x] **Batch O — real AFP resource rendering (page segments/overlays as
       actual images) — done for the common image-content case.** Real
       Apache-2.0-licensed AFP resource fixtures from Apache FOP's own test
