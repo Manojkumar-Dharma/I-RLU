@@ -348,6 +348,35 @@ function parseLineGeometry(kw, cpi, lpi, uom) {
 }
 
 /**
+ * Batch OO (docs/TASKS.md) — resolves EVERY LINE/BOX keyword on `record`
+ * (active per `indicatorState`), same as the plain findAllActiveKeywords +
+ * map(parseLineGeometry/parseBoxGeometry) pipeline resolveLayout already
+ * ran, but additionally tags each resolved draw with `keywordIndex`: its
+ * position within `record.keywords` (the SAME array the new
+ * addDrawKeyword/updateDrawKeyword/removeDrawKeyword/copyDrawKeyword edit
+ * kinds in prtfEdits.ts splice/index into). Without this, the webview's
+ * new Lines & Boxes panel and canvas drag/resize handlers would have no
+ * way to say which specific LINE/BOX instance a Save/Copy/Delete/drag
+ * targets — record-level keywords have no id the way fields/constants do,
+ * and LINE/BOX are genuinely repeating (unlike the "set once per name"
+ * keywords setRecordKeyword/removeRecordKeyword already handle), so a
+ * name-only lookup can't disambiguate two LINE keywords on the same
+ * record. Kept as a thin wrapper around the existing parseLineGeometry/
+ * parseBoxGeometry (rather than changing their own signature) so every
+ * other caller of those two functions is untouched.
+ */
+function resolveDrawsWithKeywordIndex(record, cpi, lpi, uom, indicatorState) {
+  const draws = [];
+  (record.keywords || []).forEach((kw, keywordIndex) => {
+    if (kw.name !== "LINE" && kw.name !== "BOX") return;
+    if (!indicatorActive(kw.conditions, indicatorState)) return;
+    const geometry = kw.name === "LINE" ? parseLineGeometry(kw, cpi, lpi, uom) : parseBoxGeometry(kw, cpi, lpi, uom);
+    draws.push(Object.assign({ keywordIndex }, geometry));
+  });
+  return draws;
+}
+
+/**
  * BOX(first-corner-down first-corner-across diagonal-corner-down
  *     diagonal-corner-across line-width [color] [shading])
  * e.g. BOX(0 0 2 2 *MEDIUM) — verified against IBM's DDS reference.
@@ -623,10 +652,11 @@ function resolveLayout(model, recordName, indicatorState, uom) {
   const { lines: pageLines, cols: pageCols } = resolvePageSize(record, model.fileLevel, indicatorState);
   const { cpi, lpi } = resolveCpiLpi(record, model.fileLevel, indicatorState);
 
-  const draws = [
-    ...findAllActiveKeywords(record.keywords, "LINE", indicatorState).map((kw) => parseLineGeometry(kw, cpi, lpi, uom)),
-    ...findAllActiveKeywords(record.keywords, "BOX", indicatorState).map((kw) => parseBoxGeometry(kw, cpi, lpi, uom)),
-  ];
+  // Batch OO (docs/TASKS.md) — now resolved via resolveDrawsWithKeywordIndex
+  // rather than the plain findAllActiveKeywords+map pipeline this used to
+  // be, so each draw carries the `keywordIndex` the new properties panel
+  // and canvas drag/resize need to target a specific LINE/BOX instance.
+  const draws = resolveDrawsWithKeywordIndex(record, cpi, lpi, uom, indicatorState);
 
   // Batch E (docs/TASKS.md) — AFP page-group / resource keyword
   // placeholders. `resources` are the positioned ones (OVERLAY/PAGSEG/
@@ -845,6 +875,11 @@ const mod = {
   // shift-and-truncate check can find the report's own width without
   // duplicating PAGSIZE-resolution logic.
   resolvePageSize,
+  // Batch OO (docs/TASKS.md) — exported directly so it's unit-testable in
+  // isolation, same rationale as detectFieldOverlaps/formatSampleValue
+  // above; also usable by the webview if it ever needs draws for a record
+  // without a full resolveLayout call.
+  resolveDrawsWithKeywordIndex,
 };
 if (typeof module !== "undefined" && module.exports) module.exports = mod;
 if (typeof window !== "undefined") window.PrtfLayout = mod;

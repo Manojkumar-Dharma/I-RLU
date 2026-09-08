@@ -127,7 +127,23 @@ export type WebviewEdit =
   // pending-new confirmation form per field — the same "auto-name several
   // at once, no per-item form" precedent Batch Y's "Add fields from
   // database file" already established for a similar N-at-once add.
-  | { kind: "bulkCopy"; recordName: string; ids: string[]; deltaLine: number; deltaPosition: number };
+  | { kind: "bulkCopy"; recordName: string; ids: string[]; deltaLine: number; deltaPosition: number }
+  // Batch OO (docs/TASKS.md) — LINE/BOX properties-panel add/copy/edit/
+  // delete plus canvas drag/resize. Unlike fields/constants (which have a
+  // stable `id`) or the Batch F/A "set once per name" record keywords,
+  // LINE/BOX are repeating record-level keywords with no name-based way to
+  // pick out ONE instance, so these are scoped by `keywordIndex`: the
+  // instance's position within `record.keywords` at the time the webview
+  // last rendered it (see prtfLayout.js's resolveDrawsWithKeywordIndex,
+  // which is what tags every resolved draw with this same index). Safe
+  // because the webview always re-renders from a freshly pushed model
+  // after every edit (see extension.ts's applyEdit -> regenerate ->
+  // setModel round-trip) before the person can act on a now-stale index —
+  // there's no batching/queuing of edits ahead of that round-trip.
+  | { kind: "addDrawKeyword"; recordName: string; name: "LINE" | "BOX"; params: string }
+  | { kind: "updateDrawKeyword"; recordName: string; keywordIndex: number; params: string }
+  | { kind: "removeDrawKeyword"; recordName: string; keywordIndex: number }
+  | { kind: "copyDrawKeyword"; recordName: string; keywordIndex: number };
 
 /** Every message shape media/webviewClient.js posts to the extension host via vscode.postMessage. */
 export type WebviewMessage =

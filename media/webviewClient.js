@@ -94,6 +94,23 @@
     // is positioned at; every other selected entry follows at the same
     // offset it had from the anchor before the copy).
     bulkCopySourceIds: null,
+    // Batch OO — which LINE/BOX keyword instance (by its keywordIndex —
+    // see prtfLayout.js's resolveDrawsWithKeywordIndex) has its inline
+    // edit form expanded in the new "Lines & Boxes" panel, set either by
+    // clicking that form open in the panel's own list or by clicking the
+    // shape itself on the canvas. Deliberately kept independent of
+    // selectedId/multiSelectIds/pendingNew (a LINE/BOX isn't a `layout.cells`
+    // entry, so it was never going to fit those anyway) rather than
+    // forcing it into the existing single-cell renderPropsPanel: LINE/BOX
+    // editing lives entirely inside its own always-visible side-col panel,
+    // never swapping in as a replacement for whatever else the side
+    // column is showing.
+    selectedDraw: null, // { keywordIndex } | null
+    // Batch OO — which "+ Line"/"+ Box" add form is open in the Lines &
+    // Boxes panel, if any. Independent of selectedDraw (that's for editing
+    // an EXISTING instance) the same way `pendingNew` is independent of
+    // `selectedId` for fields/constants.
+    addingDraw: null, // null | "LINE" | "BOX"
   };
 
   let CELL_W = 8; // px per character column — recomputed per record from CPI via layout.grid (96/CPI); see render()
@@ -216,6 +233,7 @@
       )
     );
     sideCol.appendChild(renderPageGroupPanel(record, layout));
+    sideCol.appendChild(renderLineBoxPanel(record, layout));
 
     workspace.appendChild(canvasCol);
     workspace.appendChild(sideCol);
@@ -633,6 +651,7 @@
           state.selectedId = null;
           state.pendingNew = null;
           state.placing = null;
+          state.selectedDraw = null;
           render();
           return;
         }
@@ -646,6 +665,7 @@
         state.selectedId = cell.id;
         state.pendingNew = null;
         state.placing = null;
+        state.selectedDraw = null;
         render();
       });
       div.addEventListener("dragstart", (ev) => {
@@ -667,33 +687,69 @@
       page.appendChild(div);
     });
 
+    // Batch OO (docs/TASKS.md) — LINE/BOX now draggable (whole-shape move,
+    // via the same HTML5 dnd the field/constant cells above use) and
+    // resizable (a small handle at the shape's far end/corner, wired via
+    // wireResizeHandle's own mousedown/mousemove/mouseup — dnd's own drag
+    // events don't give continuous-feedback tracking the way a resize
+    // handle needs). Both are tagged with `d.keywordIndex` (see
+    // prtfLayout.js's resolveDrawsWithKeywordIndex) so the drop/resize
+    // handlers below know exactly which record.keywords[] entry to send
+    // back in an updateDrawKeyword edit.
     (layout.draws || []).forEach((d) => {
+      const isSelected = !!(state.selectedDraw && state.selectedDraw.keywordIndex === d.keywordIndex);
+      let shape;
       if (d.type === "box") {
         const top = Math.min(d.row1, d.row2);
         const left = Math.min(d.col1, d.col2);
         const h = Math.max(1, Math.abs(d.row2 - d.row1)) * CELL_H;
         const w = Math.max(1, Math.abs(d.col2 - d.col1)) * CELL_W;
-        page.appendChild(
-          el("div", {
-            class: "draw-box" + (d.approximate ? " approximate" : ""),
-            style: `position:absolute;left:${(left - 1) * CELL_W}px;top:${(top - 1) * CELL_H}px;width:${w}px;height:${h}px;`,
-            title: d.approximate ? "Position depends on a program-to-system field value; shown at its default (0)." : "",
-          })
-        );
-      } else if (d.type === "line") {
+        shape = el("div", {
+          class: "draw-box" + (d.approximate ? " approximate" : "") + (isSelected ? " draw-selected" : ""),
+          style: `position:absolute;left:${(left - 1) * CELL_W}px;top:${(top - 1) * CELL_H}px;width:${w}px;height:${h}px;`,
+          title: d.approximate ? "Position depends on a program-to-system field value; shown at its default (0)." : "",
+          draggable: "true",
+        });
+      } else {
         const horizontal = d.direction === "horizontal";
         const top = Math.min(d.row1, d.row2);
         const left = Math.min(d.col1, d.col2);
         const w = horizontal ? Math.max(1, Math.abs(d.col2 - d.col1)) * CELL_W : 1;
         const h = horizontal ? 1 : Math.max(1, Math.abs(d.row2 - d.row1)) * CELL_H;
-        page.appendChild(
-          el("div", {
-            class: "draw-line" + (d.approximate ? " approximate" : ""),
-            style: `position:absolute;left:${(left - 1) * CELL_W}px;top:${(top - 1) * CELL_H}px;width:${w}px;height:${h}px;`,
-            title: d.approximate ? "Position depends on a program-to-system field value; shown at its default (0)." : "",
-          })
-        );
+        shape = el("div", {
+          class: "draw-line" + (d.approximate ? " approximate" : "") + (isSelected ? " draw-selected" : ""),
+          style: `position:absolute;left:${(left - 1) * CELL_W}px;top:${(top - 1) * CELL_H}px;width:${w}px;height:${h}px;`,
+          title: d.approximate ? "Position depends on a program-to-system field value; shown at its default (0)." : "",
+          draggable: "true",
+        });
       }
+
+      shape.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        state.selectedId = null;
+        state.pendingNew = null;
+        state.multiSelectIds.clear();
+        state.selectedDraw = isSelected ? null : { keywordIndex: d.keywordIndex };
+        render();
+      });
+      shape.addEventListener("dragstart", (ev) => {
+        ev.dataTransfer.setData("text/plain", JSON.stringify({ draw: true, keywordIndex: d.keywordIndex }));
+      });
+      page.appendChild(shape);
+
+      // Resize handle — a small square at the far end (LINE) or diagonal
+      // corner (BOX), positioned relative to the SAME page container the
+      // shape itself is in (not the shape div), so its drag math can reuse
+      // lineColFromEvent(ev, page) unchanged.
+      const handleRow = d.type === "box" ? Math.max(d.row1, d.row2) : d.row2;
+      const handleCol = d.type === "box" ? Math.max(d.col1, d.col2) : d.col2;
+      const handle = el("div", {
+        class: "draw-resize-handle",
+        style: `left:${(handleCol - 1) * CELL_W - 4}px;top:${(handleRow - 1) * CELL_H - 4}px;`,
+        title: "Drag to resize",
+      });
+      wireResizeHandle(handle, d, page, layout);
+      page.appendChild(handle);
     });
 
     // Batch E (docs/TASKS.md) — OVERLAY/PAGSEG/AFPRSC labeled placeholder
@@ -759,6 +815,10 @@
         // Batch JJ — clicking empty page space (not a cell) also exits any
         // multi-select in progress, same as a plain cell click does.
         state.multiSelectIds.clear();
+        // Batch OO — also closes any LINE/BOX inline edit form left open
+        // in the Lines & Boxes panel, same "plain click elsewhere clears
+        // whatever else was selected" convention as the two resets above.
+        state.selectedDraw = null;
         render();
       }
     });
@@ -775,9 +835,15 @@
       // of an unknown-shape string typically does — a bare id like "e3"
       // isn't valid JSON, so this never misclassifies a plain drag as bulk.
       let bulk = null;
+      let drawDrag = null;
       try {
         const parsed = JSON.parse(raw);
         if (parsed && parsed.bulk) bulk = parsed;
+        // Batch OO — a LINE/BOX shape drag (see this batch's own
+        // shape.dragstart handler above) encodes { draw: true,
+        // keywordIndex }, distinguished from the bulk payload's own
+        // `.bulk` flag the same way bulk is distinguished from a bare id.
+        else if (parsed && parsed.draw) drawDrag = parsed;
       } catch (e) {
         bulk = null;
       }
@@ -793,12 +859,71 @@
         });
         state.multiSelectIds.clear();
         render();
+      } else if (drawDrag) {
+        const record = state.model.records.find((r) => r.name === state.recordName);
+        const kw = record && record.keywords[drawDrag.keywordIndex];
+        const d = (layout.draws || []).find((dr) => dr.keywordIndex === drawDrag.keywordIndex);
+        if (kw && d && layout.grid) {
+          const { cpi, lpi } = layout.grid;
+          const params =
+            d.type === "line"
+              ? PrtfWebviewLogic.movedLineParams(kw, line, position, cpi, lpi, state.uom)
+              : PrtfWebviewLogic.movedBoxParams(kw, line, position, d.row1, d.col1, cpi, lpi, state.uom);
+          if (params) {
+            vscode.postMessage({
+              type: "edit",
+              edit: { kind: "updateDrawKeyword", recordName: state.recordName, keywordIndex: drawDrag.keywordIndex, params },
+            });
+          }
+        }
       } else {
         vscode.postMessage({ type: "edit", edit: { kind: "move", recordName: state.recordName, id: raw, line, position } });
       }
     });
 
     return page;
+  }
+
+  /**
+   * Batch OO (docs/TASKS.md) — wires a draw's resize handle (see renderPage
+   * above) for live drag-to-resize. Unlike whole-shape move (plain HTML5
+   * dnd, same as fields/constants use), this uses plain mouse events —
+   * dnd's own drag events don't fire continuously enough for a resize
+   * handle to feel responsive, and a resize handle only ever needs to
+   * track one continuous drag against a single fixed container (`page`),
+   * not accept a drop from anywhere the way the page's own dnd drop zone
+   * does. Live visual feedback during the drag is intentionally NOT
+   * attempted (no inline style mutation on every mousemove) — this posts
+   * exactly one updateDrawKeyword edit on mouseup, then lets the normal
+   * setModel round-trip redraw the resized shape from the real model, same
+   * "post on release, redraw from the authoritative model" boundary the
+   * whole-shape drag/drop above already draws (that one also only sends
+   * its edit in the drop handler, not on every dragover).
+   */
+  function wireResizeHandle(handleEl, d, page, layout) {
+    handleEl.addEventListener("mousedown", (startEv) => {
+      startEv.preventDefault();
+      startEv.stopPropagation();
+      const onMove = (ev) => ev.preventDefault();
+      const onUp = (ev) => {
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+        const { line, position } = lineColFromEvent(ev, page);
+        const record = state.model.records.find((r) => r.name === state.recordName);
+        const kw = record && record.keywords[d.keywordIndex];
+        if (!kw || !layout.grid) return;
+        const { cpi, lpi } = layout.grid;
+        const params =
+          d.type === "line"
+            ? PrtfWebviewLogic.resizedLineParams(kw, line, position, cpi, lpi, state.uom)
+            : PrtfWebviewLogic.resizedBoxParams(kw, line, position, cpi, lpi, state.uom);
+        if (params) {
+          vscode.postMessage({ type: "edit", edit: { kind: "updateDrawKeyword", recordName: state.recordName, keywordIndex: d.keywordIndex, params } });
+        }
+      };
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    });
   }
 
   function labeledInput(labelText, inputAttrs) {
@@ -2100,6 +2225,222 @@
     btnRow.appendChild(copyBtn);
     btnRow.appendChild(cancelBtn);
     panel.appendChild(btnRow);
+    return panel;
+  }
+
+  // -----------------------------------------------------------------------
+  // Batch OO (docs/TASKS.md) — Lines & Boxes properties panel: add/copy/
+  // edit/delete for LINE/BOX record-level keywords, complementing the
+  // drag-to-move/drag-to-resize wiring in renderPage above. Always-visible
+  // per record (same shape as renderPageGroupPanel/renderRecordKeywordsPanel
+  // below), independent of the single-cell selectedId/pendingNew/
+  // multiSelectIds state — see state.selectedDraw/state.addingDraw's own
+  // comments for why LINE/BOX editing doesn't try to reuse those.
+  // -----------------------------------------------------------------------
+
+  const BOX_SHADING_OPTIONS = ["", "*NONE", "*LT", "*MED", "*DRK"];
+
+  /**
+   * Shared Down/Across/Width/Color(/Pad/Shading) row builder for the LINE
+   * and BOX forms below — both are "position(s) in the compile's unit of
+   * measure, plus an optional line-width/color" shape, just with a
+   * different mandatory-corner count (LINE: one point + length/direction;
+   * BOX: two corners). Plain text inputs (not type="number") for the
+   * position/length/width fields since DDS's own examples use decimals
+   * like "1.5" freely and a browser's native number input has awkward
+   * step/scroll-wheel behavior for that; validation is left to
+   * buildLineParams/buildBoxParams's own "blank mandatory field means
+   * don't write the keyword" rule plus CRTPRTF's real compile-time checks,
+   * same division of labor every other free-text DDS param in this panel
+   * (e.g. EDTWRD, OUTBIN) already uses.
+   */
+  function drawColorSelectOptions() {
+    return [""].concat(NAMED_COLORS.map((c) => c[0]));
+  }
+
+  /**
+   * Renders the add/edit form for one LINE keyword. `existing` is
+   * `{ keywordIndex, kw }` when editing an already-placed LINE (Save
+   * sends `updateDrawKeyword`), or null when adding a new one from the
+   * "+ Line" button (Save sends `addDrawKeyword`) — same "same form,
+   * `existing` picks the edit kind" shape renderEditPanel's own
+   * updateField/updateConstant split doesn't need (those two are always
+   * separate forms), but keeps this one form from being duplicated for
+   * what's otherwise identical input handling.
+   */
+  function renderLineForm(record, existing) {
+    const wrap = el("div", {});
+    const parsed = existing
+      ? PrtfWebviewLogic.parseLineParams(existing.kw)
+      : { down: "", across: "", length: "", direction: "*HRZ", width: "", pad: "", color: "" };
+
+    const downRow = labeledInput("Down", { type: "text", value: parsed.down, placeholder: "e.g. 1.5" });
+    const acrossRow = labeledInput("Across", { type: "text", value: parsed.across, placeholder: "e.g. 2" });
+    const lengthRow = labeledInput("Length", { type: "text", value: parsed.length, placeholder: "e.g. 3" });
+    const dirRow = labeledSelect("Direction", ["*HRZ", "*VRT"], parsed.direction);
+    const widthRow = labeledInput("Width", { type: "text", value: parsed.width, placeholder: "optional" });
+    const padRow = labeledInput("Pad", { type: "text", value: parsed.pad, placeholder: "optional" });
+    const colorRow = labeledSelect("Color", drawColorSelectOptions(), parsed.color);
+    [downRow, acrossRow, lengthRow, dirRow, widthRow, padRow, colorRow].forEach((r) => wrap.appendChild(r.row));
+
+    const btnRow = el("div", { class: "prop-buttons" });
+    const saveBtn = el("button", { class: "btn primary", type: "button" }, ["Save"]);
+    saveBtn.addEventListener("click", () => {
+      const params = PrtfWebviewLogic.buildLineParams({
+        down: downRow.input.value,
+        across: acrossRow.input.value,
+        length: lengthRow.input.value,
+        direction: dirRow.input.value,
+        width: widthRow.input.value,
+        pad: padRow.input.value,
+        color: colorRow.input.value,
+      });
+      // Blank Down/Across/Length means "don't write this keyword" per
+      // buildLineParams's own convention — nothing to save yet, same as
+      // every other blank-mandatory-field builder in this file.
+      if (!params) return;
+      if (existing) {
+        vscode.postMessage({ type: "edit", edit: { kind: "updateDrawKeyword", recordName: record.name, keywordIndex: existing.keywordIndex, params } });
+      } else {
+        vscode.postMessage({ type: "edit", edit: { kind: "addDrawKeyword", recordName: record.name, name: "LINE", params } });
+        state.addingDraw = null;
+      }
+    });
+    const cancelBtn = el("button", { class: "btn", type: "button" }, ["Cancel"]);
+    cancelBtn.addEventListener("click", () => {
+      if (existing) state.selectedDraw = null;
+      else state.addingDraw = null;
+      render();
+    });
+    btnRow.appendChild(saveBtn);
+    btnRow.appendChild(cancelBtn);
+    wrap.appendChild(btnRow);
+    return wrap;
+  }
+
+  /** BOX counterpart of renderLineForm — see that function's own header for the `existing`/Save-kind shape both share. */
+  function renderBoxForm(record, existing) {
+    const wrap = el("div", {});
+    const parsed = existing
+      ? PrtfWebviewLogic.parseBoxParams(existing.kw)
+      : { down1: "", across1: "", down2: "", across2: "", width: "", color: "", shading: "" };
+
+    const down1Row = labeledInput("Down 1", { type: "text", value: parsed.down1, placeholder: "e.g. 0" });
+    const across1Row = labeledInput("Across 1", { type: "text", value: parsed.across1, placeholder: "e.g. 0" });
+    const down2Row = labeledInput("Down 2", { type: "text", value: parsed.down2, placeholder: "e.g. 2" });
+    const across2Row = labeledInput("Across 2", { type: "text", value: parsed.across2, placeholder: "e.g. 2" });
+    const widthRow = labeledInput("Width", { type: "text", value: parsed.width, placeholder: "optional" });
+    const colorRow = labeledSelect("Color", drawColorSelectOptions(), parsed.color);
+    const shadingRow = labeledSelect("Shading", BOX_SHADING_OPTIONS, parsed.shading);
+    [down1Row, across1Row, down2Row, across2Row, widthRow, colorRow, shadingRow].forEach((r) => wrap.appendChild(r.row));
+
+    const btnRow = el("div", { class: "prop-buttons" });
+    const saveBtn = el("button", { class: "btn primary", type: "button" }, ["Save"]);
+    saveBtn.addEventListener("click", () => {
+      const params = PrtfWebviewLogic.buildBoxParams({
+        down1: down1Row.input.value,
+        across1: across1Row.input.value,
+        down2: down2Row.input.value,
+        across2: across2Row.input.value,
+        width: widthRow.input.value,
+        color: colorRow.input.value,
+        shading: shadingRow.input.value,
+      });
+      if (!params) return;
+      if (existing) {
+        vscode.postMessage({ type: "edit", edit: { kind: "updateDrawKeyword", recordName: record.name, keywordIndex: existing.keywordIndex, params } });
+      } else {
+        vscode.postMessage({ type: "edit", edit: { kind: "addDrawKeyword", recordName: record.name, name: "BOX", params } });
+        state.addingDraw = null;
+      }
+    });
+    const cancelBtn = el("button", { class: "btn", type: "button" }, ["Cancel"]);
+    cancelBtn.addEventListener("click", () => {
+      if (existing) state.selectedDraw = null;
+      else state.addingDraw = null;
+      render();
+    });
+    btnRow.appendChild(saveBtn);
+    btnRow.appendChild(cancelBtn);
+    wrap.appendChild(btnRow);
+    return wrap;
+  }
+
+  /**
+   * One list row per existing LINE/BOX on the record (from `layout.draws`,
+   * which prtfLayout.js's resolveDrawsWithKeywordIndex tags with the
+   * `keywordIndex` Edit/Copy/Delete/the canvas drag handlers all key off
+   * of). Edit expands this same row into the add/edit form above, filled
+   * from the keyword's current params; Copy/Delete apply immediately (no
+   * confirmation step) — same immediate-apply convention every other
+   * record-keyword panel row in this file already uses, and consistent
+   * with fields/constants' own Delete button.
+   */
+  function renderDrawListItem(record, d) {
+    const isSelected = !!(state.selectedDraw && state.selectedDraw.keywordIndex === d.keywordIndex);
+    const item = el("div", { class: "draw-list-item" + (isSelected ? " draw-selected" : "") });
+    const summary = el("div", { class: "draw-list-summary" });
+    const label = d.type === "line" ? "Line (" + d.direction + ")" : "Box";
+    summary.appendChild(el("span", { class: "draw-list-label" }, [label + (d.approximate ? " — approx. position" : "")]));
+
+    const editBtn = el("button", { class: "btn", type: "button" }, [isSelected ? "Close" : "Edit"]);
+    editBtn.addEventListener("click", () => {
+      state.selectedDraw = isSelected ? null : { keywordIndex: d.keywordIndex };
+      render();
+    });
+    const copyBtn = el("button", { class: "btn", type: "button" }, ["Copy"]);
+    copyBtn.addEventListener("click", () => {
+      vscode.postMessage({ type: "edit", edit: { kind: "copyDrawKeyword", recordName: record.name, keywordIndex: d.keywordIndex } });
+    });
+    const deleteBtn = el("button", { class: "btn danger", type: "button" }, ["Delete"]);
+    deleteBtn.addEventListener("click", () => {
+      if (isSelected) state.selectedDraw = null;
+      vscode.postMessage({ type: "edit", edit: { kind: "removeDrawKeyword", recordName: record.name, keywordIndex: d.keywordIndex } });
+    });
+    summary.appendChild(editBtn);
+    summary.appendChild(copyBtn);
+    summary.appendChild(deleteBtn);
+    item.appendChild(summary);
+
+    if (isSelected) {
+      const kw = record.keywords[d.keywordIndex];
+      item.appendChild(d.type === "line" ? renderLineForm(record, { keywordIndex: d.keywordIndex, kw }) : renderBoxForm(record, { keywordIndex: d.keywordIndex, kw }));
+    }
+    return item;
+  }
+
+  /** Top-level Lines & Boxes panel — see this batch's own header comment above for the overall shape. */
+  function renderLineBoxPanel(record, layout) {
+    const panel = el("div", { class: "props" });
+    panel.appendChild(el("h4", {}, ["Lines & Boxes — " + record.name]));
+    panel.appendChild(
+      el("div", { class: "hint" }, [
+        "LINE/BOX are record-level, AFPDS-only keywords — position/length are in the compile's unit of measure. Drag a shape on the report to move it, or drag its small square handle to resize it.",
+      ])
+    );
+
+    const draws = (layout && layout.draws) || [];
+    if (!draws.length) panel.appendChild(el("div", { class: "hint" }, ["None on this record yet."]));
+    draws.forEach((d) => panel.appendChild(renderDrawListItem(record, d)));
+
+    const addRow = el("div", { class: "prop-buttons" });
+    const addLineBtn = el("button", { class: "btn" + (state.addingDraw === "LINE" ? " active" : ""), type: "button" }, ["+ Line"]);
+    addLineBtn.addEventListener("click", () => {
+      state.addingDraw = state.addingDraw === "LINE" ? null : "LINE";
+      render();
+    });
+    const addBoxBtn = el("button", { class: "btn" + (state.addingDraw === "BOX" ? " active" : ""), type: "button" }, ["+ Box"]);
+    addBoxBtn.addEventListener("click", () => {
+      state.addingDraw = state.addingDraw === "BOX" ? null : "BOX";
+      render();
+    });
+    addRow.appendChild(addLineBtn);
+    addRow.appendChild(addBoxBtn);
+    panel.appendChild(addRow);
+
+    if (state.addingDraw === "LINE") panel.appendChild(renderLineForm(record, null));
+    if (state.addingDraw === "BOX") panel.appendChild(renderBoxForm(record, null));
+
     return panel;
   }
 

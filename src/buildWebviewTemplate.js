@@ -229,9 +229,38 @@ body { font-family: var(--vscode-editor-font-family, monospace); color: var(--vs
    as different at a glance: .selected is "this one cell's properties panel
    is open", .multi-selected is "part of the current bulk-action group". */
 .cell.multi-selected { border: 1px solid var(--vscode-charts-orange, orange); background: rgba(255,165,0,0.15); }
-.draw-line { background: var(--vscode-charts-orange, orange); }
-.draw-box { border: 1px solid var(--vscode-charts-orange, orange); box-sizing: border-box; }
+.draw-line { background: var(--vscode-charts-orange, orange); cursor: grab; }
+.draw-box { border: 1px solid var(--vscode-charts-orange, orange); box-sizing: border-box; cursor: grab; }
 .draw-line.approximate, .draw-box.approximate { opacity: 0.5; border-style: dashed; }
+/* Batch OO (docs/TASKS.md) — LINE/BOX properties panel: a draw selected
+   for editing (canvas click, or the Lines & Boxes panel's own "Edit")
+   gets a highlight ring, same blue .cell.selected already uses for a
+   selected field/constant, so "this is the thing the side panel is
+   showing" reads consistently across every selectable canvas element. A
+   plain outline (not a background tint like .cell.selected) since
+   .draw-line has no interior to tint and .draw-box's interior is usually
+   meant to stay visually empty. */
+.draw-line.draw-selected, .draw-box.draw-selected { outline: 2px solid var(--vscode-focusBorder); outline-offset: 1px; }
+/* Small square grab handle at a draw's resizable end/corner (LINE: its far
+   end; BOX: its second corner) — mousedown-and-drag on this (not the
+   shape itself, which drags the whole thing via HTML5 dnd) live-resizes
+   it; see wireResizeHandle in media/webviewClient.js. Sized fixed in
+   pixels (not tied to CELL_W/CELL_H) since it's a UI affordance, not part
+   of the report's own scale, and needs to stay grabbable even on a very
+   fine (high-CPI/LPI) grid where a cell-sized handle would be too small
+   to hit reliably. */
+.draw-resize-handle { position: absolute; width: 8px; height: 8px; background: var(--vscode-focusBorder); border: 1px solid var(--vscode-editor-background); box-sizing: border-box; cursor: nwse-resize; z-index: 2; }
+/* Batch OO — one list row per existing LINE/BOX in the new Lines & Boxes
+   panel (renderLineBoxPanel). Same visual language as this file's other
+   list-ish UI (.badge-list/.badge above) — a bordered strip per item
+   rather than a bare unstyled row, so Edit/Copy/Delete read as belonging
+   to one specific instance even when several LINE/BOX keywords are
+   stacked in the same panel. */
+.draw-list-item { border: 1px solid var(--vscode-panel-border); border-radius: 3px; padding: 6px 8px; margin-bottom: 6px; }
+.draw-list-item:last-child { margin-bottom: 0; }
+.draw-list-item.draw-selected { border-color: var(--vscode-focusBorder); }
+.draw-list-summary { display: flex; align-items: center; gap: 6px; font-size: 11px; flex-wrap: wrap; }
+.draw-list-summary .draw-list-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cell.barcode { background: repeating-linear-gradient(90deg, var(--vscode-charts-purple, #b180d7) 0 2px, transparent 2px 5px); border: 1px solid var(--vscode-charts-purple, #b180d7); display: flex; align-items: flex-end; justify-content: center; }
 .cell.barcode.rendered { background: var(--vscode-editor-background); display: block; }
 .barcode-label { background: var(--vscode-editor-background); font-size: 9px; padding: 0 2px; }

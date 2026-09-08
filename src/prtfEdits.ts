@@ -858,6 +858,51 @@ export function applyEditToModel(model: ParsedSource, edit: WebviewEdit): boolea
       }
       return changed;
     }
+    // Batch OO (docs/TASKS.md) — LINE/BOX properties-panel add/copy/edit/
+    // delete. See webviewProtocol.ts's own comment on this batch's edit
+    // kinds for why these are `keywordIndex`-scoped rather than id-scoped
+    // like field/constant edits, or name-scoped like setRecordKeyword/
+    // removeRecordKeyword.
+    case "addDrawKeyword": {
+      const record = model.records.find((r) => r.name === edit.recordName);
+      if (!record) return false;
+      const raw = edit.name + edit.params;
+      record.keywords.push({ name: edit.name, params: edit.params, raw, sourceLineIndex: -1 });
+      return true;
+    }
+    case "updateDrawKeyword": {
+      const record = model.records.find((r) => r.name === edit.recordName);
+      if (!record) return false;
+      const kw = record.keywords[edit.keywordIndex];
+      if (!kw || (kw.name !== "LINE" && kw.name !== "BOX")) return false;
+      kw.params = edit.params;
+      kw.raw = kw.name + edit.params;
+      return true;
+    }
+    case "removeDrawKeyword": {
+      const record = model.records.find((r) => r.name === edit.recordName);
+      if (!record) return false;
+      const kw = record.keywords[edit.keywordIndex];
+      if (!kw || (kw.name !== "LINE" && kw.name !== "BOX")) return false;
+      record.keywords.splice(edit.keywordIndex, 1);
+      return true;
+    }
+    case "copyDrawKeyword": {
+      // Duplicates in place, immediately after the source instance —
+      // deliberately NOT offset to a new position the way Batch Q's
+      // single-field copy is (that flow has a click-to-place step; LINE/
+      // BOX's two-point shape doesn't fit a single click-to-place point
+      // the same way, so this batch keeps the copy exactly where the
+      // original is and leaves repositioning to the same drag-to-move the
+      // canvas already supports for the original).
+      const record = model.records.find((r) => r.name === edit.recordName);
+      if (!record) return false;
+      const kw = record.keywords[edit.keywordIndex];
+      if (!kw || (kw.name !== "LINE" && kw.name !== "BOX")) return false;
+      const clone: Keyword = { name: kw.name, params: kw.params, raw: kw.raw, sourceLineIndex: -1, conditions: kw.conditions ? [...kw.conditions] : undefined };
+      record.keywords.splice(edit.keywordIndex + 1, 0, clone);
+      return true;
+    }
     default:
       return false;
   }

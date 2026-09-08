@@ -241,6 +241,226 @@ function buildCopyPendingNew(kind, line, position, source, existingFieldNames) {
   return { kind, line, position, literal: source.literal || "", sourceKeywords };
 }
 
+/**
+ * Batch OO (docs/TASKS.md) — parses an existing LINE keyword's raw params
+ * into per-param strings for populating the properties-panel edit form.
+ * Per IBM's DDS reference (see prtfLayout.js's parseLineGeometry, which
+ * this mirrors): LINE(position-down position-across line-length
+ * line-direction [line-width] [line-pad] [color]) — the first four are
+ * mandatory, the last three optional and trailing. Uses groupTokens (not a
+ * bare whitespace split) for the same reason parseFontSpecKeyword above
+ * does — consistent tokenizing even though LINE/BOX params don't
+ * themselves contain quoted spans today, so a future param addition that
+ * did wouldn't silently regress this. Returns empty strings (not undefined)
+ * for missing pieces, so callers can feed the result straight into an
+ * <input value="..."> without a defensiveness check at every call site.
+ */
+function parseLineParams(kw) {
+  const inner = kw ? String(kw.params || "").replace(/^\(/, "").replace(/\)$/, "").trim() : "";
+  const t = inner === "" ? [] : groupTokens(inner);
+  return {
+    down: t[0] || "",
+    across: t[1] || "",
+    length: t[2] || "",
+    direction: (t[3] || "*HRZ").toUpperCase(),
+    width: t[4] || "",
+    pad: t[5] || "",
+    color: t[6] || "",
+  };
+}
+
+/** Batch OO — same as parseLineParams, for BOX(first-corner-down first-corner-across diagonal-corner-down diagonal-corner-across [line-width] [color] [shading]). */
+function parseBoxParams(kw) {
+  const inner = kw ? String(kw.params || "").replace(/^\(/, "").replace(/\)$/, "").trim() : "";
+  const t = inner === "" ? [] : groupTokens(inner);
+  return {
+    down1: t[0] || "",
+    across1: t[1] || "",
+    down2: t[2] || "",
+    across2: t[3] || "",
+    width: t[4] || "",
+    color: t[5] || "",
+    shading: t[6] || "",
+  };
+}
+
+/**
+ * Batch OO — shared "required positional params, then trailing optional
+ * ones" builder for LINE/BOX: once a later optional param is supplied, any
+ * skipped earlier optional param is filled from `defaults` rather than
+ * left as a blank positional slot (DDS has no named-parameter syntax —
+ * `LINE(1 1 2 *HRZ  *RED)` with an empty width slot isn't valid source).
+ * Trailing optional params that were never reached (nothing after them was
+ * filled in either) are dropped entirely instead of defaulted, so leaving
+ * every optional field blank reproduces the exact "just the mandatory
+ * params" form IBM's own DDS examples show for the common case.
+ */
+function buildTrailingOptionalParams(requiredParts, optionalParts, defaults) {
+  let lastIdx = -1;
+  optionalParts.forEach((v, i) => {
+    if (v !== undefined && v !== null && String(v).trim() !== "") lastIdx = i;
+  });
+  const kept = optionalParts.slice(0, lastIdx + 1).map((v, i) => {
+    const val = (v || "").toString().trim();
+    return val === "" ? defaults[i] : val;
+  });
+  return requiredParts.concat(kept).join(" ");
+}
+
+/**
+ * Batch OO — builds a LINE keyword's "(...)" params text from the
+ * properties-panel form's values. Returns null (meaning: don't write this
+ * keyword) if any of the three mandatory numeric params is blank — mirrors
+ * every other builder in this file's "blank mandatory input means don't
+ * write the keyword at all" convention (see buildFontSpecParamsFromValues).
+ * `direction` defaults to *HRZ (IBM's own DDS default) rather than being
+ * treated as mandatory, since the form always shows a dropdown pre-set to
+ * one of the two valid values and can never itself be blank.
+ */
+function buildLineParams(v) {
+  if (!v) return null;
+  const down = (v.down || "").toString().trim();
+  const across = (v.across || "").toString().trim();
+  const length = (v.length || "").toString().trim();
+  if (!down || !across || !length) return null;
+  const direction = (v.direction || "*HRZ").toUpperCase();
+  const inner = buildTrailingOptionalParams([down, across, length, direction], [v.width, v.pad, v.color], ["0.01", "0", "*BLK"]);
+  return "(" + inner + ")";
+}
+
+/** Batch OO — BOX counterpart of buildLineParams; all four corner params are mandatory (no direction to default). */
+function buildBoxParams(v) {
+  if (!v) return null;
+  const down1 = (v.down1 || "").toString().trim();
+  const across1 = (v.across1 || "").toString().trim();
+  const down2 = (v.down2 || "").toString().trim();
+  const across2 = (v.across2 || "").toString().trim();
+  if (!down1 || !across1 || !down2 || !across2) return null;
+  const inner = buildTrailingOptionalParams([down1, across1, down2, across2], [v.width, v.color, v.shading], ["0.01", "*BLK", "*NONE"]);
+  return "(" + inner + ")";
+}
+
+/**
+ * Batch OO — converts a 1-based DDS line/position grid cell (the same grid
+ * pixelToLineCol above resolves a drag/drop point to) into the physical
+ * down/across measurement LINE/BOX params are coded in, given the record's
+ * current CPI/LPI and unit of measure. Exact inverse of prtfLayout.js's
+ * parseLineGeometry/parseBoxGeometry forward math (row = round(posDown *
+ * lpi) + 1 -> posDown = (row - 1) / lpi, then inches-to-uom). Rounded to 2
+ * decimal places — matches the precision real DDS source for this keyword
+ * is typically hand-authored to (e.g. "1.5 2.25"), and avoids float noise
+ * (0.1 + 0.2-style) leaking into what gets written back to source on every
+ * drag.
+ */
+function rowColToPhysical(row, col, cpi, lpi, uom) {
+  const downInches = (row - 1) / lpi;
+  const acrossInches = (col - 1) / cpi;
+  return { down: roundPhysical(toUom(downInches, uom)), across: roundPhysical(toUom(acrossInches, uom)) };
+}
+
+/**
+ * Batch OO — converts a grid-cell DELTA (rows/cols moved, not an absolute
+ * position) into a physical down/across delta in the same unit. Used for
+ * BOX's drag-to-move, which needs to shift BOTH corners by the same amount
+ * to preserve the box's size rather than resolving each corner
+ * independently through rowColToPhysical (which would round each corner's
+ * absolute position separately and could very slightly distort the box's
+ * width/height on repeated drags).
+ */
+function deltaPhysicalFromGridDelta(deltaRow, deltaCol, cpi, lpi, uom) {
+  return {
+    deltaDown: roundPhysical(toUom(deltaRow / lpi, uom)),
+    deltaAcross: roundPhysical(toUom(deltaCol / cpi, uom)),
+  };
+}
+
+function toUom(inches, uom) {
+  return uom === "cm" ? inches * 2.54 : inches;
+}
+
+function toInchesLocal(value, uom) {
+  return uom === "cm" ? value / 2.54 : value;
+}
+
+function roundPhysical(n) {
+  return Math.round(n * 100) / 100;
+}
+
+/** Batch OO — exact inverse of rowColToPhysical, for resize math that needs a shape's already-coded anchor point back in grid terms. */
+function physicalToGrid(down, across, cpi, lpi, uom) {
+  const downInches = toInchesLocal(down, uom);
+  const acrossInches = toInchesLocal(across, uom);
+  return { row: Math.round(downInches * lpi) + 1, col: Math.round(acrossInches * cpi) + 1 };
+}
+
+/**
+ * Batch OO — updated LINE params after a drag-to-move drop: the drop
+ * point becomes the new position-down/across outright (same "set the
+ * exact new anchor, not a delta from wherever within the shape was
+ * grabbed" convention fields' own "move" edit already uses); length,
+ * direction, and every optional param carry over unchanged.
+ */
+function movedLineParams(existingKw, dropLine, dropPosition, cpi, lpi, uom) {
+  const parsed = parseLineParams(existingKw);
+  const { down, across } = rowColToPhysical(dropLine, dropPosition, cpi, lpi, uom);
+  return buildLineParams(Object.assign({}, parsed, { down: String(down), across: String(across) }));
+}
+
+/**
+ * Batch OO — BOX counterpart of movedLineParams. Shifts BOTH corners by
+ * the same physical delta (derived from the grid delta between the box's
+ * CURRENT first corner — `oldRow1`/`oldCol1`, as already resolved by
+ * prtfLayout.js's resolveDrawsWithKeywordIndex — and the drop point),
+ * preserving the box's width/height, rather than resolving each corner
+ * independently through rowColToPhysical (see deltaPhysicalFromGridDelta's
+ * own header for why that would very slightly distort the box's size on
+ * repeated drags).
+ */
+function movedBoxParams(existingKw, dropLine, dropPosition, oldRow1, oldCol1, cpi, lpi, uom) {
+  const parsed = parseBoxParams(existingKw);
+  const { deltaDown, deltaAcross } = deltaPhysicalFromGridDelta(dropLine - oldRow1, dropPosition - oldCol1, cpi, lpi, uom);
+  const down1 = roundPhysical(parseFloat(parsed.down1 || "0") + deltaDown);
+  const across1 = roundPhysical(parseFloat(parsed.across1 || "0") + deltaAcross);
+  const down2 = roundPhysical(parseFloat(parsed.down2 || "0") + deltaDown);
+  const across2 = roundPhysical(parseFloat(parsed.across2 || "0") + deltaAcross);
+  return buildBoxParams(
+    Object.assign({}, parsed, { down1: String(down1), across1: String(across1), down2: String(down2), across2: String(across2) })
+  );
+}
+
+/**
+ * Batch OO — resizes a LINE by dragging its far end: position-down/across
+ * and direction stay fixed at the line's own anchor point, and `length` is
+ * recomputed as the grid distance from that anchor to the new drop point,
+ * projected along the line's own axis (horizontal lines only care about
+ * the column delta, vertical only the row delta — dragging a horizontal
+ * line's handle up/down has no effect on its length, matching how an
+ * actual resize handle on an axis-aligned shape behaves). Clamped to a
+ * minimum of one grid cell so dragging the handle back onto or past the
+ * anchor can't produce a zero or negative length.
+ */
+function resizedLineParams(existingKw, dropLine, dropPosition, cpi, lpi, uom) {
+  const parsed = parseLineParams(existingKw);
+  const direction = (parsed.direction || "*HRZ").toUpperCase();
+  const anchor = physicalToGrid(parseFloat(parsed.down || "0"), parseFloat(parsed.across || "0"), cpi, lpi, uom);
+  const lengthInches = direction === "*VRT" ? Math.max(1, dropLine - anchor.row) / lpi : Math.max(1, dropPosition - anchor.col) / cpi;
+  const length = Math.max(0.01, roundPhysical(toUom(lengthInches, uom)));
+  return buildLineParams(Object.assign({}, parsed, { length: String(length) }));
+}
+
+/**
+ * Batch OO — resizes a BOX by dragging its second (diagonal) corner:
+ * moves diagonal-corner-down/across straight to the drop point (converted
+ * to physical units), same "set the exact new value, not a delta" shape
+ * as movedLineParams; the first corner and every optional param are left
+ * untouched.
+ */
+function resizedBoxParams(existingKw, dropLine, dropPosition, cpi, lpi, uom) {
+  const parsed = parseBoxParams(existingKw);
+  const { down, across } = rowColToPhysical(dropLine, dropPosition, cpi, lpi, uom);
+  return buildBoxParams(Object.assign({}, parsed, { down2: String(down), across2: String(across) }));
+}
+
 const mod = {
   paramsToText,
   paramsInnerText,
@@ -250,6 +470,17 @@ const mod = {
   pixelToLineCol,
   suggestCopyName,
   buildCopyPendingNew,
+  parseLineParams,
+  parseBoxParams,
+  buildLineParams,
+  buildBoxParams,
+  rowColToPhysical,
+  deltaPhysicalFromGridDelta,
+  physicalToGrid,
+  movedLineParams,
+  movedBoxParams,
+  resizedLineParams,
+  resizedBoxParams,
 };
 if (typeof module !== "undefined" && module.exports) module.exports = mod;
 if (typeof window !== "undefined") window.PrtfWebviewLogic = mod;
