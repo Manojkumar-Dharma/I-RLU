@@ -694,6 +694,43 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       ideally against the exact remote member from the reported
       screenshot.
 
+- [x] **Batch OO — LINE/BOX properties-panel UI (add/copy/edit/delete +
+      drag/resize).** `LINE`/`BOX` (record-level, AFPDS-only) have
+      rendered on the design canvas since Batch I, but had no
+      properties-panel surface at all — no way to add, edit, copy, or
+      delete one, and no interactive drag-to-move/drag-to-resize the way
+      fields/constants already have. Flagged directly by Manoj after
+      noticing the gap; confirmed by inspecting every batch that ever
+      built keyword-editing UI (A/B/C/E/F/G) — none of their scoped
+      keyword lists actually included `LINE`/`BOX`, despite
+      `docs/TASKS.md`'s own Known-Limitations table previously
+      (incorrectly) implying they did. New edit kinds `addDrawKeyword`/
+      `updateDrawKeyword`/`removeDrawKeyword`/`copyDrawKeyword`
+      (`webviewProtocol.ts`/`prtfEdits.ts`), scoped by `keywordIndex` — a
+      `LINE`/`BOX` instance's position within `record.keywords` — since
+      neither keyword has a name-based way to pick out one instance among
+      several repeats, unlike fields/constants (stable `id`) or
+      single-instance record keywords. `src/prtfLayout.js` gained
+      `resolveDrawsWithKeywordIndex` to tag every resolved draw with that
+      index. New `src/prtfWebviewLogic.js` holds the pure, unit-tested
+      parse/build/grid↔physical-unit helpers the panel and drag/resize
+      handlers both need. `media/webviewClient.js` gained an always-visible
+      "Lines & Boxes" side panel per record (Edit/Copy/Delete plus "+
+      Line"/"+ Box" add forms), draggable canvas shapes (whole-shape move)
+      and a resize handle (plain mouse events, since resize needs
+      continuous tracking a drag-and-drop handler doesn't give). See
+      `docs/TASKS.md` Batch OO for the full writeup. 33 new tests in
+      `test/prtfBatchOO.test.ts` (parse/build round-trips, grid↔physical
+      conversions, moved/resized param builders, `resolveDrawsWithKeywordIndex`
+      including indicator-conditioned instances, and all four new edit
+      kinds including negative/out-of-range cases); full suite now 541,
+      all passing. **No real-browser verification possible in this
+      sandbox** for the actual drag/resize DOM interaction — verified
+      instead via `tsc`, the full unit-test suite, a syntax check of the
+      assembled webview script, and manual review of the DOM/event-wiring
+      code. Please verify the drag-to-move/drag-to-resize interactions
+      visually in a real Extension Development Host.
+
 ## Next up
 
 As of the RLU screen-capture review (`docs/KEYWORD-INVENTORY.md`), the
