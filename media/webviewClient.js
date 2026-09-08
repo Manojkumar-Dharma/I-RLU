@@ -54,6 +54,13 @@
     // start in the safe "not usable yet" state rather than assuming a
     // connection that hasn't been confirmed.
     codeForI: { installed: false, connected: false },
+    // Batch O — session-only "Preview resource image…" results, keyed by
+    // "recordName|keyword" (see the "afpResourcePreview" message handler
+    // below). Never persisted, never sent back to the extension host —
+    // purely a design-time aid for looking at what a local resource file
+    // actually decodes to, same "session state, not model state" treatment
+    // Batch HH's own sample-data feature uses.
+    afpResourcePreviews: {},
     // Batch X — "Track source modifications" (mirrors I-SDA's
     // isda.trackSourceModifications/isda.modificationTag). Starts at
     // whatever the i-rlu.trackSourceModifications/i-rlu.modificationTag
@@ -2519,6 +2526,40 @@
   ];
 
   /** Bespoke OVERLAY row (Batch E) — OVERLAY([library/]overlay-name position-down position-across [extra]), name unquoted (object name, not a literal). */
+  /**
+   * Shared "Preview resource image…" button + result display for
+   * OVERLAY/PAGSEG/AFPRSC's own rows (Batch O, docs/TASKS.md) — a real
+   * page-segment/overlay resource file lives outside DDS source entirely
+   * (docs/REQUIREMENTS.md §8), so this doesn't read from `record` at all;
+   * it just posts a message asking the extension host to show a native
+   * file picker, decode whatever's chosen, and post the result back (see
+   * extension.ts's handlePreviewAfpResource) — same "ask via native UI,
+   * no webview round-trip for the picker itself" shape
+   * browseReferencedField/addFieldsFromDatabase already use.
+   */
+  function appendAfpResourcePreviewRow(container, record, keyword) {
+    const previewBtn = el("button", { class: "btn", style: "width:100%;margin:4px 0 8px;" }, ["Preview resource image…"]);
+    previewBtn.addEventListener("click", () => {
+      vscode.postMessage({ type: "previewAfpResource", recordName: record.name, keyword });
+    });
+    container.appendChild(previewBtn);
+
+    const key = record.name + "|" + keyword;
+    const preview = state.afpResourcePreviews[key];
+    if (!preview) return;
+
+    const box = el("div", { class: "prop-row", style: "flex-direction:column;align-items:flex-start;" });
+    box.appendChild(el("div", { class: "hint" }, [preview.fileName + ":"]));
+    if (preview.result.error) {
+      box.appendChild(el("div", { class: "hint warning" }, [preview.result.error]));
+    } else {
+      const nameLabel = preview.result.name ? " (resource name: " + preview.result.name + ")" : "";
+      box.appendChild(el("div", { class: "hint" }, [preview.result.width + "\u00d7" + preview.result.height + " px" + nameLabel]));
+      box.appendChild(el("img", { src: preview.result.dataUri, style: "max-width:100%;border:1px solid var(--vscode-panel-border);background:#fff;" }));
+    }
+    container.appendChild(box);
+  }
+
   function appendOverlayRow(container, record, onSet, onRemove) {
     const existing = PrtfEngine.findKeyword(record.keywords, "OVERLAY");
     const f = existing ? PrtfEngine.parseOverlay(existing, 10, 6, state.uom) : { name: "", posDown: "", posAcross: "", extra: "" };
@@ -2554,6 +2595,7 @@
     };
     cb.addEventListener("change", sendUpdate);
     [nameInp, downInp, acrossInp, extraInp].forEach((i) => i.addEventListener("change", sendUpdate));
+    appendAfpResourcePreviewRow(container, record, "OVERLAY");
   }
 
   /** Bespoke PAGSEG row (Batch E) — PAGSEG(page-segment-name [vertical-offset horizontal-offset] [extra]), offsets optional as a pair. */
@@ -2588,6 +2630,7 @@
     };
     cb.addEventListener("change", sendUpdate);
     [nameInp, downInp, acrossInp, extraInp].forEach((i) => i.addEventListener("change", sendUpdate));
+    appendAfpResourcePreviewRow(container, record, "PAGSEG");
   }
 
   /** Bespoke AFPRSC row (Batch E) — AFPRSC('resource-name' object-type position-down position-across [extra]). resource-name IS a quoted character value (unlike OVERLAY/PAGSEG's object names). */
@@ -2623,6 +2666,7 @@
     };
     cb.addEventListener("change", sendUpdate);
     [nameInp, typeInp, downInp, acrossInp, extraInp].forEach((i) => i.addEventListener("change", sendUpdate));
+    appendAfpResourcePreviewRow(container, record, "AFPRSC");
   }
 
   /** Bespoke DOCIDXTAG row (Batch E) — DOCIDXTAG(attribute-name attribute-value tag-level), tag-level is GROUP or PAGE (unquoted special value). */
@@ -2787,6 +2831,12 @@
       render();
     } else if (msg.type === "codeForIStatus") {
       state.codeForI = { installed: !!msg.installed, connected: !!msg.connected };
+      render();
+    } else if (msg.type === "afpResourcePreview") {
+      // Batch O — keyed by "recordName|keyword" so previewing PAGSEG
+      // doesn't clobber an already-shown OVERLAY preview for the same (or
+      // a different) record.
+      state.afpResourcePreviews[msg.recordName + "|" + msg.keyword] = { fileName: msg.fileName, result: msg.result };
       render();
     } else if (msg.type === "modTrackingConfig") {
       // Batch X — only apply the pushed global defaults as long as the

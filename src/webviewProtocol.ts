@@ -176,4 +176,14 @@ export type WebviewMessage =
   // fields to add — same "ask via native VS Code UI, apply directly, no
   // webview round-trip for the picker itself" shape browseReferencedField
   // already uses.
-  | { type: "addFieldsFromDatabase"; recordName: string };
+  | { type: "addFieldsFromDatabase"; recordName: string }
+  // Batch O — "Preview resource image…" button next to OVERLAY/PAGSEG/
+  // AFPRSC's own row (media/webviewClient.js). Deliberately carries no
+  // file path at all: the actual file lives on local disk (or is
+  // otherwise reachable via fs), not in DDS source, so extension.ts's
+  // handler shows a native vscode.window.showOpenDialog file picker
+  // itself, reads and decodes the chosen file, and posts the result back
+  // as an "afpResourcePreview" message — same "ask via native VS Code UI,
+  // no webview round-trip for the picker itself" shape
+  // addFieldsFromDatabase/browseReferencedField already use.
+  | { type: "previewAfpResource"; recordName: string; keyword: "OVERLAY" | "PAGSEG" | "AFPRSC" };

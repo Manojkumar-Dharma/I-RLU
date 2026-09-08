@@ -176,15 +176,23 @@ kept here.
 - AFP font metrics remain an approximation for the proportional families
   (Helvetica/Times New Roman): real, published Adobe AFM data for the
   metric-compatible *substitute* fonts, not a verified byte-for-byte
-  extraction of IBM's own FGID resource data. `CDEFNT`, `FNTCHRSET`, and
-  `FONTNAME` (host/IFS font references) aren't resolved at all — see "AFPDS
-  font metrics" above. *(Batch L, mostly done)*
-- Real pixel content for page segments (`PAGSEG`), overlays (`OVERLAY`),
-  and other AFP resources isn't rendered — these show as labeled
-  placeholder boxes (resource name + keyword), since the actual
-  scanned-logo/form content lives in external IFS/host AFP objects this
-  tool has no access to. *(Batch O, blocked — needs external resource file
-  access; see `docs/REQUIREMENTS.md` §8)*
+  extraction of IBM's own FGID resource data. `CDEFNT`/`FNTCHRSET` (IBM
+  coded-font/font-character-set resources) aren't resolved beyond a
+  documented raster/outline prefix + a small verified example table — see
+  "AFPDS font metrics" above. `FONTNAME` (TrueType/OpenType font
+  references) IS fully resolved, including real per-character advance
+  widths from a real vendored substitute font. *(Batch L, mostly done)*
+- Real pixel content for page segments (`PAGSEG`) and overlays
+  (`OVERLAY`) renders when a real local resource file is supplied via the
+  "Preview resource image…" button on that keyword's own properties-panel
+  row — a real IOCA (Function Set 10) decoder, uncompressed and G4/MMR-
+  compressed both — but nothing fetches a resource file automatically
+  (no Code-for-i-based IFS browser exists), and only image content is
+  decoded (not PTOCA text or GOCA graphics, which an overlay can also
+  legally contain). The on-page placeholder box itself is unchanged (a
+  labeled box, not the real image) — the preview is a separate,
+  properties-panel-only aid for now. *(Batch O, done for the common
+  image-content case; see `docs/REQUIREMENTS.md` §8)*
 - `REF`/`REFFLD` live resolution over Code for i (both the single-field
   "Resolve Referenced Field" and the "Browse fields…" picker) is written
   and unit-tested wherever the logic is pure, but the actual DSPFFD/SQL

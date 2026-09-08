@@ -731,6 +731,28 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       code. Please verify the drag-to-move/drag-to-resize interactions
       visually in a real Extension Development Host.
 
+- [x] **Batch O — real AFP resource rendering (page segments/overlays as
+      actual images) — done for the common image-content case.** Real
+      Apache-2.0-licensed AFP resource fixtures from Apache FOP's own test
+      suite (`test/fixtures/afp/`) unblocked this after it sat blocked for
+      several sessions. New `src/afpResourceDecoder.js` (MO:DCA structured-
+      field scanning → IOCA Function Set 10 content parsing → raster
+      decode → real PNG encoding via Node's built-in `zlib`) plus
+      `src/afpCcittDecoder.js`, a vendored real ITU-T T.6 (G4/MMR) decoder
+      ported from Mozilla pdf.js (Apache-2.0), independently verified
+      against a Pillow/libtiff-generated G4 test vector — 100% pixel-exact
+      match. Wired into the properties panel as a "Preview resource
+      image…" button on `OVERLAY`/`PAGSEG`/`AFPRSC`'s own rows (a local
+      file picker, since no Code-for-i-based IFS browser exists to fetch
+      one automatically). Three real bugs found and fixed via the real-
+      fixture testing itself: an IOCA COMPRID table misreading (`0x03` is
+      "No compression", not G4), AFP resource names being EBCDIC- not
+      ASCII-encoded, and a nested `BOG`/`EOG` inside the image content
+      silently overwriting the real resource name. See `docs/TASKS.md`
+      Batch O for the full writeup. Genuinely still out of scope: PTOCA/
+      GOCA (text/graphics) overlay content and non-FS10 IOCA — both fail
+      with a specific, honest error rather than a guess.
+
 ## Next up
 
 As of the RLU screen-capture review (`docs/KEYWORD-INVENTORY.md`), the

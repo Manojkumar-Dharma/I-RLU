@@ -166,14 +166,29 @@ start rather than bolted on later:
 | Resource resolver | `src/afpResourceResolver.ts` | Handles `PAGSEG`, `OVERLAY`(resource-type usage, distinct from the record-level `OVERLAY` keyword), and image/page-segment references — renders a labeled placeholder box when the actual resource file isn't available to the parser (it usually won't be, since those are IFS/host objects, not part of the DDS source itself). |
 | Unit-of-measure handling | (in `prtfEngine.js`) | AFPDS records can specify `PAGSIZE`/positions in inches or millimeters via `UOM`, not just character rows/cols — the resolver needs to convert consistently for layout math. |
 
-**Hard limit that doesn't go away regardless of priority:** actual page
-segments and overlay graphics (scanned logos, pre-printed form images) are
-external AFP resource objects, not DDS source text. Even with AFPDS as a
-first-class target, I-RLU can position and size their bounding box correctly
-but can't render their real pixel content unless those resource files are
-also supplied to the tool. Worth flagging in the README's "Known
-limitations" section from the first release rather than presenting AFPDS
-support as fully WYSIWYG.
+**Hard limit — resolved for the common case (Batch O), still applies in
+general:** actual page segments and overlay graphics (scanned logos,
+pre-printed form images) are external AFP resource objects, not DDS
+source text — I-RLU still can't read one automatically off an IBM i (no
+Code-for-i-based IFS file browser exists), so a real resource file has to
+be supplied locally. Given one, `src/afpResourceDecoder.js` now decodes a
+real IOCA (Function Set 10) page-segment/overlay resource object into an
+actual image — structured-field parsing, IOCA content parsing, both
+uncompressed and G4/MMR-compressed (via a vendored real CCITT decoder —
+see `src/afpCcittDecoder.js`) raster decoding, and PNG encoding, all
+verified against real fixtures (see `test/fixtures/afp/NOTICE.md` and
+`docs/TASKS.md`'s Batch O writeup for the full verification story,
+including a real decode bug the fixture testing itself caught: AFP
+resource names are EBCDIC-, not ASCII-encoded). Wired into the
+properties panel as a "Preview resource image…" button (`OVERLAY`/
+`PAGSEG`/`AFPRSC`'s own rows) — a local file picker, not a live IFS
+fetch. Genuinely still out of scope: PTOCA (text) or GOCA (vector
+graphics) overlay content, and IOCA function sets other than FS10 — both
+fail with a specific, honest error rather than a guess (see
+`afpResourceDecoder.js`'s own header comment). Worth keeping the README's
+"Known limitations" wording accurate to this — real image content now
+renders when a local resource file is supplied, but nothing fetches one
+automatically, and non-image overlay content still doesn't render at all.
 
 ## 9. Font resource access — update
 
