@@ -785,6 +785,24 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       `docs/TASKS.md` Batch QQ for the full writeup. 1 new test in
       `test/webviewLayout.test.ts`; full suite now 569, all passing.
 
+- [x] **Batch RR — bug fix: Font & sizing panel lost checked-but-unapplied
+      keywords on a sibling's change.** Reported directly by Manoj:
+      checking FONT, then checking CCSID, then unchecking CCSID also
+      unchecked FONT. Root cause: unlike every other keyword-checkbox
+      panel in the app, checking a Font & sizing checkbox only revealed
+      its inputs without committing anything — only a separate "Apply"
+      button did that — while unchecking committed immediately and
+      triggered the webview's own full destructive `render()`. A checked-
+      but-never-applied FONT would then correctly (if confusingly) revert
+      the moment a sibling keyword's own change forced that rebuild, since
+      the real document never had FONT saved in the first place. Fixed by
+      having every Font & sizing input auto-commit on its own `change`
+      (blur) event via a shared submit function also used by the Apply
+      button, matching the "commit as soon as there's a value" convention
+      the rest of the app's keyword-checkbox panels already use. See
+      `docs/TASKS.md` Batch RR for the full writeup. 1 new test in
+      `test/webviewLayout.test.ts`; full suite now 570, all passing.
+
 - [x] **Batch O — real AFP resource rendering (page segments/overlays as
       actual images) — done for the common image-content case.** Real
       Apache-2.0-licensed AFP resource fixtures from Apache FOP's own test

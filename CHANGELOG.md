@@ -17,6 +17,19 @@ it does not replace those two documents.
 Nothing yet — see `docs/TASKS.md` for what's currently in flight or filed
 for a future batch.
 
+## [0.0.16] - Batch RR
+
+### Fixed
+- In the Font & sizing properties panel, checking `FONT` then `CCSID` and
+  then unchecking `CCSID` also unchecked `FONT`. Checking a checkbox only
+  revealed its inputs without saving anything until a separate "Apply"
+  button was clicked, while unchecking committed immediately and forced a
+  full panel rebuild — so a checked-but-never-applied keyword would
+  silently revert the moment any sibling keyword's change triggered that
+  rebuild. Every input in this panel now auto-commits as soon as it loses
+  focus, matching how the rest of the app's keyword checkboxes already
+  behave.
+
 ## [0.0.15] - Batch QQ
 
 ### Fixed
@@ -175,7 +188,8 @@ empty shell to a genuinely usable RLU replacement. Highlights:
 - Wide record-format panel layout, made two-column and independently
   scrollable (Batch S).
 
-[Unreleased]: https://github.com/Manojkumar-Dharma/I-RLU/compare/v0.0.15...HEAD
+[Unreleased]: https://github.com/Manojkumar-Dharma/I-RLU/compare/v0.0.16...HEAD
+[0.0.16]: https://github.com/Manojkumar-Dharma/I-RLU/compare/v0.0.15...v0.0.16
 [0.0.15]: https://github.com/Manojkumar-Dharma/I-RLU/compare/v0.0.14...v0.0.15
 [0.0.14]: https://github.com/Manojkumar-Dharma/I-RLU/compare/v0.0.12...v0.0.14
 [0.0.12]: https://github.com/Manojkumar-Dharma/I-RLU/compare/v0.0.11...v0.0.12
