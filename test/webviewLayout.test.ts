@@ -181,3 +181,57 @@ test("webview layout (Batch QQ): the codeForIStatus handler only re-renders when
   assert.match(ifBlockMatch![1], /render\(\);/, "render() must be called INSIDE the changed-check, not unconditionally after it");
 });
 
+// Batch RR (docs/TASKS.md) — bug fix. Reported directly by Manoj: checking
+// the "Font & sizing" panel's FONT checkbox, then checking CCSID, then
+// unchecking CCSID caused FONT to appear unchecked too. Root cause:
+// checking a Font & sizing checkbox only revealed its inputs — nothing
+// was actually committed until the separate "Apply" button was clicked —
+// while UNchecking committed immediately (calling removeFn, which
+// triggers a full document round-trip and the webview's own destructive
+// render()). So an already-checked-but-never-applied FONT silently
+// reverted the moment ANY sibling keyword's own change committed and
+// forced a full panel rebuild, since the real document never had FONT
+// saved in the first place. Fixed by having every Font & sizing input
+// (the P-field rows, the point-size rows, and CHRSIZ/CCSID's own plain
+// inputs) auto-commit on its own "change" (blur) event, same "commit as
+// soon as there's a value" convention appendKeywordRows (Batch A/G) has
+// used from the start elsewhere in this file — closing the unsaved-state
+// window instead of leaving it open until an explicit Apply click. Same
+// "webviewClient.js isn't require()-able" constraint as the other checks
+// in this file, so this is a source-text shape check rather than a DOM
+// interaction test.
+test("webview layout (Batch RR): Font & sizing panel inputs auto-commit on change, not only via the Apply button", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../../media/webviewClient.js"), "utf8");
+
+  // pFieldRow must accept and wire an onChange callback on both its
+  // literal and P-field inputs (and the literal/P-field toggle button),
+  // or a P-field row's own edits would never auto-commit regardless of
+  // whether callers pass onChange.
+  const pFieldRowMatch = source.match(/function pFieldRow\(labelText, opts\) \{([\s\S]*?)\n  \}\n/);
+  assert.ok(pFieldRowMatch, "pFieldRow function not found");
+  const pFieldRowBody = pFieldRowMatch![1];
+  assert.match(pFieldRowBody, /if \(opts\.onChange\) opts\.onChange\(\);/, "pFieldRow's literal/P-field toggle button must also fire onChange — toggling changes getValue()'s result just as much as editing the input does");
+  assert.match(pFieldRowBody, /literalInput\.addEventListener\("change", opts\.onChange\)/, "pFieldRow must wire its literal input's change event to opts.onChange");
+  assert.match(pFieldRowBody, /pfieldInput\.addEventListener\("change", opts\.onChange\)/, "pFieldRow must wire its P-field input's change event to opts.onChange");
+
+  // renderFontSizingPanel must actually pass a submit callback as
+  // onChange for every paramRow / heightRow / widthRow it creates via
+  // pFieldRow, not just leave the Apply button as the only trigger.
+  const panelMatch = source.match(/function renderFontSizingPanel\(keywords, applyFn, removeFn, titleSuffix\) \{([\s\S]*?)\n    return panel;\n  \}\n/);
+  assert.ok(panelMatch, "renderFontSizingPanel function not found");
+  const panelBody = panelMatch![1];
+  assert.match(panelBody, /const trySubmit = \(\) => \{/, "renderFontSizingPanel must define a shared trySubmit function reused by both the Apply button and each row's onChange");
+  assert.match(panelBody, /pFieldRow\(p\.label, \{[^}]*onChange: trySubmit/, "each spec.params paramRow must be created with onChange: trySubmit");
+  assert.match(panelBody, /pFieldRow\("Point size height", \{[^}]*onChange: trySubmit/, "the point-size height row must be created with onChange: trySubmit");
+  assert.match(panelBody, /pFieldRow\("Point size width", \{[^}]*onChange: trySubmit/, "the point-size width row must be created with onChange: trySubmit");
+
+  // CHRSIZ and CCSID (plain numeric inputs, not pFieldRow) must wire their
+  // own inputs' "change" events to the same submit logic the Apply button
+  // uses, via a named, shared function (not just the click handler alone).
+  assert.match(panelBody, /const chrsizSubmit = \(\) => \{/, "CHRSIZ needs a shared chrsizSubmit function reused by both the Apply button and its inputs");
+  assert.match(panelBody, /widthMultRow\.input\.addEventListener\("change", chrsizSubmit\)/, "CHRSIZ's width-multiplier input must auto-commit on change");
+  assert.match(panelBody, /heightMultRow\.input\.addEventListener\("change", chrsizSubmit\)/, "CHRSIZ's height-multiplier input must auto-commit on change");
+  assert.match(panelBody, /const ccsidSubmit = \(\) => \{/, "CCSID needs a shared ccsidSubmit function reused by both the Apply button and its input");
+  assert.match(panelBody, /ccsidValRow\.input\.addEventListener\("change", ccsidSubmit\)/, "CCSID's value input must auto-commit on change");
+});
+

@@ -981,7 +981,36 @@
       literalInput.style.display = isPField ? "none" : "";
       pfieldInput.style.display = isPField ? "" : "none";
       toggleBtn.textContent = isPField ? "P-field" : "Literal";
+      // Batch RR (docs/TASKS.md) — see this function's own onChange param
+      // comment below for why this fires too, not just literalInput/
+      // pfieldInput's own "change" events.
+      if (opts.onChange) opts.onChange();
     });
+    // Batch RR (docs/TASKS.md) — bug fix. renderFontSizingPanel's checkbox
+    // used to be the ONLY way to reveal these inputs, with a separate
+    // "Apply" button as the ONLY way to actually commit them, unlike every
+    // other keyword-checkbox panel in the app (appendKeywordRows/
+    // appendEdtcdeRow, Batch A/G), which commits immediately the moment a
+    // value is entered — no separate Apply step. That gap left a keyword
+    // "checked but not yet applied" (e.g. FONT) sitting in memory-only
+    // state for as long as the user hadn't clicked Apply; any OTHER
+    // keyword change in the same panel that DID commit (e.g. unchecking a
+    // sibling keyword, which always committed immediately via removeFn)
+    // triggered the webview's full destructive render() (root.innerHTML =
+    // "" + total rebuild — see render()'s own header comment), which then
+    // correctly reflected the real, FONT-less document — visible to the
+    // user as "FONT got unchecked too", even though it had never actually
+    // been saved. Wiring onChange here (and on the toggle button above)
+    // lets the caller auto-commit on every value edit, closing that window
+    // to a single blur/change event instead of leaving it open until an
+    // explicit Apply click — same "commit as soon as there's a value"
+    // convention Batch A/G's appendKeywordRows already uses. The Apply
+    // button remains for users who prefer an explicit action; this is
+    // purely an additional trigger, not a replacement.
+    if (opts.onChange) {
+      literalInput.addEventListener("change", opts.onChange);
+      pfieldInput.addEventListener("change", opts.onChange);
+    }
     wrap.appendChild(literalInput);
     wrap.appendChild(pfieldInput);
     wrap.appendChild(toggleBtn);
@@ -1094,24 +1123,33 @@
       panel.appendChild(el("label", { class: "ind-label", for: cbId, title: spec.hint }, [cb, " " + spec.name]));
 
       const body = el("div", { style: existing ? "" : "display:none;" });
+      // Batch RR (docs/TASKS.md) — trySubmit is passed to every paramRow/
+      // heightRow/widthRow below as their onChange, so this keyword
+      // auto-commits the moment the user finishes editing any of its
+      // values (blur/change), not only when the separate Apply button is
+      // clicked — see pFieldRow's own onChange comment for the full "why".
+      // buildFontSpecParams already returns null (submit becomes a no-op)
+      // if the mandatory first param is still empty, so an incomplete
+      // in-progress edit never writes a bare, invalid "NAME()".
+      const trySubmit = () => {
+        const params = buildFontSpecParams(spec, paramRows, heightRow, widthRow);
+        if (params) applyFn(spec.name, params);
+      };
       const paramRows = spec.params.map((p, i) => {
-        const r = pFieldRow(p.label, { initialIsPField: parsed.values[i].isPField, initialValue: parsed.values[i].value, placeholder: p.placeholder });
+        const r = pFieldRow(p.label, { initialIsPField: parsed.values[i].isPField, initialValue: parsed.values[i].value, placeholder: p.placeholder, onChange: trySubmit });
         body.appendChild(r.row);
         return r;
       });
       let heightRow = null;
       let widthRow = null;
       if (spec.pointSize) {
-        heightRow = pFieldRow("Point size height", { initialIsPField: parsed.height.isPField, initialValue: parsed.height.value, numeric: !parsed.height.isPField, placeholder: "optional" });
-        widthRow = pFieldRow("Point size width", { initialIsPField: parsed.width.isPField, initialValue: parsed.width.value, numeric: !parsed.width.isPField, placeholder: "optional" });
+        heightRow = pFieldRow("Point size height", { initialIsPField: parsed.height.isPField, initialValue: parsed.height.value, numeric: !parsed.height.isPField, placeholder: "optional", onChange: trySubmit });
+        widthRow = pFieldRow("Point size width", { initialIsPField: parsed.width.isPField, initialValue: parsed.width.value, numeric: !parsed.width.isPField, placeholder: "optional", onChange: trySubmit });
         body.appendChild(heightRow.row);
         body.appendChild(widthRow.row);
       }
       const applyBtn = el("button", { class: "btn", type: "button" }, ["Apply " + spec.name]);
-      applyBtn.addEventListener("click", () => {
-        const params = buildFontSpecParams(spec, paramRows, heightRow, widthRow);
-        if (params) applyFn(spec.name, params);
-      });
+      applyBtn.addEventListener("click", trySubmit);
       body.appendChild(applyBtn);
       panel.appendChild(body);
 
@@ -1145,11 +1183,17 @@
     chrsizBody.appendChild(widthMultRow.row);
     chrsizBody.appendChild(heightMultRow.row);
     const chrsizApplyBtn = el("button", { class: "btn", type: "button" }, ["Apply CHRSIZ"]);
-    chrsizApplyBtn.addEventListener("click", () => {
+    // Batch RR (docs/TASKS.md) — shared by the Apply button's click AND
+    // both inputs' own "change" (blur) events, same auto-commit-on-edit
+    // convention as the P-field rows above.
+    const chrsizSubmit = () => {
       const w = widthMultRow.input.value || "1.0";
       const h = heightMultRow.input.value || "1.0";
       applyFn("CHRSIZ", "(" + w + " " + h + ")");
-    });
+    };
+    chrsizApplyBtn.addEventListener("click", chrsizSubmit);
+    widthMultRow.input.addEventListener("change", chrsizSubmit);
+    heightMultRow.input.addEventListener("change", chrsizSubmit);
     chrsizBody.appendChild(chrsizApplyBtn);
     panel.appendChild(chrsizBody);
     chrsizCb.addEventListener("change", () => {
@@ -1171,10 +1215,17 @@
     const ccsidValRow = labeledInput("CCSID", { type: "number", min: "1", value: ccsidExisting ? String(ccsidExisting.params).replace(/[()]/g, "").trim() : "" });
     ccsidBody.appendChild(ccsidValRow.row);
     const ccsidApplyBtn = el("button", { class: "btn", type: "button" }, ["Apply CCSID"]);
-    ccsidApplyBtn.addEventListener("click", () => {
+    // Batch RR (docs/TASKS.md) — same shared-submit convention as CHRSIZ
+    // above; deliberately still a no-op on an empty value (matching
+    // Batch A/G's own "wait for value" behavior for required-value
+    // keywords), so blurring an empty CCSID input right after checking
+    // its box doesn't send an invalid bare "CCSID()".
+    const ccsidSubmit = () => {
       const v = ccsidValRow.input.value.trim();
       if (v) applyFn("CCSID", "(" + v + ")");
-    });
+    };
+    ccsidApplyBtn.addEventListener("click", ccsidSubmit);
+    ccsidValRow.input.addEventListener("change", ccsidSubmit);
     ccsidBody.appendChild(ccsidApplyBtn);
     panel.appendChild(ccsidBody);
     ccsidCb.addEventListener("change", () => {
