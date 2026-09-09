@@ -765,6 +765,26 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       See `docs/TASKS.md` Batch PP for the full writeup. 13 new tests in
       `test/prtfBatchPP.test.ts`; full suite now 567, all passing.
 
+- [x] **Batch QQ — bug fix: side panel resets/loses in-progress input every
+      ~10s.** Reported directly by Manoj: entering a properties-panel
+      sub-field value (e.g. typing a `CCSID` value) before applying it gets
+      silently wiped and the panel jumps back to the top, every 10 seconds
+      while the designer is open. Root cause: `src/extension.ts`'s
+      `sendCodeForIStatus` poll (`setInterval(..., 10000)`, driving the
+      "IBM i: Connected/Not connected" badge) posts a `codeForIStatus`
+      message unconditionally on every tick, whether or not the connection
+      state actually changed — and `media/webviewClient.js`'s handler
+      responded to every such message with the fully destructive `render()`
+      (`root.innerHTML = ""` + total rebuild of every panel), wiping
+      whatever was mid-typed and resetting scroll position regardless of
+      whether anything about the connection had changed. Fixed on the
+      webview side: the handler now compares the incoming
+      `installed`/`connected` values against current state before updating
+      it and calling `render()`, so an unchanged poll tick is a no-op while
+      a genuine connect/disconnect still updates the badge immediately. See
+      `docs/TASKS.md` Batch QQ for the full writeup. 1 new test in
+      `test/webviewLayout.test.ts`; full suite now 569, all passing.
+
 - [x] **Batch O — real AFP resource rendering (page segments/overlays as
       actual images) — done for the common image-content case.** Real
       Apache-2.0-licensed AFP resource fixtures from Apache FOP's own test
