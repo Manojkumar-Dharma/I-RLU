@@ -109,7 +109,10 @@ function mapDspffdRowToAttributes(row) {
  * record format (WHNAME is DSPFFD's own record-format-name column — same
  * column I-SDA's own fetchDatabaseFileFields groups by) and if so returns
  * just the distinct format names for the caller to disambiguate with
- * (rather than misordering WHFLDO across formats, or silently guessing
+ * (rather than misordering WHFOBO — Output Buffer Position, the real
+ * DSPFFD *OUTFILE field-order column; see extension.ts's own SQL comment
+ * for the WHFLDO mix-up this project made and fixed — across formats, or
+ * silently guessing
  * one), or otherwise maps every row into a field via
  * mapDspffdRowToAttributes and returns the field list. Split out as a
  * pure function (unlike I-SDA's own inline version of this logic) so it's

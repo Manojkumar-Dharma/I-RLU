@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { parseSource } from "../src/prtfParser";
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { regenerateSource, upsertReffldKeyword } = require("../src/prtfWriter.js");
@@ -198,7 +200,7 @@ test("mapDspffdRowToAttributes: accepts lowercase column names too (some Code fo
   assert.deepEqual(attrs, { length: 5, dataType: "P", decimalPositions: null });
 });
 
-test("groupDatabaseFileFieldRows: a single-format file returns the field list directly, in WHFLDO (row) order", () => {
+test("groupDatabaseFileFieldRows: a single-format file returns the field list directly, in WHFOBO (row) order", () => {
   const rows = [
     { WHNAME: "CUSTREC", WHFLDI: "CUSTNBR", WHFTXT: "Customer number", WHFLDT: "S", WHFLDB: 7, WHFLDD: 7, WHFLDP: 0 },
     { WHNAME: "CUSTREC", WHFLDI: "CUSTNAME", WHFTXT: "Customer name", WHFLDT: "A", WHFLDB: 30, WHFLDD: 0, WHFLDP: 0 },
@@ -243,4 +245,27 @@ test("groupDatabaseFileFieldRows: accepts lowercase column names too", () => {
   const rows = [{ whname: "CUSTREC", whfldi: "CUSTNBR", whftxt: "", whfldt: "S", whfldb: 7, whfldd: 7, whfldp: 0 }];
   const result = groupDatabaseFileFieldRows(rows, undefined);
   assert.deepEqual(result, { recordFormat: "CUSTREC", fields: [{ name: "CUSTNBR", text: "", length: 7, dataType: "S", decimalPositions: null }] });
+});
+
+// Regression guard, found via real-IBM-i testing: extension.ts's
+// fetchDatabaseFileFields ORDER BY'd a column named WHFLDO — a real,
+// easy-to-make mix-up (WHFLDI/WHFLDO/WHFLDE all look alike from memory),
+// but WHFLDO doesn't exist in DSPFFD *OUTFILE's real QWHDRFFD-based
+// layout; the actual field-order column is WHFOBO (Output Buffer
+// Position). Ordering by a nonexistent column surfaces as a real SQL0206
+// error against a live connection, not something any unit test exercising
+// groupDatabaseFileFieldRows alone (which only ever sees rows already
+// fetched, never the SQL text itself) would ever catch — hence this
+// separate, cheap source-text check, the same "no vscode mock in this
+// project, so check the literal SQL string instead" approach
+// test/webviewLayout.test.ts already uses for CSS/DOM-shape regressions.
+test("fetchDatabaseFileFields' SQL orders by the real WHFOBO column, not the nonexistent WHFLDO", () => {
+  const source = fs.readFileSync(path.join(__dirname, "..", "..", "src", "extension.ts"), "utf8");
+  // Checks the actual SQL text specifically (not just "no mention of
+  // WHFLDO anywhere" — extension.ts's own comment right above the SQL
+  // documents this exact past mistake by name, which should stay
+  // documented, not be scrubbed to satisfy this test).
+  assert.doesNotMatch(source, /ORDER BY[^`\n]*WHFLDO/, "a SQL ORDER BY clause referenced WHFLDO, which is not a real DSPFFD *OUTFILE column — see this test's own comment");
+  assert.match(source, /ORDER BY WHFOBO/);
+  assert.match(source, /ORDER BY WHNAME, WHFOBO/);
 });

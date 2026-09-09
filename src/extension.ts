@@ -471,9 +471,22 @@ async function fetchDatabaseFileFields(
 
   // WHNAME is DSPFFD's own record-format-name column — see
   // groupDatabaseFileFieldRows's own doc comment for why it matters.
+  // WHFOBO (Output Buffer Position — the field's position in the file's
+  // own output buffer, lining up with DDS declaration order) is the real
+  // DSPFFD *OUTFILE column for field order, per QWHDRFFD in
+  // QSYS/QADSPFFD — confirmed against I-SDA's own fetchDatabaseFileFields
+  // (src/extension.ts, Task L14), which documents this exact mix-up:
+  // there is no WHFLDO column. An earlier version of this function used
+  // that name by mistake (WHFLDI/WHFLDO/WHFLDE is a real, easy mix-up
+  // when working from memory rather than the actual outfile layout — a
+  // real DSPFFD run against a live IBM i surfaced it as SQL0206 "Column
+  // or global variable ... not found," reported directly, rather than
+  // silently doing nothing, since QTEMP.<outfile> is a real table and
+  // this is a real column reference no activation/connection check could
+  // have caught ahead of time).
   const sql = recordFormat
-    ? `SELECT WHFLDI, WHFTXT, WHFLDT, WHFLDB, WHFLDD, WHFLDP FROM QTEMP.${tempMember} WHERE WHNAME = '${recordFormat.toUpperCase().replace(/'/g, "''")}' ORDER BY WHFLDO`
-    : `SELECT WHNAME, WHFLDI, WHFTXT, WHFLDT, WHFLDB, WHFLDD, WHFLDP FROM QTEMP.${tempMember} ORDER BY WHNAME, WHFLDO`;
+    ? `SELECT WHFLDI, WHFTXT, WHFLDT, WHFLDB, WHFLDD, WHFLDP FROM QTEMP.${tempMember} WHERE WHNAME = '${recordFormat.toUpperCase().replace(/'/g, "''")}' ORDER BY WHFOBO`
+    : `SELECT WHNAME, WHFLDI, WHFTXT, WHFLDT, WHFLDB, WHFLDD, WHFLDP FROM QTEMP.${tempMember} ORDER BY WHNAME, WHFOBO`;
   let rows: any[];
   try {
     rows = await connection.runSQL(sql);
