@@ -963,9 +963,8 @@ ownership per batch):
       — I-SDA turned out not to have a directly portable INDTXT UX to copy
       (see `docs/TASKS.md` Batch G's own note), so this was built fresh
       against IBM's DDS reference instead.
-- [x]/[ ] **Batch H — `REF`/`REFFLD` resolution via Code for i — part 1 and
-      the field/record-format picker done, part 2 (live DSPFFD round-trip)
-      blocked without a live IBM i.** Part 1 (UI shape, fully testable):
+- [x] **Batch H — `REF`/`REFFLD` resolution via Code for i — done, verified
+      end-to-end against a real IBM i.** Part 1 (UI shape, fully testable):
       `PrtfEngine.resolveReferenceTarget` works out which field/library/
       file a reference field (position 29 'R') resolves against, following
       REFFLD-overrides-REF/`*SRC`-is-unresolvable precedence from IBM's DDS
@@ -985,11 +984,13 @@ ownership per batch):
       already requires — only the record format and field itself are
       picked from a live list. Part 2 (the actual DSPFFD + SQL round-trip
       resolving one already-named field's attributes, in `extension.ts`'s
-      `fetchReferencedFieldAttributes`/`handleResolveReferencedField`) is
-      written following I-SDA's own integration pattern but — like I-SDA's
-      equivalent, and like the picker's own DSPFFD/SQL/QuickPick I/O —
-      can only be exercised against a real connected IBM i, not in this
-      environment.
+      `fetchReferencedFieldAttributes`/`handleResolveReferencedField`) was
+      written following I-SDA's own integration pattern and — after a real
+      bug found via that live testing (`fetchDatabaseFileFields`'s SQL
+      ordered by a nonexistent `WHFLDO` column instead of the real
+      `WHFOBO`, fixed with the same explanation I-SDA's own code already
+      carries for this exact past mistake — see `docs/TASKS.md` Batch H)
+      — **confirmed working end-to-end against a real connected IBM i.**
 - [x] ~~Batch I — `UOM` (unit of measure) modeling~~ — **done**: see
       `i-rlu.unitOfMeasure` setting above. The remaining piece — validating
       that file-level `SKIPA`/`SKIPB` isn't allowed on `*AFPDS` files
