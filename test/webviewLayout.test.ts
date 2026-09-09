@@ -148,3 +148,36 @@ test("webview layout (Batch JJ): the cell click handler checks ctrlKey/metaKey b
   }
 });
 
+// Batch QQ (docs/TASKS.md) — bug fix. extension.ts's sendCodeForIStatus polls
+// on a plain 10s setInterval and posts a "codeForIStatus" message on every
+// tick regardless of whether the connection state actually changed. The
+// handler used to call the full destructive render() (root.innerHTML = ""
+// + total rebuild) unconditionally on every such message, wiping the whole
+// side panel — including any input mid-edit and scroll position — every 10
+// seconds even when nothing about the connection had changed. Same
+// "webviewClient.js isn't require()-able" constraint as the OVERLAY/JJ
+// checks above, so this is a source-text shape check: it locks in that the
+// handler compares the incoming installed/connected values against the
+// current state BEFORE deciding whether to render(), rather than calling
+// render() unconditionally.
+test("webview layout (Batch QQ): the codeForIStatus handler only re-renders when installed/connected actually changed", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../../media/webviewClient.js"), "utf8");
+  const handlerMatch = source.match(/\} else if \(msg\.type === "codeForIStatus"\) \{([\s\S]*?)\n    \} else if \(msg\.type === "afpResourcePreview"\)/);
+  assert.ok(handlerMatch, "codeForIStatus message handler not found in media/webviewClient.js");
+  const body = handlerMatch![1];
+  assert.match(
+    body,
+    /state\.codeForI\.installed !== installed \|\| state\.codeForI\.connected !== connected/,
+    "codeForIStatus handler must compare the incoming installed/connected values against state.codeForI before rendering, or every 10s poll tick blows away the whole side panel regardless of whether anything changed"
+  );
+  // The render() call itself must be inside that comparison's if-block, not
+  // sitting unconditionally after it — otherwise the comparison is dead
+  // code that never actually gates anything. Matched through to the
+  // handler's own closing brace (rather than stopping at the first "}",
+  // which would land on the { installed, connected } object literal
+  // instead of the end of the if-block).
+  const ifBlockMatch = body.match(/if \(state\.codeForI\.installed !== installed \|\| state\.codeForI\.connected !== connected\) \{([\s\S]*)$/);
+  assert.ok(ifBlockMatch, "the installed/connected comparison's if-block could not be isolated");
+  assert.match(ifBlockMatch![1], /render\(\);/, "render() must be called INSIDE the changed-check, not unconditionally after it");
+});
+

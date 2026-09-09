@@ -2830,8 +2830,28 @@
       }
       render();
     } else if (msg.type === "codeForIStatus") {
-      state.codeForI = { installed: !!msg.installed, connected: !!msg.connected };
-      render();
+      // Batch QQ (docs/TASKS.md) — bug fix. extension.ts's sendCodeForIStatus
+      // fires on a plain 10s setInterval REGARDLESS of whether the
+      // connection state actually changed since the last tick (it has no
+      // way to know that without tracking it itself), so this handler used
+      // to call the full destructive render() (root.innerHTML = "" + total
+      // rebuild — see render()'s own comment) on every single tick even
+      // when installed/connected were identical to what's already showing.
+      // On a normal designer session that's a full side-panel wipe every
+      // 10 seconds — reported directly by Manoj: typing into e.g. a CCSID
+      // field gets silently discarded mid-entry the moment a poll lands,
+      // and the panel jumps back to its top scroll position. Only
+      // re-rendering when installed/connected actually differ fixes both:
+      // the vast majority of ticks (no change) are now a no-op, and the
+      // rare tick that DOES flip the connection (Code for i connecting/
+      // disconnecting elsewhere) still updates the badge and any
+      // connection-gated buttons immediately, same as before.
+      const installed = !!msg.installed;
+      const connected = !!msg.connected;
+      if (state.codeForI.installed !== installed || state.codeForI.connected !== connected) {
+        state.codeForI = { installed, connected };
+        render();
+      }
     } else if (msg.type === "afpResourcePreview") {
       // Batch O — keyed by "recordName|keyword" so previewing PAGSEG
       // doesn't clobber an already-shown OVERLAY preview for the same (or
