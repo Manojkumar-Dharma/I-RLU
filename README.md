@@ -210,4 +210,10 @@ kept here.
 
 ## License
 
-Not yet chosen — add one before any public release.
+MIT — see [LICENSE](LICENSE).
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for release notes, or
+[docs/TASKS.md](docs/TASKS.md) for the full batch-by-batch development
+history and caveats behind each change.
