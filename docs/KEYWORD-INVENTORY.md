@@ -209,4 +209,8 @@ consistently, rather than treating it as a one-off.
   currently-documented releases 7.1–7.6 carry an identical keyword list) —
   used for keywords present on the menu grids but not individually
   photographed, and for the mutual-exclusion/PSF-only/AFPDS-restriction
-  notes called out above.
+  notes called out above. Full text of the IBM i 7.6 edition of this
+  publication is checked into the repo at
+  `docs/DDS-PRINTER-FILE-REFERENCE.txt` (converted from the official PDF)
+  for offline reference — use it as the primary source for exact keyword
+  syntax, parameter value ranges, and mutual-exclusion rules.
