@@ -827,6 +827,37 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
 
 ## Next up
 
+Batches SS–ZZ were filed from a full three-part audit
+(`docs/AUDIT-FILE-LEVEL.md`, `docs/AUDIT-RECORD-LEVEL.md`,
+`docs/AUDIT-FIELD-LEVEL.md`) cross-checking every DDS keyword I-RLU handles
+against the full text of IBM's official DDS printer-file reference
+(`docs/DDS-PRINTER-FILE-REFERENCE.txt`), split by file/record/field level
+per Manoj's request. Headline finding: `PAGSIZE` and `DEVTYPE` aren't real
+DDS keywords at all (both are `CRTPRTF`/`CHGPRTF`/`OVRPRTF` command
+parameters only) yet are parsed/written as if they were, baked into all 3
+test fixtures — **Batch SS**. Also filed: a centralized fix for 13 keywords
+missing "option indicators not valid" enforcement (**Batch TT**), `RELPOS`
+going completely unmodeled while its behavior is applied unconditionally
+anyway (**Batch UU**), unvalidated `SKIPA`/`SKIPB`/`SPACEA`/`SPACEB`
+constraints plus a record-/file-level rendering no-op (**Batch VV**), `GDF`
+having no placeholder rendering unlike its `OVERLAY`/`PAGSEG`/`AFPRSC`
+siblings (**Batch WW**), `PAGSEG`'s real `(*SIZE height width)` being
+parsed but discarded in favor of a fixed placeholder (**Batch XX**),
+`ENDPAGE` having zero constraint validation (**Batch YY**), and a small
+field-level bundle — a wrong `TIMFMT` option, two unvalidated mutual
+exclusions, and unvalidated `ALIAS` uniqueness (**Batch ZZ**). None of
+these are started yet — see `docs/TASKS.md`'s Batch SS–ZZ detail sections
+for full scope per batch.
+
+- [ ] **Batch SS — bug fix: `PAGSIZE`/`DEVTYPE` aren't real DDS keywords.**
+- [ ] **Batch TT — centralized "no option indicators" validation** (13 keywords).
+- [ ] **Batch UU — model `RELPOS`** (file-level `+n`-positioning semantics).
+- [ ] **Batch VV — `SKIPA`/`SKIPB`/`SPACEA`/`SPACEB` constraints + layout fix.**
+- [ ] **Batch WW — model `GDF`** (record-level, PSF-only resource keyword).
+- [ ] **Batch XX — `PAGSEG`'s real `(*SIZE height width)`.**
+- [ ] **Batch YY — `ENDPAGE` constraint validation.**
+- [ ] **Batch ZZ — field-level small-fix bundle** (`TIMFMT`, `EDTCDE`/`EDTWRD` vs `DFT`, `MSGCON`, `ALIAS`).
+
 As of the RLU screen-capture review (`docs/KEYWORD-INVENTORY.md`), the
 remaining work is re-organized into the parallel-session task batches in
 `docs/TASKS.md` — each batch is scoped to be pickable up independently
