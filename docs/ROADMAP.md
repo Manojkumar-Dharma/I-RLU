@@ -839,6 +839,27 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       Batches SS and TT landed concurrently in separate sessions and were
       merged together; combined full suite now 584, all passing.
 
+- [x] **Batch UU — model `RELPOS` (file-level).** Investigated whether
+      `+n` relative-positioning math needs to be gated on the file
+      declaring `RELPOS`, per IBM's reference distinguishing "relative to
+      the end of the previous field" (with `RELPOS`) from "relative to
+      the beginning of the line" (without). Finding: for a monospace,
+      DBCS-free character grid — the only kind of model I-RLU has — both
+      calculations produce the identical result, confirmed against the
+      reference's own worked example; the two paths only diverge when the
+      file-level font width is unknown at compile time *and* the previous
+      field contains DBCS characters, neither of which this project
+      models anywhere. So the existing `cursorCol + n` formula needed no
+      change — what was actually missing was `RELPOS` itself: it wasn't
+      parsed as a real keyword, listed in `docs/KEYWORD-INVENTORY.md`, or
+      validated for its `DEVTYPE(*AFPDS)` requirement. Added `RELPOS` to
+      `VALUELESS_KEYWORDS` and a new file-level validation warning
+      (reusing the existing `looksLikeAfpds()` heuristic) for when
+      `RELPOS` is present but the file doesn't look like AFPDS. See
+      `docs/TASKS.md` Batch UU for the full writeup, including the
+      reference's own worked example. 6 new tests in
+      `test/prtfBatchUU.test.ts`; full suite now 590, all passing.
+
 - [x] **Batch O — real AFP resource rendering (page segments/overlays as
       actual images) — done for the common image-content case.** Real
       Apache-2.0-licensed AFP resource fixtures from Apache FOP's own test
@@ -873,9 +894,12 @@ DDS keywords at all (both are `CRTPRTF`/`CHGPRTF`/`OVRPRTF` command
 parameters only) yet were parsed/written as if they were, baked into all 3
 test fixtures — fixed as **Batch SS** (see above). Also filed and since
 landed: a centralized fix for 13 keywords missing "option indicators not
-valid" enforcement, fixed as **Batch TT** (see above). Still open: `RELPOS`
-going completely unmodeled while its behavior is applied unconditionally
-anyway (**Batch UU**), unvalidated `SKIPA`/`SKIPB`/`SPACEA`/`SPACEB`
+valid" enforcement, fixed as **Batch TT** (see above). `RELPOS` going
+completely unmodeled while its behavior is applied unconditionally
+anyway was investigated and fixed as **Batch UU** (see above — the `+n`
+math itself turned out already correct; `RELPOS` recognition/validation
+was the actual gap). Still open: unvalidated
+`SKIPA`/`SKIPB`/`SPACEA`/`SPACEB`
 constraints plus a record-/file-level rendering no-op (**Batch VV**), `GDF`
 having no placeholder rendering unlike its `OVERLAY`/`PAGSEG`/`AFPRSC`
 siblings (**Batch WW**), `PAGSEG`'s real `(*SIZE height width)` being
@@ -883,10 +907,9 @@ parsed but discarded in favor of a fixed placeholder (**Batch XX**),
 `ENDPAGE` having zero constraint validation (**Batch YY**), and a small
 field-level bundle — a wrong `TIMFMT` option, two unvalidated mutual
 exclusions, and unvalidated `ALIAS` uniqueness (**Batch ZZ**). None of
-these remaining ones are started yet — see `docs/TASKS.md`'s Batch UU–ZZ
+these remaining ones are started yet — see `docs/TASKS.md`'s Batch VV–ZZ
 detail sections for full scope per batch.
 
-- [ ] **Batch UU — model `RELPOS`** (file-level `+n`-positioning semantics).
 - [ ] **Batch VV — `SKIPA`/`SKIPB`/`SPACEA`/`SPACEB` constraints + layout fix.**
 - [ ] **Batch WW — model `GDF`** (record-level, PSF-only resource keyword).
 - [ ] **Batch XX — `PAGSEG`'s real `(*SIZE height width)`.**

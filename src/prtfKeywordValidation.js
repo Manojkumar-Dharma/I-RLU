@@ -18,8 +18,8 @@ const { findKeyword, findAllKeywords, paramTokens } =
 // --- Batch F: print/finishing keywords (DUPLEX, FORCE, OUTBIN, ZFOLD,
 // STAPLE, INVMMAP) -----------------------------------------------------
 
-/** Record-level keywords that take no parameters at all (option indicators only) — must be re-emitted as a bare keyword name, never "NAME()". */
-const VALUELESS_KEYWORDS = ["FORCE", "ZFOLD", "STAPLE"];
+/** File- and record-level keywords that take no parameters at all (option indicators only) — must be re-emitted as a bare keyword name, never "NAME()". `RELPOS` added by Batch UU (docs/TASKS.md) — file-level, no parameters, same round-trip-safety reasoning as `FORCE`/`ZFOLD`/`STAPLE`. */
+const VALUELESS_KEYWORDS = ["FORCE", "ZFOLD", "STAPLE", "RELPOS"];
 
 /** ZFOLD/STAPLE (and GDF, if ever modeled) only take effect when printing through PSF — silently ignored otherwise, per IBM's DDS reference. */
 const PSF_ONLY_KEYWORDS = ["ZFOLD", "STAPLE"];
@@ -70,7 +70,7 @@ function validateRecordKeywords(record) {
   return warnings.concat(validateKeywordIndicators(record.keywords));
 }
 
-/** Validation hints scoped to the whole file — the *AFPDS file-level SKIPA/SKIPB restriction (Batch F) plus the Batch TT "no indicators allowed" check. Returns [] when there's nothing to flag. */
+/** Validation hints scoped to the whole file — the *AFPDS file-level SKIPA/SKIPB restriction (Batch F), the RELPOS/*AFPDS requirement (Batch UU), plus the Batch TT "no indicators allowed" check. Returns [] when there's nothing to flag. */
 function validateFileLevelKeywords(model) {
   const warnings = [];
   ["SKIPA", "SKIPB"].forEach((name) => {
@@ -83,6 +83,19 @@ function validateFileLevelKeywords(model) {
       });
     }
   });
+  // Batch UU (docs/TASKS.md) — RELPOS only has an effect for *AFPDS
+  // spooled files; per IBM's reference, if DEVTYPE is anything else the
+  // keyword is silently ignored, with a warning message issued at print
+  // time. RELPOS is deliberately NOT in AFPDS_INDICATOR_KEYWORDS above
+  // (same reasoning as SKIPA/SKIPB just above: it's validated AGAINST
+  // that heuristic, not folded into it, or this check could never fire).
+  if (findKeyword(model.fileLevel.keywords, "RELPOS") && !looksLikeAfpds(model)) {
+    warnings.push({
+      keyword: "RELPOS",
+      message:
+        "RELPOS only has an effect when this file compiles as *AFPDS (CRTPRTF's DEVTYPE parameter) — otherwise it's ignored, with a warning message issued at print time. No AFPDS-typical keywords were found elsewhere in this file.",
+    });
+  }
   return warnings.concat(validateKeywordIndicators(model.fileLevel.keywords));
 }
 

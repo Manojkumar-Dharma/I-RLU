@@ -17,6 +17,26 @@ it does not replace those two documents.
 Nothing yet — see `docs/TASKS.md` for what's currently in flight or filed
 for a future batch.
 
+## [0.0.19] - Batch UU
+
+### Added
+- `RELPOS` (file-level) is now recognized as a real DDS keyword: parses
+  and round-trips correctly, is registered as taking no parameters, and
+  is flagged with a validation warning when present in a file that
+  doesn't otherwise look like it targets `*AFPDS` (its documented
+  requirement — otherwise it's silently ignored, with a warning message
+  at print time).
+
+### Investigated, no change needed
+- Whether the existing `+n` relative-field-positioning math needs to be
+  gated on `RELPOS`'s presence, since IBM's reference distinguishes
+  "relative to the end of the previous field" (with `RELPOS`) from
+  "relative to the beginning of the line" (without). Confirmed via the
+  reference's own worked example that both produce the identical result
+  for a monospace, DBCS-free character grid — the only kind of model
+  I-RLU has — so no code change was needed here. See `docs/TASKS.md`
+  Batch UU for the full analysis.
+
 ## [0.0.18] - Batch TT
 
 ### Added

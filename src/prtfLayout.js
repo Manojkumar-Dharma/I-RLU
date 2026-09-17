@@ -700,19 +700,40 @@ function resolveLayout(model, recordName, indicatorState, uom, pageSize) {
     if (spaceB) cursorLine += numericParam(spaceB, 0);
 
     const line = entry.line || cursorLine;
-    // Batch LL (docs/TASKS.md) — DDS's RELPOS-style `+n` relative
-    // position: entry.position holds just the plain `n` in this case (see
-    // FieldEntry's own relativePosition doc comment, prtfModel.ts), so it
-    // needs to be resolved against the running cursor column — cursorCol
-    // is guaranteed to already reflect the end of the previous field ON
-    // THIS SAME LINE, because RELPOS requires the line number to be left
-    // blank whenever +n is used (IBM's own RELPOS reference), which is
-    // exactly what makes `entry.line || cursorLine` above resolve to
-    // cursorLine rather than some unrelated line. This mirrors (doesn't
-    // fully replicate) IBM's own compile-time RELPOS resolution — real
-    // CRTPRTF also accounts for DBCS/font-width edge cases this doesn't
-    // attempt to model; see IBM's RELPOS reference for the full case
-    // table. An ordinary absolute position is unaffected.
+    // Batch LL (docs/TASKS.md) — DDS's `+n` relative position: entry.position
+    // holds just the plain `n` in this case (see FieldEntry's own
+    // relativePosition doc comment, prtfModel.ts), so it needs to be
+    // resolved against the running cursor column — cursorCol is guaranteed
+    // to already reflect the end of the previous field ON THIS SAME LINE,
+    // because `+n` requires the line number to be left blank (IBM's own
+    // RELPOS reference), which is exactly what makes `entry.line ||
+    // cursorLine` above resolve to cursorLine rather than some unrelated
+    // line.
+    //
+    // Batch UU (docs/TASKS.md) — investigated whether this math needs to be
+    // GATED on the file declaring the RELPOS keyword, since IBM's reference
+    // says `+n` means "relative to the end of the previous field" only when
+    // RELPOS is present, and "relative to the beginning of the line"
+    // otherwise. Turns out it doesn't: per that same reference's own worked
+    // example, the two calculations produce the IDENTICAL result in the
+    // common case (a fixed/known-width font, no DBCS) — "beginning of line"
+    // there means "beginning of line plus the running character count of
+    // every field already placed on it," which for a monospace character
+    // grid is exactly `cursorCol`. The two paths only diverge in one
+    // specific combination IBM's reference calls out: the file-level font
+    // width is unknown at compile time (a P-field/`*DEVD` font) AND the
+    // previous field on the line contains DBCS characters — in which case
+    // real CRTPRTF/print-time resolution can differ from a simple character
+    // count. I-RLU has no DBCS model anywhere (this project's positions are
+    // always integer character-grid columns, matching real DDS source, not
+    // proportional pixel math), so that edge case can't arise here — this
+    // single `cursorCol + n` formula is already the correct, and only
+    // representable, answer for every RELPOS-present-or-absent case I-RLU
+    // can model. RELPOS itself is still parsed/round-tripped and validated
+    // (requires `DEVTYPE(*AFPDS)`, see `validateFileLevelKeywords` in
+    // `src/prtfKeywordValidation.js`) — there's just no separate branch to
+    // add here. See IBM's RELPOS reference for the full DBCS/font-width
+    // case table this doesn't attempt to model.
     const position = entry.relativePosition ? cursorCol + (entry.position || 0) : entry.position || cursorCol;
 
     // Batch Z (docs/TASKS.md) — resolved once per constant so both `text`
