@@ -819,7 +819,25 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       `validateFileLevelKeywords`/`validateRecordKeywords`/
       `validateFieldKeywords` rather than 13 separate per-keyword patches.
       See `docs/TASKS.md` Batch TT for the full writeup. 6 new tests in
-      `test/prtfBatchTT.test.ts`; full suite now 576, all passing.
+      `test/prtfBatchTT.test.ts`.
+
+- [x] **Batch SS — bug fix: `PAGSIZE`/`DEVTYPE` aren't real DDS keywords.**
+      Full-text audit of IBM's DDS Reference for Printer Files confirmed
+      neither has a dedicated keyword section — both are exclusively
+      `CRTPRTF`/`CHGPRTF`/`OVRPRTF` command parameters — yet
+      `resolvePageSize()`/`looksLikeAfpds()` treated parsed
+      `PAGSIZE(66 132)`/`DEVTYPE(*AFPDS)` source text as trustworthy, and
+      all 3 bundled test fixtures modeled an impossible DDS file to feed
+      them. Page size is now a pure external assumption (new
+      `i-rlu.pageSize` VS Code setting, same treatment as the existing
+      `i-rlu.unitOfMeasure`), falling back to CRTPRTF's own real 66×132
+      default — never read from source. `DEVTYPE` is simply never trusted
+      any more; the pre-existing AFPDS-typical-keyword heuristic is the
+      sole signal. All 3 fixtures regenerated without the fabricated
+      keywords. See `docs/TASKS.md` Batch SS for the full writeup. New
+      `test/prtfBatchSS.test.ts` plus updates to 5 existing test files.
+      Batches SS and TT landed concurrently in separate sessions and were
+      merged together; combined full suite now 584, all passing.
 
 - [x] **Batch O — real AFP resource rendering (page segments/overlays as
       actual images) — done for the common image-content case.** Real
@@ -852,10 +870,10 @@ against the full text of IBM's official DDS printer-file reference
 (`docs/DDS-PRINTER-FILE-REFERENCE.txt`), split by file/record/field level
 per Manoj's request. Headline finding: `PAGSIZE` and `DEVTYPE` aren't real
 DDS keywords at all (both are `CRTPRTF`/`CHGPRTF`/`OVRPRTF` command
-parameters only) yet are parsed/written as if they were, baked into all 3
-test fixtures — **Batch SS**. Also filed and since landed: a centralized
-fix for 13 keywords missing "option indicators not valid" enforcement
-(**Batch TT**, done). Still open: `RELPOS`
+parameters only) yet were parsed/written as if they were, baked into all 3
+test fixtures — fixed as **Batch SS** (see above). Also filed and since
+landed: a centralized fix for 13 keywords missing "option indicators not
+valid" enforcement, fixed as **Batch TT** (see above). Still open: `RELPOS`
 going completely unmodeled while its behavior is applied unconditionally
 anyway (**Batch UU**), unvalidated `SKIPA`/`SKIPB`/`SPACEA`/`SPACEB`
 constraints plus a record-/file-level rendering no-op (**Batch VV**), `GDF`
@@ -865,10 +883,9 @@ parsed but discarded in favor of a fixed placeholder (**Batch XX**),
 `ENDPAGE` having zero constraint validation (**Batch YY**), and a small
 field-level bundle — a wrong `TIMFMT` option, two unvalidated mutual
 exclusions, and unvalidated `ALIAS` uniqueness (**Batch ZZ**). None of
-these remaining ones are started yet — see `docs/TASKS.md`'s Batch SS/UU–ZZ
+these remaining ones are started yet — see `docs/TASKS.md`'s Batch UU–ZZ
 detail sections for full scope per batch.
 
-- [ ] **Batch SS — bug fix: `PAGSIZE`/`DEVTYPE` aren't real DDS keywords.**
 - [ ] **Batch UU — model `RELPOS`** (file-level `+n`-positioning semantics).
 - [ ] **Batch VV — `SKIPA`/`SKIPB`/`SPACEA`/`SPACEB` constraints + layout fix.**
 - [ ] **Batch WW — model `GDF`** (record-level, PSF-only resource keyword).

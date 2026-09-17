@@ -58,12 +58,12 @@ test("parser: constant literal text is captured", () => {
   assert.equal(constEntry.literal, "Invoice Date:");
 });
 
-test("parser: file-level keywords (PAGSIZE) captured before first record", () => {
+test("parser: file-level keywords (PRTQLTY) captured before first record", () => {
   const original = fs.readFileSync(fixturePath, "utf8");
   const model = parseSource(original);
-  const pagsize = model.fileLevel.keywords.find((k) => k.name === "PAGSIZE");
-  assert.ok(pagsize);
-  assert.equal(pagsize!.params, "(66 132)");
+  const prtqlty = model.fileLevel.keywords.find((k) => k.name === "PRTQLTY");
+  assert.ok(prtqlty);
+  assert.equal(prtqlty!.params, "(*STD)");
 });
 
 test("engine: resolves page size and default (unconditioned) field layout", () => {

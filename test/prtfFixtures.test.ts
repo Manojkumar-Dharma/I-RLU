@@ -41,7 +41,11 @@ test("SCS fixture: contains no AFPDS-only keywords", () => {
   for (const name of allKeywordNames) {
     assert.ok(!afpdsOnlyKeywords.has(name), `${name} should not appear in the SCS fixture`);
   }
-  assert.ok(allKeywordNames.includes("DEVTYPE"));
+  // Batch SS (docs/TASKS.md) — bug fix: DEVTYPE is not a real DDS keyword
+  // (it's a CRTPRTF/CHGPRTF/OVRPRTF command parameter), so this fixture
+  // no longer codes it — asserting its presence would just re-bake the
+  // bug this batch fixes into the test suite.
+  assert.ok(!allKeywordNames.includes("DEVTYPE"));
 });
 
 test("SCS fixture: record formats and a conditioned-free field layout parse correctly", () => {

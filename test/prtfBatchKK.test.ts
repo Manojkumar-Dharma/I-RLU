@@ -10,8 +10,9 @@
 // the full reasoning).
 //
 // Follows the same fixture-reuse pattern as test/prtfBatchGG.test.ts:
-// parses sample1.pf (PAGSIZE 66 132, so pageCols = 132 throughout) and
-// exercises applyEditToModel directly.
+// parses sample1.pf and exercises applyEditToModel directly. pageCols is
+// 132 throughout via reportWidthCols's own CRTPRTF-default fallback (see
+// Batch SS, docs/TASKS.md) — no longer read from a PAGSIZE keyword.
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
@@ -40,7 +41,14 @@ function constantId(model: ParsedSource, recordName: string, literalSubstring: s
 
 // --- reportWidthCols --------------------------------------------------
 
-test("reportWidthCols: reads the record/file-level PAGSIZE's column width (sample1.pf is PAGSIZE(66 132))", () => {
+// Batch SS (docs/TASKS.md) — bug fix: PAGSIZE was never a real DDS
+// keyword (it's PAGESIZE on the CRTPRTF/CHGPRTF/OVRPRTF command), so
+// reportWidthCols no longer reads it from the model at all — it always
+// resolves to CRTPRTF's own real 66x132 default. sample1.pf's own
+// file-level keywords no longer include a (fabricated) PAGSIZE line; 132
+// below is CRTPRTF's default column width, not something read from the
+// fixture.
+test("reportWidthCols: resolves to CRTPRTF's own 66x132 default (page size is never read from DDS source)", () => {
   const model = loadModel();
   const record = model.records.find((r) => r.name === "HEADER")!;
   assert.equal(reportWidthCols(model, record), 132);

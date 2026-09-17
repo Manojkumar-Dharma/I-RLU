@@ -68,16 +68,16 @@ test("Batch PP: adding a keyword to one field does not change any other entry's 
   assert.ok(out.includes(acctbalLine), "ACCTBAL's line must still appear byte-for-byte unchanged");
 });
 
-test("Batch PP: an entirely untouched entry whose original keywords wrapped mid-parameter (PAGSEG) round-trips byte-identical", () => {
+test("Batch PP: an entirely untouched entry whose original keywords wrap across multiple lines round-trips byte-identical", () => {
   const src = fs.readFileSync(afpdsFixture, "utf8");
   const model = parseSource(src);
   // Zero edits applied at all.
   const out = PrtfWriter.regenerateSource(model).split("\n");
   const origLines = src.split(/\r\n|\n/);
-  // Lines 5-6 (1-based) hold STRPAGGRP/SKIPB/PAGSEG/OVERLAY, where PAGSEG's
-  // own params originally wrap mid-keyword ("PAGSEG(COMPLOGO -" /
-  // "0.5 0.5)"). Nothing here was edited, so these must reproduce exactly,
-  // not get re-wrapped at whole-keyword boundaries.
+  // Lines 4-6 (1-based) hold STRPAGGRP/SKIPB/PAGSEG/OVERLAY, wrapped
+  // across 3 physical lines. Nothing here was edited, so these must
+  // reproduce exactly, not get re-wrapped.
+  assert.equal(out[3], origLines[3]);
   assert.equal(out[4], origLines[4]);
   assert.equal(out[5], origLines[5]);
 });
@@ -202,10 +202,10 @@ test("packKeywordsPreservingLines: appends a new keyword to the last existing li
   assert.deepEqual(groups[0], ["COLOR(BLU)", "TRNSPRCY(*NO)"]);
 });
 
-test("originalRunRange/originalRunKeywordText: reconstructs a multi-line continuation run's original text exactly, including a mid-keyword wrap", () => {
+test("originalRunRange/originalRunKeywordText: reconstructs a multi-line continuation run's original text exactly, spanning 3 physical lines", () => {
   const rawLines = fs.readFileSync(afpdsFixture, "utf8").split(/\r\n|\n/);
-  const [start, end] = PrtfWriter.originalRunRange(rawLines, 4);
-  assert.equal(start, 4);
+  const [start, end] = PrtfWriter.originalRunRange(rawLines, 3);
+  assert.equal(start, 3);
   assert.equal(end, 5);
   const text = PrtfWriter.originalRunKeywordText(rawLines, start, end);
   assert.equal(text, "STRPAGGRP SKIPB(1) PAGSEG(COMPLOGO 0.5 0.5) OVERLAY(STMTFORM 0 0)");

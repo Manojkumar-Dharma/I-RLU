@@ -17,6 +17,43 @@ it does not replace those two documents.
 Nothing yet — see `docs/TASKS.md` for what's currently in flight or filed
 for a future batch.
 
+## [0.0.18] - Batch TT
+
+### Added
+- Centralized "option indicators not valid for this keyword" validation.
+  13 keywords (`REF`, `INDARA`, `RELPOS`, `INDTXT`, `CCSID`, `ALIAS`,
+  `REFFLD`, `MSGCON`, `DATE`, `DATFMT`, `DATSEP`, `TIMFMT`, `TIMSEP`) are
+  explicitly documented as never accepting their own conditioning
+  indicators, even though the field/record/constant they sit on can still
+  be conditioned normally — nothing in I-RLU checked for this before now.
+  A new shared `NO_INDICATOR_KEYWORDS` table and `validateKeywordIndicators()`
+  function are consulted from the existing file/record/field validators, so
+  the properties panel now surfaces a warning if one of these keywords is
+  ever given its own attached conditioning line.
+
+## [0.0.17] - Batch SS
+
+### Fixed
+- `PAGSIZE` and `DEVTYPE` were parsed and trusted as if they were real DDS
+  keywords, at file and record level — neither exists in IBM's DDS
+  reference for printer files; both are exclusively `CRTPRTF`/`CHGPRTF`/
+  `OVRPRTF` command parameters and can never legally appear in DDS source.
+  Page size is now a pure external assumption sourced from a new
+  `i-rlu.pageSize` VS Code setting (same treatment as the existing
+  `i-rlu.unitOfMeasure`), falling back to CRTPRTF's own real 66x132
+  default — never read from parsed source. `DEVTYPE` is no longer trusted
+  at all; AFPDS-vs-SCS detection relies solely on the existing
+  AFPDS-typical-keyword heuristic. All three bundled test fixtures, which
+  previously modeled an impossible DDS file, were regenerated without the
+  fabricated keywords.
+
+### Added
+- `i-rlu.pageSize` setting: page size (lines columns) to assume for the
+  Report Designer's preview grid and the field/constant right-edge
+  boundary check, defaulting to `"66 132"` (CRTPRTF's own default). A
+  matching "Page size: N x M (assumed...)" hint now appears in the
+  designer toolbar, mirroring the existing unit-of-measure hint.
+
 ## [0.0.16] - Batch RR
 
 ### Fixed

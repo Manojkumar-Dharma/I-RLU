@@ -137,8 +137,24 @@ class PrtfDesignerProvider implements vscode.CustomTextEditorProvider {
       return val === "cm" ? "cm" : "inch";
     }
 
+    // Batch SS (docs/TASKS.md) — bug fix: page size used to be read by
+    // scanning DDS source for a "PAGSIZE" keyword, which isn't real DDS
+    // text at all (it's PAGESIZE on the CRTPRTF/CHGPRTF/OVRPRTF command —
+    // see prtfLayout.js's resolvePageSize). Same external-setting
+    // treatment as i-rlu.unitOfMeasure above: parses "lines cols" and
+    // falls back to undefined (resolvePageSize's own 66x132 default) on
+    // anything malformed, rather than trusting parsed source text.
+    function currentPageSize(): { lines: number; cols: number } | undefined {
+      const val = vscode.workspace.getConfiguration("i-rlu").get<string>("pageSize");
+      const m = /^\s*(\d+)\s+(\d+)\s*$/.exec(val || "");
+      if (!m) return undefined;
+      const lines = Number(m[1]);
+      const cols = Number(m[2]);
+      return lines > 0 && cols > 0 ? { lines, cols } : undefined;
+    }
+
     function postModel() {
-      webviewPanel.webview.postMessage({ type: "setModel", model: currentModel, uom: currentUom() });
+      webviewPanel.webview.postMessage({ type: "setModel", model: currentModel, uom: currentUom(), pageSize: currentPageSize() });
     }
 
     // Drives the webview's "IBM i: Connected/Not connected/Not installed"
@@ -190,7 +206,7 @@ class PrtfDesignerProvider implements vscode.CustomTextEditorProvider {
     });
 
     const configSub = vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration("i-rlu.unitOfMeasure")) postModel();
+      if (e.affectsConfiguration("i-rlu.unitOfMeasure") || e.affectsConfiguration("i-rlu.pageSize")) postModel();
     });
 
     webviewPanel.onDidDispose(() => {

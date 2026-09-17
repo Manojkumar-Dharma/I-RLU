@@ -229,11 +229,19 @@ test("layout: an attached SKIPB keyword only moves the cursor when its own indic
 
 // Batch CC follow-up (docs/TASKS.md) — threading indicatorState through the
 // record/file-level geometry keywords resolveLayout resolves once per call
-// (PAGSIZE, LINE/BOX, OVERLAY/PAGSEG/AFPRSC, STRPAGGRP/ENDPAGGRP/
-// DOCIDXTAG/DTASTMCMD), not just the per-field/constant lookups the
-// original Batch CC covered. Same attached-keyword-line mechanism, just
-// exercised at the record level, where these keywords actually live.
-test("layout: an attached PAGSIZE keyword only takes effect when its own indicator is active", () => {
+// (LINE/BOX, OVERLAY/PAGSEG/AFPRSC, STRPAGGRP/ENDPAGGRP/DOCIDXTAG/
+// DTASTMCMD), not just the per-field/constant lookups the original Batch CC
+// covered. Same attached-keyword-line mechanism, just exercised at the
+// record level, where these keywords actually live.
+//
+// Batch SS (docs/TASKS.md) — bug fix regression test. PAGSIZE isn't a real
+// DDS keyword at all (it's PAGESIZE on the CRTPRTF/CHGPRTF/OVRPRTF
+// command — see prtfLayout.js's resolvePageSize) — resolveLayout no
+// longer scans for it, conditioned or not, so a PAGSIZE keyword line (even
+// one attached to an active indicator) must have NO effect on pageLines/
+// pageCols; both stay at CRTPRTF's own 66x132 default regardless of the
+// indicator's state.
+test("layout: a PAGSIZE keyword (real DDS source never has one) is never read, active indicator or not", () => {
   const src = buildSource([
     buildLine({ type: "R", name: "RECORD1", kw: "PAGSIZE(66 132)" }),
     buildLine({ slot1: "30", kw: "PAGSIZE(88 198)" }),
@@ -244,8 +252,8 @@ test("layout: an attached PAGSIZE keyword only takes effect when its own indicat
   const on = resolveLayout(model, "RECORD1", { "30": true });
   assert.equal(off.pageLines, 66);
   assert.equal(off.pageCols, 132);
-  assert.equal(on.pageLines, 88);
-  assert.equal(on.pageCols, 198);
+  assert.equal(on.pageLines, 66);
+  assert.equal(on.pageCols, 132);
 });
 
 test("layout: an attached LINE keyword's geometry only appears in `draws` when its own indicator is active", () => {
@@ -303,21 +311,21 @@ test("layout: an attached CPI keyword's grid only takes effect when its own indi
 test("parser: an attached keyword line immediately after 'R RECORDNAME' (before any field) attaches to the RECORD, not a phantom constant", () => {
   const src = buildSource([
     buildLine({ type: "R", name: "RECORD1" }),
-    buildLine({ slot1: "30", kw: "PAGSIZE(88 198)" }),
+    buildLine({ slot1: "30", kw: "OVERFLOW(60)" }),
     buildLine({ name: "FIRST", length: "5", dataType: "A", usage: "O", line: "1", pos: "1" }),
   ]);
   const model = parseSource(src);
   const record = model.records[0];
   assert.equal(record.fields.length, 1); // FIRST only — no phantom constant
   assert.equal(record.keywords.length, 1);
-  assert.equal(record.keywords[0].raw, "PAGSIZE(88 198)");
+  assert.equal(record.keywords[0].raw, "OVERFLOW(60)");
   assert.deepEqual(record.keywords[0].conditions, [{ raw: "30", negate: false, indicator: "30" }]);
 });
 
 test("round-trip: an attached keyword line on the RECORD (before any field) reproduces the original source exactly", () => {
   const src = buildSource([
-    buildLine({ type: "R", name: "RECORD1", kw: "PAGSIZE(66 132)" }),
-    buildLine({ slot1: "30", kw: "PAGSIZE(88 198)" }),
+    buildLine({ type: "R", name: "RECORD1", kw: "OVERFLOW(50)" }),
+    buildLine({ slot1: "30", kw: "OVERFLOW(60)" }),
     buildLine({ name: "FIRST", length: "5", dataType: "A", usage: "O", line: "1", pos: "1" }),
   ]);
   const model = parseSource(src);

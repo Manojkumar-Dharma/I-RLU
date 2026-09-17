@@ -38,17 +38,17 @@ const AFPDS_INDICATOR_KEYWORDS = [
 ];
 
 function looksLikeAfpds(model) {
-  // DEVTYPE is itself a real file/record-level DDS keyword (see
-  // test/fixtures/sample-afpds.pf, sample-scs.pf) — when present it's an
-  // authoritative answer, not a guess. Only fall back to the
-  // AFPDS-typical-keyword heuristic when DEVTYPE isn't coded anywhere,
-  // since DEVTYPE is optional (CRTPRTF's own DEVTYPE parameter applies
-  // when it's omitted, and that's a compile-time value I-RLU can't see).
-  const fileDevtype = findKeyword(model.fileLevel.keywords, "DEVTYPE");
-  if (fileDevtype) return /\*AFPDS/.test(fileDevtype.params);
-  const recordDevtype = model.records.map((r) => findKeyword(r.keywords, "DEVTYPE")).find(Boolean);
-  if (recordDevtype) return /\*AFPDS/.test(recordDevtype.params);
-
+  // Batch SS (docs/TASKS.md) — bug fix. This used to treat a parsed
+  // "DEVTYPE" keyword as an authoritative answer, trusting file- or
+  // record-level DEVTYPE(*AFPDS)/DEVTYPE(*SCS) text over the heuristic
+  // below. That was wrong: DEVTYPE is a CRTPRTF/CHGPRTF/OVRPRTF COMMAND
+  // parameter (see the AFPDS_INDICATOR_KEYWORDS comment above and
+  // docs/AUDIT-FILE-LEVEL.md §3), not DDS source text — it can never
+  // legally appear in real DDS, so a source line naming it is either a
+  // hand-edited test fixture (all 3 of this project's own bundled
+  // fixtures used to do exactly this) or already-invalid source, and
+  // either way isn't something I-RLU should treat as ground truth. The
+  // AFPDS-typical-keyword heuristic is the ONLY signal available here now.
   return model.records.some(
     (r) =>
       AFPDS_INDICATOR_KEYWORDS.some((name) => findKeyword(r.keywords, name)) ||

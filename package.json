@@ -2,7 +2,7 @@
   "name": "i-rlu",
   "displayName": "iRLU",
   "description": "Interactive Report layout utility designer for IBM i printer file DDS (SCS/AFPDS)",
-  "version": "0.0.17",
+  "version": "0.0.18",
   "publisher": "Manojkumar-IBMi",
   "icon": "images/icon.png",
   "license": "MIT",
@@ -88,6 +88,12 @@
           "enum": ["inch", "cm"],
           "default": "inch",
           "description": "Unit of measure to assume when converting LINE/BOX/BARCODE physical measurements to the preview's character grid. There is no UOM keyword in DDS source — UOM is set on the CRTPRTF command that compiles this file, so I-RLU can't detect it from the source alone. Set this to match what your shop actually passes to CRTPRTF (its own default is *INCH); if you don't know, leave this as inch."
+        },
+        "i-rlu.pageSize": {
+          "type": "string",
+          "default": "66 132",
+          "pattern": "^\\s*\\d+\\s+\\d+\\s*$",
+          "description": "Page size (lines columns) to assume for the Report Designer's preview grid and for the right-edge boundary I-RLU enforces when moving/resizing fields and constants. There is no PAGSIZE keyword in DDS source — page size is set by the PAGESIZE parameter on the CRTPRTF/CHGPRTF/OVRPRTF command that compiles or runs this file, so I-RLU can't detect it from the source alone. Set this to match what your shop actually passes (CRTPRTF's own default is 66 132); if you don't know, leave this as-is."
         },
         "i-rlu.designerOpenColumn": {
           "type": "string",
