@@ -45,7 +45,7 @@ const { validateFieldKeywords } =
 const { parseBarcodeParams } =
   typeof module !== "undefined" && module.exports ? require("./prtfBarcodeParams.js") : window.PrtfBarcodeParams;
 // eslint-disable-next-line no-undef
-const { parseOverlay, parsePagseg, parseAfprsc } =
+const { parseOverlay, parsePagseg, parseAfprsc, parseGdf } =
   typeof module !== "undefined" && module.exports ? require("./prtfPageGroupKeywords.js") : window.PrtfPageGroupKeywords;
 // eslint-disable-next-line no-undef
 // Batch L (continued) — CDEFNT/FNTCHRSET/FONTNAME resolution, alongside
@@ -444,22 +444,25 @@ function parseBarcodeGeometry(kw, lpi, uom) {
 }
 
 /**
- * Batch E (docs/TASKS.md) — labeled placeholder boxes for the three
- * record-level AFP resource keywords that carry their own page position:
- * OVERLAY, PAGSEG, AFPRSC. (STRPAGGRP/ENDPAGGRP/DOCIDXTAG/DTASTMCMD have no
- * page position of their own — a page group is a logical grouping of
- * whole pages, not a place on one — so they're surfaced separately as a
- * non-positioned badge list; see collectPageGroupMetadata below.) A record
- * can carry more than one of these (e.g. a front overlay and a back
- * overlay via two OVERLAY keywords), so — like LINE/BOX — every instance
- * is rendered, even though the properties panel (media/webviewClient.js)
- * only edits by keyword name and so only reaches the first.
+ * Batch E (docs/TASKS.md) — labeled placeholder boxes for the record-level
+ * AFP resource keywords that carry their own page position: OVERLAY,
+ * PAGSEG, AFPRSC, and (Batch WW) GDF. (STRPAGGRP/ENDPAGGRP/DOCIDXTAG/
+ * DTASTMCMD have no page position of their own — a page group is a
+ * logical grouping of whole pages, not a place on one — so they're
+ * surfaced separately as a non-positioned badge list; see
+ * collectPageGroupMetadata below.) A record can carry more than one of
+ * these (e.g. a front overlay and a back overlay via two OVERLAY
+ * keywords, or two GDFs per IBM's own reference example), so — like
+ * LINE/BOX — every instance is rendered, even though the properties panel
+ * (media/webviewClient.js) only edits by keyword name and so only reaches
+ * the first.
  */
 function resolveResourcePlaceholders(record, cpi, lpi, uom, indicatorState) {
   return [
     ...findAllActiveKeywords(record.keywords, "OVERLAY", indicatorState).map((kw) => parseOverlay(kw, cpi, lpi, uom)),
     ...findAllActiveKeywords(record.keywords, "PAGSEG", indicatorState).map((kw) => parsePagseg(kw, cpi, lpi, uom)),
     ...findAllActiveKeywords(record.keywords, "AFPRSC", indicatorState).map((kw) => parseAfprsc(kw, cpi, lpi, uom)),
+    ...findAllActiveKeywords(record.keywords, "GDF", indicatorState).map((kw) => parseGdf(kw, cpi, lpi, uom)),
   ];
 }
 

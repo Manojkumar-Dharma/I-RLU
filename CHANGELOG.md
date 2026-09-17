@@ -17,6 +17,20 @@ it does not replace those two documents.
 Nothing yet — see `docs/TASKS.md` for what's currently in flight or filed
 for a future batch.
 
+## [0.0.21] - Batch WW
+
+### Added
+- `GDF` (Graphic Data File) is now modeled: parsed/built with a dedicated
+  `parseGdf`/`buildGdfParams` pair, and rendered as a placeholder box on
+  the page like its `OVERLAY`/`PAGSEG`/`AFPRSC` siblings. Unlike those
+  three (which use a fixed placeholder size, having no access to their
+  resource's real pixel dimensions), `GDF`'s box is sized exactly from its
+  own mandatory `graph-depth`/`graph-width` parameters. New bespoke row in
+  the properties panel to add/edit/remove it.
+- `GDF` added to `PSF_ONLY_KEYWORDS` (ignored under Host Print Transform,
+  matching `ZFOLD`/`STAPLE`) and to the AFPDS-typical-keyword heuristic
+  used by the file-level `SKIPA`/`SKIPB`/`RELPOS` warnings.
+
 ## [0.0.20] - Batch VV
 
 ### Added
