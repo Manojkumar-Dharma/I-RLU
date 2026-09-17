@@ -2548,7 +2548,7 @@
       ])
     );
 
-    const warnings = (PrtfEngine.validateRecordKeywords(record) || []).concat(
+    const warnings = (PrtfEngine.validateRecordKeywords(record, state.model) || []).concat(
       PrtfEngine.validateFileLevelKeywords(state.model) || []
     );
     warnings.forEach((w) => {

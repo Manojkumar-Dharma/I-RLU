@@ -18,8 +18,8 @@ const { findKeyword, findAllKeywords, paramTokens } =
 // --- Batch F: print/finishing keywords (DUPLEX, FORCE, OUTBIN, ZFOLD,
 // STAPLE, INVMMAP) -----------------------------------------------------
 
-/** File- and record-level keywords that take no parameters at all (option indicators only) — must be re-emitted as a bare keyword name, never "NAME()". `RELPOS` added by Batch UU (docs/TASKS.md) — file-level, no parameters, same round-trip-safety reasoning as `FORCE`/`ZFOLD`/`STAPLE`. */
-const VALUELESS_KEYWORDS = ["FORCE", "ZFOLD", "STAPLE", "RELPOS"];
+/** File- and record-level keywords that take no parameters at all (option indicators only) — must be re-emitted as a bare keyword name, never "NAME()". `RELPOS` added by Batch UU (docs/TASKS.md) — file-level, no parameters, same round-trip-safety reasoning as `FORCE`/`ZFOLD`/`STAPLE`. `ENDPAGE` added by Batch YY — record-level, no parameters, same reasoning (docs/AUDIT-RECORD-LEVEL.md §5). */
+const VALUELESS_KEYWORDS = ["FORCE", "ZFOLD", "STAPLE", "RELPOS", "ENDPAGE"];
 
 /** ZFOLD/STAPLE/GDF (Batch WW) only take effect when printing through PSF — silently ignored otherwise, per IBM's DDS reference. */
 const PSF_ONLY_KEYWORDS = ["ZFOLD", "STAPLE", "GDF"];
@@ -117,8 +117,50 @@ function validateSkipSpaceKeywords(keywords, record, scope) {
   return warnings;
 }
 
-/** Validation hints for a single record's keywords — the ZFOLD/STAPLE PSF-only notice (Batch F), the Batch VV SKIPA/SKIPB/SPACEA/SPACEB constraints, plus the Batch TT "no indicators allowed" check. Returns [] when there's nothing to flag. */
-function validateRecordKeywords(record) {
+// --- Batch YY: ENDPAGE constraint validation (docs/AUDIT-RECORD-LEVEL.md
+// §4) -----------------------------------------------------------------
+//
+// ENDPAGE is already a member of SKIP_SPACE_RECORD_EXCLUSION_KEYWORDS
+// above, so validateSkipSpaceKeywords already flags a record's
+// SKIPA/SKIPB/SPACEA/SPACEB when that same record also has ENDPAGE — that
+// exclusion-set constant is the single source of truth both directions
+// read from, per docs/TASKS.md's own note. This section validates it from
+// ENDPAGE's own side (reusing SKIP_SPACE_KEYWORDS rather than a second
+// hardcoded list), plus ENDPAGE's two further documented restrictions that
+// have no SKIPA/SKIPB/SPACEA/SPACEB equivalent: no constant field is
+// allowed anywhere in a record that has ENDPAGE (unlike
+// BOX/GDF/LINE/OVERLAY/PAGSEG's more lenient "OK if that constant also has
+// its own POSITION" escape hatch — tracked separately for the field-level
+// audit, not ENDPAGE, which has no such exception), and the same
+// DEVTYPE(*AFPDS) heuristic requirement RELPOS/SKIPA/SKIPB already use.
+
+/** ENDPAGE-specific constraint warnings for `record`. `model` (optional) enables the *AFPDS heuristic check; omit it to skip just that one check (same convention as the rest of this file's optional context params). */
+function validateEndpageKeywords(record, model) {
+  const warnings = [];
+  if (!findKeyword(record.keywords, "ENDPAGE")) return warnings;
+  if (SKIP_SPACE_KEYWORDS.some((name) => findKeyword(record.keywords, name))) {
+    warnings.push({
+      keyword: "ENDPAGE",
+      message: "ENDPAGE cannot be specified together with SPACEA, SPACEB, SKIPA, or SKIPB on the same record.",
+    });
+  }
+  if ((record.fields || []).some((f) => f.kind === "constant")) {
+    warnings.push({
+      keyword: "ENDPAGE",
+      message: "An error is raised if a constant field is specified in a record format that also has ENDPAGE — unlike BOX/GDF/LINE/OVERLAY/PAGSEG, there's no escape hatch for this one.",
+    });
+  }
+  if (model && !looksLikeAfpds(model)) {
+    warnings.push({
+      keyword: "ENDPAGE",
+      message: "ENDPAGE only has an effect when this file compiles as *AFPDS (CRTPRTF's DEVTYPE parameter) — otherwise it's ignored, with a warning message issued at print time. No AFPDS-typical keywords were found elsewhere in this file.",
+    });
+  }
+  return warnings;
+}
+
+/** Validation hints for a single record's keywords — the ZFOLD/STAPLE/GDF PSF-only notice (Batch F/WW), the Batch VV SKIPA/SKIPB/SPACEA/SPACEB constraints, the Batch YY ENDPAGE constraints, plus the Batch TT "no indicators allowed" check. `model` (optional, added by Batch YY) enables the ENDPAGE *AFPDS heuristic check — callers without a model in scope (some existing tests) simply skip that one check, same "optional context param" convention Batch VV's `validateFieldKeywords(field, record)` established. Returns [] when there's nothing to flag. */
+function validateRecordKeywords(record, model) {
   const warnings = [];
   PSF_ONLY_KEYWORDS.forEach((name) => {
     if (findKeyword(record.keywords, name)) {
@@ -129,6 +171,7 @@ function validateRecordKeywords(record) {
     }
   });
   warnings.push(...validateSkipSpaceKeywords(record.keywords, record, "record"));
+  warnings.push(...validateEndpageKeywords(record, model));
   return warnings.concat(validateKeywordIndicators(record.keywords));
 }
 
@@ -383,6 +426,8 @@ const mod = {
   SKIP_SPACE_KEYWORDS,
   recordHasSkipSpaceExclusion,
   recordHasLineNumbers,
+  // Batch YY
+  validateEndpageKeywords,
   parseIndtxt,
   collectIndicatorDescriptions,
   // Batch B

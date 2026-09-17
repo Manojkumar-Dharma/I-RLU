@@ -17,6 +17,22 @@ it does not replace those two documents.
 Nothing yet — see `docs/TASKS.md` for what's currently in flight or filed
 for a future batch.
 
+## [0.0.23] - Batch YY
+
+### Added
+- `ENDPAGE` constraint validation, folded into `validateRecordKeywords`:
+  flagged when specified together with `SPACEA`/`SPACEB`/`SKIPA`/`SKIPB`
+  on the same record (the reverse side of Batch VV's exclusion check —
+  `ENDPAGE` was already in that shared exclusion-set constant, so this
+  adds `ENDPAGE`'s own direction); flagged when a constant field is
+  present anywhere in a record that also has `ENDPAGE` (no escape hatch,
+  unlike `BOX`/`GDF`/`LINE`/`OVERLAY`/`PAGSEG`'s "OK if that constant also
+  has its own `POSITION`" rule); and flagged (heuristically) when no
+  `*AFPDS`-typical keyword is present in the file, same caveat as every
+  other `DEVTYPE(*AFPDS)` check.
+- `ENDPAGE` added to `VALUELESS_KEYWORDS` — it takes no parameters, same
+  round-trip-safety reasoning as Batch UU's `RELPOS` fix.
+
 ## [0.0.22] - Batch XX
 
 ### Added

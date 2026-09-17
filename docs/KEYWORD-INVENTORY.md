@@ -87,7 +87,7 @@ fill them"*) — I pulled their definitions from IBM's DDS reference instead:
 
 | Keyword | Purpose (IBM DDS reference) |
 |---|---|
-| `ENDPAGE` | Marks the last record format printed on a page — used with page groups. |
+| `ENDPAGE` | Marks the last record format printed on a page — used with page groups. Constraint validation added by Batch YY (`docs/TASKS.md`): flagged when combined with `SPACEA`/`SPACEB`/`SKIPA`/`SKIPB` on the same record, flagged when any constant field is present in a record that also has `ENDPAGE` (no escape hatch), and the usual `DEVTYPE(*AFPDS)` heuristic check. Also added to `VALUELESS_KEYWORDS` (no parameters). |
 | `OVERLAY` (record-level) | Names an AFP overlay resource + vertical/horizontal offset — `OVERLAY(&NAME &VOFF &HOFF)`, all three positional params can be program-to-system fields. |
 | `PAGSEG` | Places an AFP page segment (image) resource at a given offset. |
 | `STRPAGGRP` / `ENDPAGGRP` | Bracket a set of pages into a named "page group" (used for AFP document indexing / bookmarking). |

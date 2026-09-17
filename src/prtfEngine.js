@@ -138,6 +138,10 @@ const mod = {
   SKIP_SPACE_KEYWORDS: KeywordValidation.SKIP_SPACE_KEYWORDS,
   recordHasSkipSpaceExclusion: KeywordValidation.recordHasSkipSpaceExclusion,
   recordHasLineNumbers: KeywordValidation.recordHasLineNumbers,
+  // Batch YY — ENDPAGE constraint validation, folded into
+  // validateRecordKeywords above; also exported standalone for direct
+  // testing/reuse.
+  validateEndpageKeywords: KeywordValidation.validateEndpageKeywords,
 };
 if (typeof module !== "undefined" && module.exports) module.exports = mod;
 if (typeof window !== "undefined") window.PrtfEngine = mod;

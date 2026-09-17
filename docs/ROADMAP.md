@@ -950,6 +950,30 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       `test/prtfBatchWW.test.ts` (16 tests); full suite now 626, all
       passing.
 
+- [x] **Batch YY — `ENDPAGE` constraint validation + `VALUELESS_KEYWORDS`
+      fix.** `ENDPAGE` wasn't referenced anywhere in
+      `prtfKeywordValidation.js`. Three documented rules added: (1) can't
+      be specified together with `SPACEA`/`SPACEB`/`SKIPA`/`SKIPB` on the
+      same record — reuses Batch VV's own `SKIP_SPACE_KEYWORDS` constant
+      rather than a second hardcoded list; `ENDPAGE` was already a member
+      of Batch VV's exclusion-set constant, so the reverse direction
+      already worked, confirming it really is the single source of truth
+      both directions read from. (2) An error is raised if a constant
+      field is present anywhere in a record that also has `ENDPAGE` — no
+      escape hatch, unlike `BOX`/`GDF`/`LINE`/`OVERLAY`/`PAGSEG`'s "OK if
+      that constant also has its own `POSITION`" rule (that escape hatch
+      is out of scope here — tracked for the field-level audit). (3) Needs
+      `DEVTYPE(*AFPDS)`, same heuristic-only caveat as `RELPOS`/`SKIPA`/
+      `SKIPB`. New `validateEndpageKeywords(record, model)`;
+      `validateRecordKeywords(record, model)` gains a second, optional
+      `model` parameter (mirrors Batch VV's own
+      `validateFieldKeywords(field, record)` precedent), so every existing
+      single-arg caller keeps working. Also: `ENDPAGE` added to
+      `VALUELESS_KEYWORDS` (it takes no parameters), same round-trip-
+      safety reasoning as Batch UU's `RELPOS` fix. See `docs/TASKS.md`
+      Batch YY for the full writeup. New `test/prtfBatchYY.test.ts`; full
+      suite now 651, all passing.
+
 ## Next up
 
 Batches SS–ZZ were filed from a full three-part audit
@@ -974,14 +998,13 @@ rendering unlike its `OVERLAY`/`PAGSEG`/`AFPRSC` siblings was fixed as
 helper that **Batch XX** — `PAGSEG`'s real `(*SIZE height width)` being
 parsed but discarded in favor of a fixed placeholder — then reused (see
 above; the two batches landed concurrently in separate sessions and were
-merged together). Still open: `ENDPAGE` having zero constraint validation
-(**Batch YY**), and a small field-level bundle — a wrong `TIMFMT` option,
-two unvalidated mutual exclusions, and unvalidated `ALIAS` uniqueness
-(**Batch ZZ**). None of these remaining ones are started yet — see
-`docs/TASKS.md`'s Batch YY–ZZ detail sections for full scope per batch.
+merged together). `ENDPAGE` having zero constraint validation was
+investigated and fixed as **Batch YY** (see above). Still open: a small
+field-level bundle — a wrong `TIMFMT` option, two unvalidated mutual
+exclusions, and unvalidated `ALIAS` uniqueness (**Batch ZZ**), not started
+yet — see `docs/TASKS.md`'s Batch ZZ detail section for full scope.
 
 
-- [ ] **Batch YY — `ENDPAGE` constraint validation.**
 - [ ] **Batch ZZ — field-level small-fix bundle** (`TIMFMT`, `EDTCDE`/`EDTWRD` vs `DFT`, `MSGCON`, `ALIAS`).
 
 As of the RLU screen-capture review (`docs/KEYWORD-INVENTORY.md`), the
