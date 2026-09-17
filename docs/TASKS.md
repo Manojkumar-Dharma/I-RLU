@@ -131,9 +131,9 @@ vice versa.
 | SS | **Bug fix:** `PAGSIZE`/`DEVTYPE` are parsed/written as real DDS keywords when neither exists in the DDS spec — both are `CRTPRTF`/`CHGPRTF`/`OVRPRTF` command parameters only | n/a (parser/layout/writer correctness + test fixtures) | **Done** | none |
 | TT | Centralized "option indicators not valid for this keyword" validation | `REF`, `INDARA`, `RELPOS`, `INDTXT`, `CCSID`, `ALIAS`, `REFFLD`, `MSGCON`, `DATE`, `DATFMT`, `DATSEP`, `TIMFMT`, `TIMSEP` (validation only) | **Done** | none |
 | UU | Model `RELPOS` (file-level) and gate `+n` relative-positioning math on its presence | `RELPOS` | **Done** | none |
-| VV | `SKIPA`/`SKIPB`/`SPACEA`/`SPACEB` full constraint validation + fix record-/file-level layout no-op | `SKIPA`, `SKIPB`, `SPACEA`, `SPACEB` (validation + layout fix) | Open | none |
+| VV | `SKIPA`/`SKIPB`/`SPACEA`/`SPACEB` full constraint validation + fix record-/file-level layout no-op | `SKIPA`, `SKIPB`, `SPACEA`, `SPACEB` (validation + layout fix) | **Done** | none |
 | WW | Model `GDF` (record-level, PSF-only) with placeholder rendering | `GDF` | Open | none |
-| XX | Use `PAGSEG`'s real `(*SIZE height width)` for its placeholder box instead of a fixed size | `PAGSEG` | Open | none |
+| XX | Use `PAGSEG`'s real `(*SIZE height width)` for its placeholder box instead of a fixed size | `PAGSEG` | In progress | none |
 | YY | `ENDPAGE` constraint validation + `VALUELESS_KEYWORDS` fix | `ENDPAGE` | Open | none |
 | ZZ | Field-level small-fix bundle: `TIMFMT` dropdown, `EDTCDE`/`EDTWRD` vs `DFT`, `MSGCON` exclusion set, `ALIAS` uniqueness | `TIMFMT`, `EDTCDE`, `EDTWRD`, `DFT`, `MSGCON`, `ALIAS` | Open | none |
 
