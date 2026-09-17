@@ -886,6 +886,23 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       once that rule started being checked; full suite now 610, all
       passing.
 
+- [x] **Batch XX — `PAGSEG`'s `(*SIZE height width)` sub-parameter.** This
+      optional expression sizes the page-segment placeholder box and is
+      coded directly in the DDS source — unlike `OVERLAY`'s legitimately
+      approximate placeholder (no access to the real resource file), this
+      was a plain parsing gap: `parsePagseg()` dumped `(*SIZE height
+      width)` into the opaque `extra` field and the placeholder box always
+      rendered at a fixed 20×3 size regardless. New `parseSizeExpr()`
+      pulls the height/width tokens out of PAGSEG's already-grouped extra
+      tokens (reusing the same paren-aware tokenizer `OVERLAY`'s own
+      `(*ROTATION n)` already relies on for round-trip); `extra` itself is
+      completely untouched, so this needed zero changes to how PAGSEG
+      serializes. A field-reference height/width falls back to the fixed
+      default, flagged approximate, same treatment a field-reference
+      position already gets. See `docs/TASKS.md` Batch XX for the full
+      writeup. 10 new tests in `test/prtfBatchXX.test.ts`; full suite now
+      619, all passing.
+
 - [x] **Batch O — real AFP resource rendering (page segments/overlays as
       actual images) — done for the common image-content case.** Real
       Apache-2.0-licensed AFP resource fixtures from Apache FOP's own test
@@ -926,18 +943,18 @@ anyway was investigated and fixed as **Batch UU** (see above — the `+n`
 math itself turned out already correct; `RELPOS` recognition/validation
 was the actual gap). Unvalidated `SKIPA`/`SKIPB`/`SPACEA`/`SPACEB`
 constraints plus a record-/file-level rendering no-op were investigated
-and fixed as **Batch VV** (see above). Still open: `GDF`
+and fixed as **Batch VV** (see above). `PAGSEG`'s real `(*SIZE height
+width)` being parsed but discarded in favor of a fixed placeholder was
+fixed as **Batch XX** (see above). Still open: `GDF`
 having no placeholder rendering unlike its `OVERLAY`/`PAGSEG`/`AFPRSC`
-siblings (**Batch WW**), `PAGSEG`'s real `(*SIZE height width)` being
-parsed but discarded in favor of a fixed placeholder (**Batch XX**),
-`ENDPAGE` having zero constraint validation (**Batch YY**), and a small
+siblings (**Batch WW**), `ENDPAGE` having zero constraint validation
+(**Batch YY**), and a small
 field-level bundle — a wrong `TIMFMT` option, two unvalidated mutual
 exclusions, and unvalidated `ALIAS` uniqueness (**Batch ZZ**). None of
-these remaining ones are started yet — see `docs/TASKS.md`'s Batch WW–ZZ
-detail sections for full scope per batch.
+these remaining ones are started yet — see `docs/TASKS.md`'s Batch WW,
+YY–ZZ detail sections for full scope per batch.
 
 - [ ] **Batch WW — model `GDF`** (record-level, PSF-only resource keyword).
-- [ ] **Batch XX — `PAGSEG`'s real `(*SIZE height width)`.**
 - [ ] **Batch YY — `ENDPAGE` constraint validation.**
 - [ ] **Batch ZZ — field-level small-fix bundle** (`TIMFMT`, `EDTCDE`/`EDTWRD` vs `DFT`, `MSGCON`, `ALIAS`).
 

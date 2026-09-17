@@ -88,20 +88,57 @@ function unquoteOrField(tok) {
   return tok;
 }
 
-function placeholderGeometry(name, keyword, posDownTok, posAcrossTok, cpi, lpi, uom, extraApproximate) {
-  const approximate = isFieldRef(posDownTok) || isFieldRef(posAcrossTok) || !!extraApproximate;
+function placeholderGeometry(name, keyword, posDownTok, posAcrossTok, cpi, lpi, uom, extraApproximate, size) {
+  // Batch XX (docs/TASKS.md) — `size`, when passed, is PAGSEG's optional
+  // `(*SIZE height width)` sub-parameter (extracted by parseSizeExpr below).
+  // A field-reference height/width can't be resolved to a real box size at
+  // design time — same "approximate" treatment as a field-reference
+  // position-down/position-across already gets — so it still falls back to
+  // the fixed default in that case, just flagged as approximate.
+  const sizeIsFieldRef = !!size && (isFieldRef(size.heightTok) || isFieldRef(size.widthTok));
+  const approximate = isFieldRef(posDownTok) || isFieldRef(posAcrossTok) || !!extraApproximate || sizeIsFieldRef;
   const posDown = toInches(toNumber(posDownTok, 0), uom);
   const posAcross = toInches(toNumber(posAcrossTok, 0), uom);
+  let widthCols = DEFAULT_RESOURCE_COLS;
+  let heightRows = DEFAULT_RESOURCE_ROWS;
+  if (size && !sizeIsFieldRef) {
+    const heightIn = toInches(toNumber(size.heightTok, 0), uom);
+    const widthIn = toInches(toNumber(size.widthTok, 0), uom);
+    // Per IBM's reference, height and width are always specified together
+    // (never just one) — but guard each independently anyway rather than
+    // trust that, and only override a dimension we got a usable positive
+    // number for.
+    if (heightIn > 0) heightRows = Math.max(1, Math.round(heightIn * lpi));
+    if (widthIn > 0) widthCols = Math.max(1, Math.round(widthIn * cpi));
+  }
   return {
     keyword,
     name: name || "",
     label: (name || keyword) + " (" + keyword + ")",
     row: Math.round(posDown * lpi) + 1,
     col: Math.round(posAcross * cpi) + 1,
-    widthCols: DEFAULT_RESOURCE_COLS,
-    heightRows: DEFAULT_RESOURCE_ROWS,
+    widthCols,
+    heightRows,
     approximate,
   };
+}
+
+/**
+ * Extracts PAGSEG's optional `(*SIZE height width)` sub-parameter from its
+ * raw "extra" tokens (Batch XX, docs/TASKS.md) — used only to size the
+ * placeholder box (see placeholderGeometry above); the tokens themselves
+ * are left untouched in `extra` for exact round-trip, matching this
+ * module's own "don't silently drop what I don't have a dedicated field
+ * for" convention. Returns `{ heightTok, widthTok }` (still raw strings —
+ * either could be a &field reference) or null if `(*SIZE ...)` isn't
+ * present among the extra tokens.
+ */
+function parseSizeExpr(extraTokens) {
+  for (let i = 0; i < extraTokens.length; i++) {
+    const m = /^\(\*SIZE\s+(\S+)\s+(\S+)\)$/i.exec(extraTokens[i]);
+    if (m) return { heightTok: m[1], widthTok: m[2] };
+  }
+  return null;
 }
 
 /**
@@ -129,16 +166,25 @@ function buildOverlayParams(f) {
 
 /**
  * PAGSEG(page-segment-name [vertical-offset horizontal-offset]
- *        [(*ROTATION rotation)]) — record-level. Offsets are an optional
- * pair (both present or both omitted) per IBM's DDS reference.
+ *        [(*SIZE height width)] [(*ROTATION rotation)]) — record-level.
+ * Offsets are an optional pair (both present or both omitted) per IBM's
+ * DDS reference. `(*SIZE height width)`'s two numbers are now read out
+ * (Batch XX, docs/TASKS.md) to size the placeholder box for real instead
+ * of always using the fixed default — see placeholderGeometry/
+ * parseSizeExpr above. The expression itself is still preserved verbatim
+ * in `extra`, unlike OVERLAY's `(*ROTATION n)`, which this module has
+ * never parsed out of `extra` at all — no need to, since rotation doesn't
+ * feed into the placeholder box's size.
  */
 function parsePagseg(kw, cpi, lpi, uom) {
   const t = paramTokens(kw);
-  const geometry = placeholderGeometry(t[0], "PAGSEG", t[1], t[2], cpi, lpi, uom, isFieldRef(t[0]));
+  const extraTokens = t.slice(3);
+  const size = parseSizeExpr(extraTokens);
+  const geometry = placeholderGeometry(t[0], "PAGSEG", t[1], t[2], cpi, lpi, uom, isFieldRef(t[0]), size);
   return Object.assign(geometry, {
     posDown: t[1] || "",
     posAcross: t[2] || "",
-    extra: t.slice(3).join(" "),
+    extra: extraTokens.join(" "),
   });
 }
 
@@ -288,6 +334,8 @@ const mod = {
   parseDocidxtag,
   buildDocidxtagParams,
   validatePageGroupOrder,
+  // Batch XX
+  parseSizeExpr,
 };
 if (typeof module !== "undefined" && module.exports) module.exports = mod;
 if (typeof window !== "undefined") window.PrtfPageGroupKeywords = mod;

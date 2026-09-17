@@ -93,6 +93,8 @@ const mod = {
   buildDocidxtagParams: PageGroupKeywords.buildDocidxtagParams,
   // Batch P
   validatePageGroupOrder: PageGroupKeywords.validatePageGroupOrder,
+  // Batch XX
+  parseSizeExpr: PageGroupKeywords.parseSizeExpr,
   // Batch L (continued) — CDEFNT/FNTCHRSET/FONTNAME resolution (see
   // prtfLayout.js's resolveFont/resolveFontDisplay for how these feed
   // into resolveLayout's cells[].font, and afpCodedFontMetrics.js's own

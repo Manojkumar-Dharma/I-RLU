@@ -17,6 +17,16 @@ it does not replace those two documents.
 Nothing yet — see `docs/TASKS.md` for what's currently in flight or filed
 for a future batch.
 
+## [0.0.21] - Batch XX
+
+### Added
+- `PAGSEG`'s optional `(*SIZE height width)` sub-parameter now sizes its
+  placeholder box for real, instead of always using the fixed 20×3
+  default. A `&field`-reference height/width still falls back to the
+  fixed default (flagged approximate), and the expression itself is
+  still preserved verbatim for round-trip — this only reads its numbers
+  out for sizing.
+
 ## [0.0.20] - Batch VV
 
 ### Added
