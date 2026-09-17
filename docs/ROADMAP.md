@@ -974,6 +974,34 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       Batch YY for the full writeup. New `test/prtfBatchYY.test.ts`; full
       suite now 651, all passing.
 
+- [x] **Batch ZZ — field-level small-fix bundle.** Four independent, small
+      fixes, all field-level: (1) `TIMFMT`'s properties-panel option list
+      wrongly offered `*JOB` — a `TIMSEP`-only value, apparently
+      copy-adapted in from `DATFMT`'s list (which legitimately includes
+      `*JOB`) without dropping the one option that doesn't carry over;
+      removed from `media/webviewClient.js`'s `BATCH_A_FIELD_ONLY_KEYWORDS`.
+      (2) `EDTCDE`/`EDTWRD` cannot be specified with `DFT` on the same
+      field — each checked individually, same "loop over the pair" shape
+      the existing `FLTFIXDEC`/`FLTPCN` check already used. (3) `MSGCON`
+      cannot be specified with `DATE`/`DFT`/`EDTCDE`/`EDTWRD`/`TIME` — one
+      combined warning naming the whole set, same style Batch YY's
+      `ENDPAGE` exclusion check established. Both (2) and (3) folded
+      directly into `validateFieldKeywords`, needing only the one field's
+      own keywords. (4) `ALIAS`'s alternative-name parameter must differ
+      from every other field's `ALIAS` value and from every DDS field name
+      in the record format (including that field's own name — the
+      reference doesn't exempt that case) — a whole-record-scoped rule, so
+      a new standalone `validateAliasUniqueness(record)` (chosen over a
+      `validatePageGroupOrder`-style whole-*model* pattern, since the
+      rule's own scope is one record format) returns per-field violations,
+      filtered down inside `validateFieldKeywords` via its existing
+      optional `record` parameter (the same one Batch VV added for the
+      same reason). See `docs/TASKS.md` Batch ZZ for the full writeup. New
+      `test/prtfBatchZZ.test.ts`; full suite now 673, all passing.
+
+This closes out the full SS–ZZ audit series (see "Next up" below for the
+series' own history) — every finding from all three audits has now landed.
+
 ## Next up
 
 Batches SS–ZZ were filed from a full three-part audit
@@ -999,13 +1027,14 @@ helper that **Batch XX** — `PAGSEG`'s real `(*SIZE height width)` being
 parsed but discarded in favor of a fixed placeholder — then reused (see
 above; the two batches landed concurrently in separate sessions and were
 merged together). `ENDPAGE` having zero constraint validation was
-investigated and fixed as **Batch YY** (see above). Still open: a small
+investigated and fixed as **Batch YY** (see above). Finally, a small
 field-level bundle — a wrong `TIMFMT` option, two unvalidated mutual
-exclusions, and unvalidated `ALIAS` uniqueness (**Batch ZZ**), not started
-yet — see `docs/TASKS.md`'s Batch ZZ detail section for full scope.
-
-
-- [ ] **Batch ZZ — field-level small-fix bundle** (`TIMFMT`, `EDTCDE`/`EDTWRD` vs `DFT`, `MSGCON`, `ALIAS`).
+exclusions, and unvalidated `ALIAS` uniqueness — was fixed as **Batch ZZ**
+(see above), closing out the series: every finding from all three audits
+has now landed. Nothing is currently filed for a future batch — the next
+work item will need a fresh look at the codebase or a new request to seed
+it.
+fresh look at the codebase or a new request to seed it.
 
 As of the RLU screen-capture review (`docs/KEYWORD-INVENTORY.md`), the
 remaining work is re-organized into the parallel-session task batches in

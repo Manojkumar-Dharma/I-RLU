@@ -142,15 +142,15 @@ Field-level parameter detail worth calling out specifically:
 
 | Keyword | Parameters | Notes |
 |---|---|---|
-| `ALIAS` | Alternative name for the field (a second `Name`) | Simple rename-alias, distinct from the field's DDS name — matters for HLL field references. |
+| `ALIAS` | Alternative name for the field (a second `Name`) | Simple rename-alias, distinct from the field's DDS name — matters for HLL field references. Uniqueness validated by Batch ZZ (`docs/TASKS.md`): the alternative name must differ from every other field's `ALIAS` and from every DDS field name in the record format (including its own field's name — the reference doesn't exempt that case). |
 | `BARCODE` | Barcode-ID (name/numeric symbology id), height in lines (1–9) **or** height in UOM (0.25–254.00 cm / 0.10–010.00 in), bar format (1=Horizontal/2=Vertical), human-readable interpretation (1=Below/2=Above/3=None), asterisk-on-CODE3OF9 (Y/N), modifier (00–FE hex), narrow bar width (0.007–0.208), ratio of wide:narrow bar (2.00–3.00), additional 2D parameters (free text) | **Done (Batches C & D):** every parameter above is parsed, editable in the properties panel (`src/prtfBarcodeParams.js`), and validated with client-side range hints; 13 of the documented bar-code-IDs (the linear symbologies — see `docs/TASKS.md` Batch D for the full list and the ones intentionally left as a placeholder) render as real bars via the vendored JsBarcode (`src/prtfBarcodeRender.js`), using deterministic design-time sample data since I-RLU has no live compile/run. See `docs/TASKS.md` Batch N for the still-open `BARCODE` mutual-exclusion validation. |
 | `COLOR` | Named color (Black/Blue/Brown/Green/Pink/Red/Turquoise/Yellow) **or** RGB **or** CMYK **or** CIELAB **or** `HIGHLIGHT`-model, each with up to 3 option indicators | More color models than a simple named-color enum — worth a proper color-model picker in the UI rather than a flat list. |
 | `DATE` | Date source: 1=Job / 2=System; Year option: 1=2-digit / 2=4-digit | |
-| `DFT` | Literal constant text (e.g. `'X'`) | Default value for the field. |
-| `EDTCDE` | Edit code 1–9, A–D, J–Q, W–Z; fill character (`*` or currency symbol) | |
-| `EDTWRD` | Free-form edit-word mask string | |
+| `DFT` | Literal constant text (e.g. `'X'`) | Default value for the field. Cannot be specified with `EDTCDE`/`EDTWRD` (validated by Batch ZZ) or with `MSGCON` (see that row below). |
+| `EDTCDE` | Edit code 1–9, A–D, J–Q, W–Z; fill character (`*` or currency symbol) | Cannot be specified with `DFT` — validated by Batch ZZ (`docs/TASKS.md`). |
+| `EDTWRD` | Free-form edit-word mask string | Cannot be specified with `DFT` — validated by Batch ZZ (`docs/TASKS.md`). |
 | `FLTPCN` | 1=Single / 2=Double | Floating-point precision. |
-| `MSGCON` | Message length 1–132, message identifier (or `*LIST`), message file + library | Pulls constant text from a message file member. |
+| `MSGCON` | Message length 1–132, message identifier (or `*LIST`), message file + library | Pulls constant text from a message file member. Cannot be specified with `DATE`/`DFT`/`EDTCDE`/`EDTWRD`/`TIME` on the same field — validated by Batch ZZ (`docs/TASKS.md`); previously not referenced in `prtfKeywordValidation.js` at all. |
 | `PAGNBR` | Option indicators only | Places the current page number; no other params. |
 | `REFFLD` | Field name, record format name, file name, library | Same shape as file-level `REF`; this is the one flagged as high-priority in `REQUIREMENTS.md` §6 for "Resolve Referenced Field via Code for i." |
 | `UNDERLINE` | Option indicators only | IBM doc flags: **do not use on AFPDS spooled files distributed to System z** — prints incorrectly there. Worth a designer hint, not a hard block. |
@@ -184,7 +184,7 @@ from IBM's DDS reference:
 | `DATFMT` / `DATSEP` | Date format (`*MDY`, `*JUL`, `*ISO`, etc.) and separator character, pairs with `DATE`. |
 | `DLTEDT` | Suppresses trailing zero/blank editing on a subset of positions. |
 | `FLTFIXDEC` | Converts a floating-point value to fixed-decimal for display, with a specified number of decimal positions. |
-| `TIMFMT` / `TIMSEP` | Time format/separator, pairs with `TIME`. |
+| `TIMFMT` / `TIMSEP` | Time format/separator, pairs with `TIME`. `TIMFMT`'s properties-panel option list wrongly offered `*JOB` (a `TIMSEP`-only value, not a valid `TIMFMT` value per the reference) until fixed by Batch ZZ (`docs/TASKS.md`). |
 | `TRNSPY` | Transparency — controls whether the field's background is opaque or see-through over an underlying overlay/page segment. |
 | `TXTRTT` | Text rotation — independent of the record-level `PAGRTT` page rotation. |
 

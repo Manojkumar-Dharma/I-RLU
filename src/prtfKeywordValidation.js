@@ -242,7 +242,8 @@ const FIELD_LEVEL_VALUELESS_KEYWORDS = ["BLKFOLD", "DLTEDT", "TRNSPY", "FLTFIXDE
  * that actually enforces it at compile time; this just surfaces the same
  * rule live in the designer. `record` (optional, added by Batch VV) is the
  * owning record format — when provided, also surfaces the SKIPA/SKIPB/
- * SPACEA/SPACEB constraint warnings, which need the whole record's other
+ * SPACEA/SPACEB constraint warnings (Batch VV) and the ALIAS uniqueness
+ * check (Batch ZZ), both of which need the whole record's other
  * keywords/fields to evaluate. Every existing caller that already had a
  * record in scope (prtfLayout.js's resolveLayout) now passes it; callers
  * that only have the field in isolation (some existing tests) simply skip
@@ -281,7 +282,28 @@ function validateFieldKeywords(field, record) {
       warnings.push({ keyword: "TXTRTT", message: "TXTRTT's rotation must be 0, 90, 180, or 270 degrees, not " + deg + "." });
     }
   }
+  // Batch ZZ (docs/TASKS.md, docs/AUDIT-FIELD-LEVEL.md §2/§3) — two more
+  // field-level exclusion rules, neither previously checked anywhere.
+  if (findKeyword(field.keywords, "DFT")) {
+    [findKeyword(field.keywords, "EDTCDE"), findKeyword(field.keywords, "EDTWRD")].forEach((editKw) => {
+      if (editKw) {
+        warnings.push({ keyword: editKw.name, message: editKw.name + " cannot be specified with DFT on the same field." });
+      }
+    });
+  }
+  if (findKeyword(field.keywords, "MSGCON") && ["DATE", "DFT", "EDTCDE", "EDTWRD", "TIME"].some((name) => findKeyword(field.keywords, name))) {
+    warnings.push({
+      keyword: "MSGCON",
+      message:
+        "MSGCON cannot be specified together with DATE, DFT, EDTCDE, EDTWRD, or TIME on the same field — with DFT specifically, the two are documented as functionally equivalent and the file isn't created at all if both are coded.",
+    });
+  }
   if (record) {
+    warnings.push(
+      ...validateAliasUniqueness(record)
+        .filter((w) => w.fieldId === field.id)
+        .map((w) => ({ keyword: w.keyword, message: w.message }))
+    );
     warnings.push(...validateSkipSpaceKeywords(field.keywords, record, "field"));
   }
   return warnings.concat(validateKeywordIndicators(field.keywords));
@@ -413,6 +435,74 @@ function validateKeywordIndicators(keywords) {
   return warnings;
 }
 
+// --- Batch ZZ: field-level small-fix bundle (docs/AUDIT-FIELD-LEVEL.md
+// §1-3/§5) --------------------------------------------------------------
+//
+// Four independent, small fixes bundled because they're all field-level
+// and all small. The TIMFMT properties-panel option-list bug lives in
+// media/webviewClient.js (BATCH_A_FIELD_ONLY_KEYWORDS), not here. The
+// EDTCDE/EDTWRD-vs-DFT and MSGCON exclusion checks are folded directly
+// into validateFieldKeywords above (§2/§3) since they only need the one
+// field's own keywords. ALIAS uniqueness (§5) is record-scoped — "must be
+// different from all other alternative names and from all DDS field names
+// in the record format" — so it's its own standalone function here,
+// filtered down to one field's warnings inside validateFieldKeywords the
+// same way Batch VV's validateSkipSpaceKeywords already needed the whole
+// record in scope.
+
+/**
+ * ALIAS(alternative-name) must differ from every other field's ALIAS
+ * value and from every DDS field name in the record format — a duplicate
+ * either way is a compile error per the reference (constant fields have
+ * no DDS name and never carry ALIAS, so they're excluded entirely). Note
+ * the reference doesn't exempt a field's ALIAS from clashing with its OWN
+ * name either, so that case is flagged too. Returns an array of
+ * {fieldId, keyword: "ALIAS", message} — a field can appear more than
+ * once if it collides on both checks. [] if the record has no ALIAS
+ * keywords, or the ones it has are all fine.
+ */
+function validateAliasUniqueness(record) {
+  const warnings = [];
+  const fields = (record.fields || []).filter((f) => f.kind === "field");
+  const fieldNames = fields.map((f) => (f.name || "").toUpperCase());
+  const aliasEntries = fields
+    .map((f) => {
+      const kw = findKeyword(f.keywords, "ALIAS");
+      const alias = kw ? (paramTokens(kw)[0] || "").toUpperCase() : null;
+      return alias ? { field: f, alias } : null;
+    })
+    .filter(Boolean);
+
+  aliasEntries.forEach(({ field, alias }) => {
+    if (fieldNames.indexOf(alias) !== -1) {
+      warnings.push({
+        fieldId: field.id,
+        keyword: "ALIAS",
+        message:
+          "ALIAS(" + alias + ") duplicates a DDS field name in this record format — the alternative name must differ from every field name.",
+      });
+    }
+  });
+
+  const byAlias = {};
+  aliasEntries.forEach(({ field, alias }) => {
+    (byAlias[alias] = byAlias[alias] || []).push(field);
+  });
+  Object.keys(byAlias).forEach((alias) => {
+    const clashing = byAlias[alias];
+    if (clashing.length < 2) return;
+    clashing.forEach((field) => {
+      const others = clashing.filter((f) => f !== field).map((f) => f.name);
+      warnings.push({
+        fieldId: field.id,
+        keyword: "ALIAS",
+        message: "ALIAS(" + alias + ") is also used on " + others.join(", ") + " in this record format — alternative names must be unique.",
+      });
+    });
+  });
+  return warnings;
+}
+
 const mod = {
   // Batch F
   VALUELESS_KEYWORDS,
@@ -435,6 +525,8 @@ const mod = {
   // Batch TT
   NO_INDICATOR_KEYWORDS,
   validateKeywordIndicators,
+  // Batch ZZ
+  validateAliasUniqueness,
 };
 if (typeof module !== "undefined" && module.exports) module.exports = mod;
 if (typeof window !== "undefined") window.PrtfKeywordValidation = mod;

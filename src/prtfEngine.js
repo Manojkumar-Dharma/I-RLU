@@ -142,6 +142,13 @@ const mod = {
   // validateRecordKeywords above; also exported standalone for direct
   // testing/reuse.
   validateEndpageKeywords: KeywordValidation.validateEndpageKeywords,
+  // Batch ZZ — ALIAS uniqueness (record-scoped), folded into
+  // validateFieldKeywords above; also exported standalone for direct
+  // testing/reuse. (The TIMFMT option-list fix and the EDTCDE/EDTWRD-vs-
+  // DFT/MSGCON exclusion checks don't need a separate export — the former
+  // is a media/webviewClient.js data fix, the latter two are already
+  // folded into validateFieldKeywords with nothing standalone to expose.)
+  validateAliasUniqueness: KeywordValidation.validateAliasUniqueness,
 };
 if (typeof module !== "undefined" && module.exports) module.exports = mod;
 if (typeof window !== "undefined") window.PrtfEngine = mod;

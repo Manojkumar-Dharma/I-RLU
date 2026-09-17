@@ -17,6 +17,28 @@ it does not replace those two documents.
 Nothing yet — see `docs/TASKS.md` for what's currently in flight or filed
 for a future batch.
 
+## [0.0.24] - Batch ZZ
+
+### Fixed
+- `TIMFMT`'s properties-panel option list no longer offers `*JOB` — that's
+  a valid `TIMSEP` value only, not a valid `TIMFMT` value per the
+  reference (the list had apparently been copy-adapted from `DATFMT`'s,
+  which legitimately includes `*JOB`, without dropping the one option
+  that doesn't carry over).
+
+### Added
+- `EDTCDE`/`EDTWRD` vs. `DFT` constraint validation: either is flagged
+  when `DFT` is also specified on the same field.
+- `MSGCON`'s five-keyword exclusion set (`DATE`/`DFT`/`EDTCDE`/`EDTWRD`/
+  `TIME`) validated — `MSGCON` wasn't referenced in
+  `prtfKeywordValidation.js` at all before this.
+- `ALIAS` uniqueness validation: a new record-scoped
+  `validateAliasUniqueness()` flags an `ALIAS` value that duplicates
+  another field's `ALIAS` value, or any DDS field name in the record
+  format (including its own field's name — the reference doesn't exempt
+  that case), folded into `validateFieldKeywords` via its existing
+  optional `record` parameter.
+
 ## [0.0.23] - Batch YY
 
 ### Added

@@ -1625,12 +1625,17 @@
   // reference "DDS File With Date, Time, and Timestamp Fields" example,
   // which shows DATFMT/DATSEP/TIMFMT/TIMSEP used on named L (date) / T
   // (time) type fields. EDTCDE is handled separately below (two-part:
-  // code + optional fill character, not a single value).
+  // code + optional fill character, not a single value). Batch ZZ
+  // (docs/TASKS.md) bug fix: TIMFMT's option list used to also offer
+  // *JOB, which isn't a valid TIMFMT value per the reference (no such row
+  // in its format table) — *JOB is a valid TIMSEP value only, and this
+  // list had apparently been copy-adapted from DATFMT's (which legitimately
+  // includes *JOB) without dropping the one option that doesn't carry over.
   const BATCH_A_FIELD_ONLY_KEYWORDS = [
     { name: "EDTWRD", kind: "quotedText", placeholder: "e.g.   .  ", hint: "Edit word mask." },
     { name: "DATFMT", kind: "select", options: ["*MDY", "*DMY", "*YMD", "*JUL", "*ISO", "*USA", "*EUR", "*JIS", "*JOB"], hint: "Date format for a date (L) type field." },
     { name: "DATSEP", kind: "quotedSelect", options: ["*JOB", "/", "-", ".", ",", " "], hint: "Date separator. Not valid with *ISO/*USA/*EUR/*JIS (fixed separator)." },
-    { name: "TIMFMT", kind: "select", options: ["*ISO", "*USA", "*EUR", "*JIS", "*HMS", "*JOB"], hint: "Time format for a time (T) type field." },
+    { name: "TIMFMT", kind: "select", options: ["*ISO", "*USA", "*EUR", "*JIS", "*HMS"], hint: "Time format for a time (T) type field." },
     { name: "TIMSEP", kind: "quotedSelect", options: ["*JOB", ":", ".", ",", " "], hint: "Time separator. Not valid with *ISO/*USA/*EUR/*JIS (fixed separator)." },
     { name: "DFT", kind: "quotedText", placeholder: "default value", hint: "Default value for this field." },
   ];
