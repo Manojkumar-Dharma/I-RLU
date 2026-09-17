@@ -18,12 +18,16 @@ function push(entry) {
 
 push({ kind: "comment", text: " I-RLU sample printer file - customer invoice" });
 push({ kind: "blank" });
+// Batch SS (docs/TASKS.md) — bug fix: PAGSIZE and DEVTYPE removed from
+// this file-level keyword list; see generate-sample-afpds.js's matching
+// comment for the full reasoning. This fixture's AFPDS-ness is
+// established via the field-level BARCODE keyword on ITEMCODE below
+// (one of the AFPDS-typical keywords looksLikeAfpds() scans for), not by
+// a DEVTYPE keyword.
 push({
   kind: "fileLevel",
   keywords: [
-    { name: "PAGSIZE", params: "(66 132)", raw: "PAGSIZE(66 132)" },
     { name: "PRTQLTY", params: "(*STD)", raw: "PRTQLTY(*STD)" },
-    { name: "DEVTYPE", params: "(*AFPDS)", raw: "DEVTYPE(*AFPDS)" },
   ],
 });
 push({

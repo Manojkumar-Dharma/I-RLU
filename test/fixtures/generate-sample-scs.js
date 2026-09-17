@@ -20,11 +20,15 @@ function push(entry) {
 
 push({ kind: "comment", text: " I-RLU sample printer file - SCS device type (no AFPDS keywords)" });
 push({ kind: "blank" });
+// Batch SS (docs/TASKS.md) — bug fix: PAGSIZE and DEVTYPE removed from
+// this file-level keyword list; see generate-sample-afpds.js's matching
+// comment for the full reasoning. This fixture's SCS-ness (i.e.
+// looksLikeAfpds() === false) is established purely by the ABSENCE of any
+// AFPDS-typical keyword anywhere in the file — never by a DEVTYPE(*SCS)
+// keyword, which isn't real DDS source text either.
 push({
   kind: "fileLevel",
   keywords: [
-    { name: "PAGSIZE", params: "(66 132)", raw: "PAGSIZE(66 132)" },
-    { name: "DEVTYPE", params: "(*SCS)", raw: "DEVTYPE(*SCS)" },
     { name: "CPI", params: "(10)", raw: "CPI(10)" },
     { name: "LPI", params: "(6)", raw: "LPI(6)" },
   ],

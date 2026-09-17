@@ -73,8 +73,8 @@ test("validateRecordKeywords: DUPLEX/FORCE/OUTBIN/INVMMAP alone don't trigger an
   assert.deepEqual(PrtfEngine.validateRecordKeywords(header), []);
 });
 
-test("validateFileLevelKeywords: file-level SKIPB is flagged when DEVTYPE(*AFPDS) is explicit", () => {
-  const original = buildSource("PAGSIZE(66 132) DEVTYPE(*AFPDS) SKIPB(1)", "SKIPB(2)");
+test("validateFileLevelKeywords: file-level SKIPB is flagged based on the AFPDS-typical-keyword heuristic", () => {
+  const original = buildSource("PAGSIZE(66 132) SKIPB(1)", "FONT(*SYSTEM 10 10)");
   const model = parseSource(original);
   const warnings = PrtfEngine.validateFileLevelKeywords(model);
   assert.equal(warnings.length, 1);
@@ -82,21 +82,26 @@ test("validateFileLevelKeywords: file-level SKIPB is flagged when DEVTYPE(*AFPDS
   assert.match(warnings[0].message, /AFPDS/);
 });
 
-test("validateFileLevelKeywords: file-level SKIPB is NOT flagged when DEVTYPE(*SCS) is explicit", () => {
-  const original = buildSource("PAGSIZE(66 132) DEVTYPE(*SCS) SKIPB(1)", "SKIPB(2)");
+// Batch SS (docs/TASKS.md) — bug fix regression test. DEVTYPE is a
+// CRTPRTF/CHGPRTF/OVRPRTF command parameter, not a real DDS keyword — it
+// can never legally appear in DDS source, so a stray DEVTYPE keyword
+// (however it got there) must never be trusted as an authoritative
+// AFPDS/SCS signal. Only the AFPDS-typical-keyword heuristic decides now.
+test("validateFileLevelKeywords: a stray DEVTYPE(*AFPDS) keyword is never trusted — no warning without an AFPDS-typical keyword present", () => {
+  const original = buildSource("PAGSIZE(66 132) DEVTYPE(*AFPDS) SKIPB(1)", "SKIPB(2)");
   const model = parseSource(original);
   assert.deepEqual(PrtfEngine.validateFileLevelKeywords(model), []);
 });
 
-test("validateFileLevelKeywords: falls back to the AFPDS-typical-keyword heuristic when DEVTYPE is absent", () => {
-  const original = buildSource("PAGSIZE(66 132) SKIPB(1)", "FONT(*SYSTEM 10 10)");
+test("validateFileLevelKeywords: a stray DEVTYPE(*SCS) keyword doesn't suppress a warning the heuristic otherwise supports", () => {
+  const original = buildSource("PAGSIZE(66 132) DEVTYPE(*SCS) SKIPB(1)", "SKIPB(2) FONT(*SYSTEM 10 10)");
   const model = parseSource(original);
   const warnings = PrtfEngine.validateFileLevelKeywords(model);
   assert.equal(warnings.length, 1);
   assert.equal(warnings[0].keyword, "SKIPB");
 });
 
-test("validateFileLevelKeywords: no warning when neither DEVTYPE nor any AFPDS-typical keyword is present", () => {
+test("validateFileLevelKeywords: no warning when no AFPDS-typical keyword is present anywhere", () => {
   const original = buildSource("PAGSIZE(66 132) SKIPB(1)", "SKIPA(2)");
   const model = parseSource(original);
   assert.deepEqual(PrtfEngine.validateFileLevelKeywords(model), []);

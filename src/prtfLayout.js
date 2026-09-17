@@ -490,15 +490,32 @@ function collectPageGroupMetadata(record, indicatorState) {
   return items;
 }
 
-function resolvePageSize(record, fileLevel, indicatorState) {
-  const kw = findActiveKeyword(record.keywords, "PAGSIZE", indicatorState) || findActiveKeyword(fileLevel.keywords, "PAGSIZE", indicatorState);
-  let lines = 66;
-  let cols = 132;
-  if (kw) {
-    const nums = String(kw.params).match(/\d+(\.\d+)?/g);
-    if (nums && nums.length >= 1) lines = Number(nums[0]);
-    if (nums && nums.length >= 2) cols = Number(nums[1]);
-  }
+/**
+ * CRTPRTF's own PAGESIZE parameter default (verified against IBM's DDS
+ * reference — *SNGCOL device default is 66 lines x 132 columns).
+ */
+const DEFAULT_PAGE_LINES = 66;
+const DEFAULT_PAGE_COLS = 132;
+
+/**
+ * Batch SS (docs/TASKS.md) — bug fix. `PAGSIZE(lines cols)` is NOT a real
+ * DDS keyword: a full-text audit of IBM's DDS Reference for Printer Files
+ * (docs/DDS-PRINTER-FILE-REFERENCE.txt, docs/AUDIT-FILE-LEVEL.md §2)
+ * confirms every mention of "PAGSIZE"/"PAGESIZE" is on the `CRTPRTF`/
+ * `CHGPRTF`/`OVRPRTF` COMMAND, never a section of its own in the keyword
+ * reference — it cannot legally appear in DDS source at all, the same way
+ * `i-rlu.unitOfMeasure`'s own doc comment already explains for UOM. This
+ * used to scan `record`/`fileLevel` keywords for a `PAGSIZE` entry (and
+ * all 3 bundled test fixtures modeled an impossible DDS file to feed it
+ * one) — that's gone. Page size is now purely an assumption, sourced only
+ * from the optional `pageSize` override (the `i-rlu.pageSize` VS Code
+ * setting, threaded down from resolveLayout the same way `uom` already
+ * is), falling back to CRTPRTF's own real 66x132 default when the setting
+ * isn't set or isn't a valid `{lines, cols}` pair.
+ */
+function resolvePageSize(pageSize) {
+  const lines = pageSize && Number.isFinite(pageSize.lines) && pageSize.lines > 0 ? Math.floor(pageSize.lines) : DEFAULT_PAGE_LINES;
+  const cols = pageSize && Number.isFinite(pageSize.cols) && pageSize.cols > 0 ? Math.floor(pageSize.cols) : DEFAULT_PAGE_COLS;
   return { lines, cols };
 }
 
@@ -643,13 +660,13 @@ function detectFieldOverlaps(cells) {
   return overlaps;
 }
 
-function resolveLayout(model, recordName, indicatorState, uom) {
+function resolveLayout(model, recordName, indicatorState, uom, pageSize) {
   indicatorState = indicatorState || {};
   uom = uom === "cm" ? "cm" : "inch"; // default to inch, CRTPRTF's own default
   const record = model.records.find((r) => r.name === recordName) || model.records[0];
   if (!record) return null;
 
-  const { lines: pageLines, cols: pageCols } = resolvePageSize(record, model.fileLevel, indicatorState);
+  const { lines: pageLines, cols: pageCols } = resolvePageSize(pageSize);
   const { cpi, lpi } = resolveCpiLpi(record, model.fileLevel, indicatorState);
 
   // Batch OO (docs/TASKS.md) — now resolved via resolveDrawsWithKeywordIndex

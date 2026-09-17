@@ -46,6 +46,13 @@
     recordName: null,
     indicators: {},
     uom: "inch", // set from the extension host's i-rlu.unitOfMeasure setting; see setModel handler
+    // Batch SS (docs/TASKS.md) — set from the extension host's
+    // i-rlu.pageSize setting; see setModel handler. undefined until the
+    // first setModel arrives, same as `uom` starting at a hardcoded
+    // default — PrtfEngine.resolveLayout/resolvePageSize already fall
+    // back to CRTPRTF's own 66x132 default whenever this is undefined or
+    // malformed, so there's no "not loaded yet" gap to fill here.
+    pageSize: undefined,
     // Code for i connection badge — mirrors I-SDA's Task L18: pushed by
     // extension.ts's sendCodeForIStatus on "ready", after every Code-for-i-
     // dependent action, and on its own poll/extension-change watchers (see
@@ -136,7 +143,7 @@
 
   function currentLayout() {
     if (!state.model || !state.recordName) return null;
-    return PrtfEngine.resolveLayout(state.model, state.recordName, state.indicators, state.uom);
+    return PrtfEngine.resolveLayout(state.model, state.recordName, state.indicators, state.uom, state.pageSize);
   }
 
   /**
@@ -490,6 +497,18 @@
         ])
       );
     }
+
+    // Batch SS (docs/TASKS.md) — bug fix: page size (PAGSIZE/PAGESIZE)
+    // isn't a real DDS keyword, it's a CRTPRTF/CHGPRTF/OVRPRTF command
+    // parameter I-RLU can't see in the source, so it's always an assumed
+    // value now (like uom above), sourced from the i-rlu.pageSize setting
+    // with CRTPRTF's own 66x132 default when unset.
+    const assumedPageSize = state.pageSize && state.pageSize.lines > 0 && state.pageSize.cols > 0 ? state.pageSize : { lines: 66, cols: 132 };
+    toolbar.appendChild(
+      el("span", { class: "hint", title: "Set via the i-rlu.pageSize VS Code setting — I-RLU can't detect this from DDS source, since page size is a CRTPRTF PAGESIZE command parameter, not a DDS keyword." }, [
+        "Page size: " + assumedPageSize.lines + " x " + assumedPageSize.cols + " (assumed — set i-rlu.pageSize to match your CRTPRTF)",
+      ])
+    );
 
     return toolbar;
   }
@@ -2876,6 +2895,7 @@
     if (msg.type === "setModel") {
       state.model = msg.model;
       if (msg.uom) state.uom = msg.uom;
+      state.pageSize = msg.pageSize; // Batch SS — may be undefined; resolveLayout falls back to 66x132
       if (!state.model.records.find((r) => r.name === state.recordName)) {
         state.recordName = state.model.records[0] ? state.model.records[0].name : null;
       }

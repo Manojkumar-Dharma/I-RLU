@@ -140,16 +140,27 @@ function makeIdGenerator(model: ParsedSource): () => string {
  */
 
 /**
- * The report's own column width for boundary purposes. Deliberately
- * checks only the record/file level's UNCONDITIONED `PAGSIZE`
- * (indicatorState `{}`) — `applyEditToModel` is a static, one-shot model
- * mutation with no live preview-toggle context the way `resolveLayout`
- * has (see Batch DD's `indicatorState` threading), so a `PAGSIZE` that's
- * itself conditioned to a different width per indicator is a narrow edge
- * case this structural boundary check doesn't attempt to track live.
+ * The report's own column width for boundary purposes.
+ *
+ * Batch SS (docs/TASKS.md) — bug fix: this used to scan `record`/
+ * `model.fileLevel` for a `PAGSIZE` keyword, which isn't real DDS source
+ * text at all (it's a `CRTPRTF`/`CHGPRTF`/`OVRPRTF` COMMAND parameter —
+ * see `resolvePageSize`'s own updated doc comment in prtfLayout.js). Page
+ * width here now always resolves to CRTPRTF's own real 66x132 default:
+ * `applyEditToModel` is a static, one-shot model mutation invoked from
+ * `extension.ts` with no live webview/settings context the way
+ * `resolveLayout` has (which threads the `i-rlu.pageSize` setting down as
+ * an explicit override) — same "no live indicatorState" simplification
+ * this function already made for the (also now-removed) `PAGSIZE`
+ * lookup, extended to the setting override too. `model`/`record` are
+ * kept as parameters for call-site stability even though this no longer
+ * reads them, in case a future batch threads the live setting through
+ * here as well.
  */
 export function reportWidthCols(model: ParsedSource, record: RecordFormatEntry): number {
-  return PrtfLayout.resolvePageSize(record, model.fileLevel, {}).cols;
+  void model;
+  void record;
+  return PrtfLayout.resolvePageSize().cols;
 }
 
 /**

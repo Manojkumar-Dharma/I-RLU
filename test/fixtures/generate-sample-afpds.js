@@ -23,11 +23,19 @@ function push(entry) {
 
 push({ kind: "comment", text: " I-RLU sample printer file - AFPDS device type, expanded keyword coverage" });
 push({ kind: "blank" });
+// Batch SS (docs/TASKS.md) — bug fix: PAGSIZE and DEVTYPE removed from
+// this file-level keyword list. Neither is a real DDS keyword — both are
+// exclusively CRTPRTF/CHGPRTF/OVRPRTF COMMAND parameters (full-text audit
+// of IBM's DDS Reference for Printer Files, docs/AUDIT-FILE-LEVEL.md
+// §2/§3) — so modeling them as parsed keyword text made this fixture an
+// impossible DDS file. This fixture's AFPDS-ness is established instead
+// by its own AFPDS-typical keywords (FONT/PAGSEG/OVERLAY/STRPAGGRP/
+// ENDPAGGRP below), which is exactly what looksLikeAfpds() now falls back
+// on for every file, real DEVTYPE keyword or not (see
+// prtfKeywordValidation.js).
 push({
   kind: "fileLevel",
   keywords: [
-    { name: "PAGSIZE", params: "(66 132)", raw: "PAGSIZE(66 132)" },
-    { name: "DEVTYPE", params: "(*AFPDS)", raw: "DEVTYPE(*AFPDS)" },
     { name: "FONT", params: "(2304)", raw: "FONT(2304)" },
     { name: "DUPLEX", params: "(*YES)", raw: "DUPLEX(*YES)" },
     { name: "OUTBIN", params: "(1)", raw: "OUTBIN(1)" },
