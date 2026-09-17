@@ -5,6 +5,11 @@
  * DTASTMCMD. All seven are confirmed record-level (docs/KEYWORD-INVENTORY.md
  * §2's "Work with Record Keywords" menu grid lists every one of them).
  *
+ * Batch WW added an eighth: GDF (Graphic Data File), the same
+ * resource-keyword family (named external object + page position), PSF-
+ * only and AFPDS-only like the rest — see parseGdf's own doc comment
+ * below for what sets it apart from OVERLAY/PAGSEG/AFPRSC.
+ *
  * Per this batch's own scope in docs/TASKS.md ("most just need a name/path
  * field and don't need deep parameter modeling"), this module models each
  * keyword's own positional parameters just deeply enough to (a) round-trip
@@ -88,37 +93,18 @@ function unquoteOrField(tok) {
   return tok;
 }
 
-function placeholderGeometry(name, keyword, posDownTok, posAcrossTok, cpi, lpi, uom, extraApproximate, size) {
-  // Batch XX (docs/TASKS.md) — `size`, when passed, is PAGSEG's optional
-  // `(*SIZE height width)` sub-parameter (extracted by parseSizeExpr below).
-  // A field-reference height/width can't be resolved to a real box size at
-  // design time — same "approximate" treatment as a field-reference
-  // position-down/position-across already gets — so it still falls back to
-  // the fixed default in that case, just flagged as approximate.
-  const sizeIsFieldRef = !!size && (isFieldRef(size.heightTok) || isFieldRef(size.widthTok));
-  const approximate = isFieldRef(posDownTok) || isFieldRef(posAcrossTok) || !!extraApproximate || sizeIsFieldRef;
+function placeholderGeometry(name, keyword, posDownTok, posAcrossTok, cpi, lpi, uom, extraApproximate) {
+  const approximate = isFieldRef(posDownTok) || isFieldRef(posAcrossTok) || !!extraApproximate;
   const posDown = toInches(toNumber(posDownTok, 0), uom);
   const posAcross = toInches(toNumber(posAcrossTok, 0), uom);
-  let widthCols = DEFAULT_RESOURCE_COLS;
-  let heightRows = DEFAULT_RESOURCE_ROWS;
-  if (size && !sizeIsFieldRef) {
-    const heightIn = toInches(toNumber(size.heightTok, 0), uom);
-    const widthIn = toInches(toNumber(size.widthTok, 0), uom);
-    // Per IBM's reference, height and width are always specified together
-    // (never just one) — but guard each independently anyway rather than
-    // trust that, and only override a dimension we got a usable positive
-    // number for.
-    if (heightIn > 0) heightRows = Math.max(1, Math.round(heightIn * lpi));
-    if (widthIn > 0) widthCols = Math.max(1, Math.round(widthIn * cpi));
-  }
   return {
     keyword,
     name: name || "",
     label: (name || keyword) + " (" + keyword + ")",
     row: Math.round(posDown * lpi) + 1,
     col: Math.round(posAcross * cpi) + 1,
-    widthCols,
-    heightRows,
+    widthCols: DEFAULT_RESOURCE_COLS,
+    heightRows: DEFAULT_RESOURCE_ROWS,
     approximate,
   };
 }
@@ -170,17 +156,21 @@ function buildOverlayParams(f) {
  * Offsets are an optional pair (both present or both omitted) per IBM's
  * DDS reference. `(*SIZE height width)`'s two numbers are now read out
  * (Batch XX, docs/TASKS.md) to size the placeholder box for real instead
- * of always using the fixed default — see placeholderGeometry/
- * parseSizeExpr above. The expression itself is still preserved verbatim
- * in `extra`, unlike OVERLAY's `(*ROTATION n)`, which this module has
- * never parsed out of `extra` at all — no need to, since rotation doesn't
- * feed into the placeholder box's size.
+ * of always using the fixed default, via the same `resolveResourceBoxSize`
+ * depth/width -> rows/cols math Batch WW's `GDF` uses (see that function's
+ * own comment — it was built with this exact reuse in mind). The
+ * expression itself is still preserved verbatim in `extra`, unlike
+ * OVERLAY's `(*ROTATION n)`, which this module has never parsed out of
+ * `extra` at all — no need to, since rotation doesn't feed into the
+ * placeholder box's size.
  */
 function parsePagseg(kw, cpi, lpi, uom) {
   const t = paramTokens(kw);
   const extraTokens = t.slice(3);
-  const size = parseSizeExpr(extraTokens);
-  const geometry = placeholderGeometry(t[0], "PAGSEG", t[1], t[2], cpi, lpi, uom, isFieldRef(t[0]), size);
+  const sizeExpr = parseSizeExpr(extraTokens);
+  const size = sizeExpr ? resolveResourceBoxSize(sizeExpr.heightTok, sizeExpr.widthTok, cpi, lpi, uom) : null;
+  const geometry = placeholderGeometry(t[0], "PAGSEG", t[1], t[2], cpi, lpi, uom, isFieldRef(t[0]) || (size ? size.approximate : false));
+  if (size) Object.assign(geometry, { widthCols: size.widthCols, heightRows: size.heightRows });
   return Object.assign(geometry, {
     posDown: t[1] || "",
     posAcross: t[2] || "",
@@ -228,6 +218,92 @@ function buildAfprscParams(f) {
   const objectType = String(f.objectType || "").trim();
   if (!name || !objectType) return null;
   const parts = [quoteOrField(name), objectType, String(f.posDown || "0").trim() || "0", String(f.posAcross || "0").trim() || "0"];
+  const extra = String(f.extra || "").trim();
+  if (extra) parts.push(extra);
+  return "(" + parts.join(" ") + ")";
+}
+
+/**
+ * Batch WW (docs/TASKS.md) — converts a real depth/width pair (in the
+ * file's own UOM) into a placeholder box's character-grid size. Used by
+ * GDF, whose graph-depth/graph-width parameters are MANDATORY (unlike
+ * OVERLAY/PAGSEG/AFPRSC, which fall back to the fixed
+ * DEFAULT_RESOURCE_COLS/DEFAULT_RESOURCE_ROWS default above because they
+ * have no access to the real overlay/page-segment/resource's own pixel
+ * dimensions) — GDF can size its own placeholder exactly right instead of
+ * guessing. Falls back to the shared default only when a token is
+ * missing or doesn't parse to a positive number (e.g. a &field
+ * reference), same "flag it as approximate rather than guessing"
+ * treatment every other placeholder in this module uses. Also reused by
+ * Batch XX's `parsePagseg` below, for PAGSEG's own optional `*SIZE`
+ * sub-parameter (docs/AUDIT-RECORD-LEVEL.md §3) — same depth/width ->
+ * rows/cols math, just with a genuinely optional pair instead of GDF's
+ * mandatory one (parsePagseg only calls this when `(*SIZE ...)` is
+ * actually present).
+ */
+function resolveResourceBoxSize(depthTok, widthTok, cpi, lpi, uom) {
+  const depthIsField = isFieldRef(depthTok);
+  const widthIsField = isFieldRef(widthTok);
+  const depthNum = depthIsField ? NaN : Number(depthTok);
+  const widthNum = widthIsField ? NaN : Number(widthTok);
+  const depthOk = Number.isFinite(depthNum) && depthNum > 0;
+  const widthOk = Number.isFinite(widthNum) && widthNum > 0;
+  return {
+    heightRows: depthOk ? Math.max(1, Math.round(toInches(depthNum, uom) * lpi)) : DEFAULT_RESOURCE_ROWS,
+    widthCols: widthOk ? Math.max(1, Math.round(toInches(widthNum, uom) * cpi)) : DEFAULT_RESOURCE_COLS,
+    approximate: depthIsField || widthIsField || !depthOk || !widthOk,
+  };
+}
+
+/**
+ * GDF([library-name/]graph-file graph-member position-down position-across
+ *     graph-depth graph-width graph-rotation) — record-level, PSF-only,
+ * AFPDS-only (Batch WW, docs/AUDIT-RECORD-LEVEL.md §2). Unlike OVERLAY's
+ * overlay-name/PAGSEG's page-segment-name, `library-name` here is NOT a
+ * separate positional parameter — it's an optional "library-name/"
+ * qualifier PREFIXED directly onto the graph-file token itself, confirmed
+ * against IBM's own worked examples ("GDF(GRAPHLIB/GFILE MYGRAPH 1.557
+ * 2.831 7.0 4.5 90)", "GDF(GFILE MYGRAF 2.0 7.0 4.5 11.25 180)" — 7 tokens
+ * either way), so `t[0]` is stored and round-tripped as-is (qualified or
+ * not) rather than being split into two separate model fields.
+ *
+ * graph-depth/graph-width ARE always present (mandatory per the
+ * reference, unlike PAGSEG's optional `*SIZE`) and sized in the file's
+ * own UOM, so — unlike OVERLAY/PAGSEG/AFPRSC's fixed
+ * DEFAULT_RESOURCE_COLS/DEFAULT_RESOURCE_ROWS placeholder — GDF's
+ * placeholder box is sized from its own real depth/width via
+ * resolveResourceBoxSize above.
+ */
+function parseGdf(kw, cpi, lpi, uom) {
+  const t = paramTokens(kw);
+  const size = resolveResourceBoxSize(t[4], t[5], cpi, lpi, uom);
+  const geometry = placeholderGeometry(t[0], "GDF", t[2], t[3], cpi, lpi, uom, isFieldRef(t[0]) || isFieldRef(t[1]) || size.approximate);
+  return Object.assign(geometry, {
+    graphMember: t[1] || "",
+    posDown: t[2] || "",
+    posAcross: t[3] || "",
+    graphDepth: t[4] || "",
+    graphWidth: t[5] || "",
+    graphRotation: t[6] || "",
+    widthCols: size.widthCols,
+    heightRows: size.heightRows,
+    extra: t.slice(7).join(" "),
+  });
+}
+
+function buildGdfParams(f) {
+  const name = String(f.name || "").trim();
+  const graphMember = String(f.graphMember || "").trim();
+  if (!name || !graphMember) return null;
+  const parts = [
+    name,
+    graphMember,
+    String(f.posDown || "0").trim() || "0",
+    String(f.posAcross || "0").trim() || "0",
+    String(f.graphDepth || "0").trim() || "0",
+    String(f.graphWidth || "0").trim() || "0",
+    String(f.graphRotation || "0").trim() || "0",
+  ];
   const extra = String(f.extra || "").trim();
   if (extra) parts.push(extra);
   return "(" + parts.join(" ") + ")";
@@ -333,6 +409,9 @@ const mod = {
   buildAfprscParams,
   parseDocidxtag,
   buildDocidxtagParams,
+  resolveResourceBoxSize,
+  parseGdf,
+  buildGdfParams,
   validatePageGroupOrder,
   // Batch XX
   parseSizeExpr,

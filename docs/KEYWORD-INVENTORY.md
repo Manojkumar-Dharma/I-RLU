@@ -93,6 +93,7 @@ fill them"*) — I pulled their definitions from IBM's DDS reference instead:
 | `STRPAGGRP` / `ENDPAGGRP` | Bracket a set of pages into a named "page group" (used for AFP document indexing / bookmarking). |
 | `DOCIDXTAG` | Attaches a document index tag (name + value, optionally from a field) to a page group — used by PSF's AFP document indexing feature for viewers like PDF bookmarks. |
 | `DTASTMCMD` | Embeds a raw AFP data-stream "structured field" command — effectively an escape hatch. |
+| `GDF` | Prints a graphic data file (a GOCA chart object created with the Business Graphic Utility) at a given position/size/rotation — `GDF([library/]graph-file graph-member position-down position-across graph-depth graph-width graph-rotation)`. **PSF-only**, per IBM doc. Modeled by Batch WW (`docs/TASKS.md`): parsed/built alongside `OVERLAY`/`PAGSEG`/`AFPRSC`, rendered as a placeholder box on the page — unlike those three (which have no access to their resource's real pixel dimensions), `GDF`'s box is sized from its own mandatory `graph-depth`/`graph-width` parameters rather than a fixed default. |
 | `INVMMAP` | Invokes a page-segment/medium-map resource mapping — niche. |
 | `DUPLEX` | `*NO`/`*YES`/`*TUMBLE` double-sided printing. |
 | `FORCE` | Forces the current page out even if not full (page-eject control). |
@@ -103,10 +104,11 @@ fill them"*) — I pulled their definitions from IBM's DDS reference instead:
 
 Also present in IBM's official keyword list but absent from **both** the RLU
 screen captures and any menu entry in this doc — flagged so a future session
-doesn't assume they're out of scope, just under-documented here: `GDF`
-(Graphics Data Format resource — **PSF-only**), `IGCCDEFNT` (DBCS/IGC coded
-font, a variant of `CDEFNT`), `INVDTAMAP`, `UNISCRIPT`. Low priority; add if
-real-world source members turn up using them.
+doesn't assume they're out of scope, just under-documented here:
+`IGCCDEFNT` (DBCS/IGC coded font, a variant of `CDEFNT`), `INVDTAMAP`,
+`UNISCRIPT`. Low priority; add if real-world source members turn up using
+them. (`GDF` used to be listed here too — moved into the table above once
+Batch WW modeled it.)
 
 ## 3. Field-level keywords
 

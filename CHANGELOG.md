@@ -17,15 +17,29 @@ it does not replace those two documents.
 Nothing yet — see `docs/TASKS.md` for what's currently in flight or filed
 for a future batch.
 
-## [0.0.21] - Batch XX
+## [0.0.22] - Batch XX
 
 ### Added
 - `PAGSEG`'s optional `(*SIZE height width)` sub-parameter now sizes its
   placeholder box for real, instead of always using the fixed 20×3
-  default. A `&field`-reference height/width still falls back to the
-  fixed default (flagged approximate), and the expression itself is
-  still preserved verbatim for round-trip — this only reads its numbers
-  out for sizing.
+  default (reusing Batch WW's `resolveResourceBoxSize` helper). A
+  `&field`-reference height/width still falls back to the fixed default
+  (flagged approximate), and the expression itself is still preserved
+  verbatim for round-trip — this only reads its numbers out for sizing.
+
+## [0.0.21] - Batch WW
+
+### Added
+- `GDF` (Graphic Data File) is now modeled: parsed/built with a dedicated
+  `parseGdf`/`buildGdfParams` pair, and rendered as a placeholder box on
+  the page like its `OVERLAY`/`PAGSEG`/`AFPRSC` siblings. Unlike those
+  three (which use a fixed placeholder size, having no access to their
+  resource's real pixel dimensions), `GDF`'s box is sized exactly from its
+  own mandatory `graph-depth`/`graph-width` parameters. New bespoke row in
+  the properties panel to add/edit/remove it.
+- `GDF` added to `PSF_ONLY_KEYWORDS` (ignored under Host Print Transform,
+  matching `ZFOLD`/`STAPLE`) and to the AFPDS-typical-keyword heuristic
+  used by the file-level `SKIPA`/`SKIPB`/`RELPOS` warnings.
 
 ## [0.0.20] - Batch VV
 

@@ -91,6 +91,11 @@ const mod = {
   buildAfprscParams: PageGroupKeywords.buildAfprscParams,
   parseDocidxtag: PageGroupKeywords.parseDocidxtag,
   buildDocidxtagParams: PageGroupKeywords.buildDocidxtagParams,
+  // Batch WW — GDF parse/build (positioned placeholder, sized from its
+  // own mandatory graph-depth/graph-width rather than the fixed default).
+  resolveResourceBoxSize: PageGroupKeywords.resolveResourceBoxSize,
+  parseGdf: PageGroupKeywords.parseGdf,
+  buildGdfParams: PageGroupKeywords.buildGdfParams,
   // Batch P
   validatePageGroupOrder: PageGroupKeywords.validatePageGroupOrder,
   // Batch XX

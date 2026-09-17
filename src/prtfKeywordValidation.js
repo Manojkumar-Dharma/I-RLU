@@ -21,20 +21,21 @@ const { findKeyword, findAllKeywords, paramTokens } =
 /** File- and record-level keywords that take no parameters at all (option indicators only) — must be re-emitted as a bare keyword name, never "NAME()". `RELPOS` added by Batch UU (docs/TASKS.md) — file-level, no parameters, same round-trip-safety reasoning as `FORCE`/`ZFOLD`/`STAPLE`. */
 const VALUELESS_KEYWORDS = ["FORCE", "ZFOLD", "STAPLE", "RELPOS"];
 
-/** ZFOLD/STAPLE (and GDF, if ever modeled) only take effect when printing through PSF — silently ignored otherwise, per IBM's DDS reference. */
-const PSF_ONLY_KEYWORDS = ["ZFOLD", "STAPLE"];
+/** ZFOLD/STAPLE/GDF (Batch WW) only take effect when printing through PSF — silently ignored otherwise, per IBM's DDS reference. */
+const PSF_ONLY_KEYWORDS = ["ZFOLD", "STAPLE", "GDF"];
 
 /**
  * Keywords whose presence is a strong signal a record targets *AFPDS.
  * DEVTYPE itself is a CRTPRTF/CHGPRTF/OVRPRTF command parameter, not DDS
  * source text, so I-RLU can never know for certain from the source alone
  * (same caveat as the i-rlu.unitOfMeasure setting) — this is a heuristic
- * used only to decide whether to surface the SKIPA/SKIPB file-level hint
- * below, not a hard classification.
+ * used only to decide whether to surface the SKIPA/SKIPB/RELPOS file-level
+ * hints below, not a hard classification. GDF added by Batch WW — like
+ * OVERLAY/PAGSEG/AFPRSC, it's PSF-only and AFPDS-only per IBM's reference.
  */
 const AFPDS_INDICATOR_KEYWORDS = [
   "FONT", "CDEFNT", "FNTCHRSET", "FONTNAME", "PAGSEG", "OVERLAY",
-  "STRPAGGRP", "ENDPAGGRP", "DOCIDXTAG", "AFPRSC", "DTASTMCMD", "BARCODE",
+  "STRPAGGRP", "ENDPAGGRP", "DOCIDXTAG", "AFPRSC", "DTASTMCMD", "BARCODE", "GDF",
 ];
 
 function looksLikeAfpds(model) {

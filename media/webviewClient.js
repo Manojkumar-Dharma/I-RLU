@@ -209,7 +209,7 @@
     if ((layout.resources || []).some((r) => r.approximate)) {
       canvasCol.appendChild(
         el("div", { class: "note" }, [
-          "One or more OVERLAY/PAGSEG/AFPRSC positions depend on a program-to-system field and are shown at their default position — actual placement is set at print time.",
+          "One or more OVERLAY/PAGSEG/AFPRSC/GDF positions (or, for GDF, its size) depend on a program-to-system field and are shown at a default — actual placement/size is set at print time.",
         ])
       );
     }
@@ -2739,6 +2739,65 @@
     appendAfpResourcePreviewRow(container, record, "AFPRSC");
   }
 
+  /**
+   * Bespoke GDF row (Batch WW) — GDF([library/]graph-file graph-member
+   * position-down position-across graph-depth graph-width graph-rotation).
+   * Unlike OVERLAY/PAGSEG, library-name isn't a separate input — it's typed
+   * directly into the graph-file field as "library/file" (matching how the
+   * model round-trips it — see parseGdf's own doc comment). graph-rotation
+   * is a select, same treatment PAGRTT already uses for its own 0/90/180/270.
+   */
+  function appendGdfRow(container, record, onSet, onRemove) {
+    const existing = PrtfEngine.findKeyword(record.keywords, "GDF");
+    const f = existing
+      ? PrtfEngine.parseGdf(existing, 10, 6, state.uom)
+      : { name: "", graphMember: "", posDown: "", posAcross: "", graphDepth: "", graphWidth: "", graphRotation: "0", extra: "" };
+
+    const rowWrap = el("div", { class: "prop-row" });
+    const cbId = "pg-" + record.name + "-GDF";
+    const cb = el("input", { type: "checkbox", id: cbId });
+    if (existing) cb.setAttribute("checked", "checked");
+    rowWrap.appendChild(el("label", { class: "ind-label", for: cbId, title: "Prints a graphic data file (a GOCA chart object created with the Business Graphic Utility) at a fixed offset and size on every page of this record format. PSF-only — ignored under Host Print Transform." }, [cb, " GDF"]));
+    container.appendChild(rowWrap);
+
+    const nameInp = el("input", { type: "text", placeholder: "[library/]graph-file, or &field", value: f.name || "" });
+    const memberInp = el("input", { type: "text", placeholder: "graph-member, or &field", value: f.graphMember || "" });
+    const downInp = el("input", { type: "text", placeholder: "position-down", value: f.posDown || "" });
+    const acrossInp = el("input", { type: "text", placeholder: "position-across", value: f.posAcross || "" });
+    const depthInp = el("input", { type: "text", placeholder: "graph-depth", value: f.graphDepth || "" });
+    const widthInp = el("input", { type: "text", placeholder: "graph-width", value: f.graphWidth || "" });
+    const rotSel = el("select", {});
+    ["0", "90", "180", "270"].forEach((opt) => {
+      const o = el("option", { value: opt }, [opt]);
+      if (opt === String(f.graphRotation || "0")) o.setAttribute("selected", "selected");
+      rotSel.appendChild(o);
+    });
+    const valuesRow = el("div", { class: "prop-row" });
+    [nameInp, memberInp, downInp, acrossInp, depthInp, widthInp, rotSel].forEach((i) => valuesRow.appendChild(i));
+    container.appendChild(valuesRow);
+
+    const sendUpdate = () => {
+      if (!cb.checked) {
+        onRemove("GDF");
+        return;
+      }
+      const params = PrtfEngine.buildGdfParams({
+        name: nameInp.value,
+        graphMember: memberInp.value,
+        posDown: downInp.value,
+        posAcross: acrossInp.value,
+        graphDepth: depthInp.value,
+        graphWidth: widthInp.value,
+        graphRotation: rotSel.value,
+        extra: f.extra,
+      });
+      if (!params) return;
+      onSet("GDF", params);
+    };
+    cb.addEventListener("change", sendUpdate);
+    [nameInp, memberInp, downInp, acrossInp, depthInp, widthInp, rotSel].forEach((i) => i.addEventListener("change", sendUpdate));
+  }
+
   /** Bespoke DOCIDXTAG row (Batch E) — DOCIDXTAG(attribute-name attribute-value tag-level), tag-level is GROUP or PAGE (unquoted special value). */
   function appendDocidxtagRow(container, record, onSet, onRemove) {
     const existing = PrtfEngine.findKeyword(record.keywords, "DOCIDXTAG");
@@ -2779,27 +2838,28 @@
 
   /**
    * Batch E (docs/TASKS.md) — AFP page-group / resource keyword panel:
-   * OVERLAY, PAGSEG, AFPRSC (rendered as placeholder boxes on the page —
-   * see renderPage's `layout.resources` loop), plus STRPAGGRP/ENDPAGGRP/
-   * DOCIDXTAG/DTASTMCMD (no page position — summarized as badges instead,
-   * from `layout.pageGroupKeywords`).
+   * OVERLAY, PAGSEG, AFPRSC, and (Batch WW) GDF, rendered as placeholder
+   * boxes on the page — see renderPage's `layout.resources` loop), plus
+   * STRPAGGRP/ENDPAGGRP/DOCIDXTAG/DTASTMCMD (no page position — summarized
+   * as badges instead, from `layout.pageGroupKeywords`).
    *
    * Like every other record-keyword panel in this file, editing here
    * targets the keyword by NAME via setRecordKeyword/removeRecordKeyword
    * (the same generic edit kinds Batch F established) — for a record that
    * codes the same one of these keywords more than once (e.g. two OVERLAYs
-   * for front/back), only the first occurrence is reachable from this
-   * panel; every occurrence still renders correctly on the page (see
-   * prtfLayout.js's resolveResourcePlaceholders, which uses
-   * findAllKeywords, not findKeyword) and round-trips correctly whether or
-   * not it's ever touched here.
+   * for front/back, or two GDFs per IBM's own reference example), only the
+   * first occurrence is reachable from this panel; every occurrence still
+   * renders correctly on the page (see prtfLayout.js's
+   * resolveResourcePlaceholders, which uses findAllKeywords, not
+   * findKeyword) and round-trips correctly whether or not it's ever
+   * touched here.
    */
   function renderPageGroupPanel(record, layout) {
     const panel = el("div", { class: "props" });
     panel.appendChild(el("h4", {}, ["AFP page-group / resource keywords — " + record.name]));
     panel.appendChild(
       el("div", { class: "hint" }, [
-        "These name external AFP resources (overlays, page segments) or page-grouping metadata — I-RLU can't show their real pixel content without the resource files themselves, so OVERLAY/PAGSEG/AFPRSC render as a labeled placeholder box on the page instead.",
+        "These name external AFP resources (overlays, page segments, graphic data files) or page-grouping metadata — I-RLU can't show their real pixel content without the resource files themselves, so OVERLAY/PAGSEG/AFPRSC/GDF render as a labeled placeholder box on the page instead.",
       ])
     );
 
@@ -2809,6 +2869,7 @@
     appendOverlayRow(panel, record, onSet, onRemove);
     appendPagsegRow(panel, record, onSet, onRemove);
     appendAfprscRow(panel, record, onSet, onRemove);
+    appendGdfRow(panel, record, onSet, onRemove);
     appendDocidxtagRow(panel, record, onSet, onRemove);
     appendKeywordRows(panel, BATCH_E_SIMPLE_KEYWORDS, record.keywords, "pgs-" + record.name, onSet, onRemove);
 

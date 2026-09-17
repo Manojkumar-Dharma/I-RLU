@@ -895,13 +895,16 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       rendered at a fixed 20×3 size regardless. New `parseSizeExpr()`
       pulls the height/width tokens out of PAGSEG's already-grouped extra
       tokens (reusing the same paren-aware tokenizer `OVERLAY`'s own
-      `(*ROTATION n)` already relies on for round-trip); `extra` itself is
-      completely untouched, so this needed zero changes to how PAGSEG
-      serializes. A field-reference height/width falls back to the fixed
-      default, flagged approximate, same treatment a field-reference
-      position already gets. See `docs/TASKS.md` Batch XX for the full
-      writeup. 10 new tests in `test/prtfBatchXX.test.ts`; full suite now
-      619, all passing.
+      `(*ROTATION n)` already relies on for round-trip), then feeds them
+      into Batch WW's `resolveResourceBoxSize` helper (landed concurrently
+      in a separate session, built with exactly this reuse in mind) rather
+      than re-deriving the depth/width → rows/cols math a second time;
+      `extra` itself is completely untouched, so this needed zero changes
+      to how PAGSEG serializes. A field-reference height/width falls back
+      to the fixed default, flagged approximate, same treatment a
+      field-reference position already gets. See `docs/TASKS.md` Batch XX
+      for the full writeup. 10 new tests in `test/prtfBatchXX.test.ts`;
+      full suite after merging with Batch WW: 635, all passing.
 
 - [x] **Batch O — real AFP resource rendering (page segments/overlays as
       actual images) — done for the common image-content case.** Real
@@ -925,6 +928,28 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       GOCA (text/graphics) overlay content and non-FS10 IOCA — both fail
       with a specific, honest error rather than a guess.
 
+- [x] **Batch WW — model `GDF`** (record-level, PSF-only resource
+      keyword). `GDF` had no placeholder-box rendering at all (unlike its
+      `OVERLAY`/`PAGSEG`/`AFPRSC` siblings) and was missing from
+      `PSF_ONLY_KEYWORDS`. While reading IBM's full reference before
+      touching code (same discipline Batch UU used), found the format
+      block's parameter list is misleading — `library-name` isn't a
+      separate positional parameter, it's an optional `"library-name/"`
+      qualifier prefixed onto the `graph-file` token itself, confirmed by
+      every one of IBM's own worked examples. Modeled accordingly: new
+      `parseGdf`/`buildGdfParams` pair in `src/prtfPageGroupKeywords.js`,
+      plus a new standalone `resolveResourceBoxSize()` helper — since
+      `GDF`'s `graph-depth`/`graph-width` are mandatory (unlike `OVERLAY`/
+      `PAGSEG`/`AFPRSC`, which fall back to a fixed placeholder size
+      because they have no access to their resource's real pixel
+      dimensions), `GDF`'s own placeholder box is sized exactly from them.
+      `"GDF"` added to `PSF_ONLY_KEYWORDS` and to the `looksLikeAfpds()`
+      heuristic's keyword list. New bespoke row in the properties panel
+      (`media/webviewClient.js`), mirroring `OVERLAY`/`PAGSEG`/`AFPRSC`'s
+      own rows. See `docs/TASKS.md` Batch WW for the full writeup. New
+      `test/prtfBatchWW.test.ts` (16 tests); full suite now 626, all
+      passing.
+
 ## Next up
 
 Batches SS–ZZ were filed from a full three-part audit
@@ -943,18 +968,19 @@ anyway was investigated and fixed as **Batch UU** (see above — the `+n`
 math itself turned out already correct; `RELPOS` recognition/validation
 was the actual gap). Unvalidated `SKIPA`/`SKIPB`/`SPACEA`/`SPACEB`
 constraints plus a record-/file-level rendering no-op were investigated
-and fixed as **Batch VV** (see above). `PAGSEG`'s real `(*SIZE height
-width)` being parsed but discarded in favor of a fixed placeholder was
-fixed as **Batch XX** (see above). Still open: `GDF`
-having no placeholder rendering unlike its `OVERLAY`/`PAGSEG`/`AFPRSC`
-siblings (**Batch WW**), `ENDPAGE` having zero constraint validation
-(**Batch YY**), and a small
-field-level bundle — a wrong `TIMFMT` option, two unvalidated mutual
-exclusions, and unvalidated `ALIAS` uniqueness (**Batch ZZ**). None of
-these remaining ones are started yet — see `docs/TASKS.md`'s Batch WW,
-YY–ZZ detail sections for full scope per batch.
+and fixed as **Batch VV** (see above). `GDF` having no placeholder
+rendering unlike its `OVERLAY`/`PAGSEG`/`AFPRSC` siblings was fixed as
+**Batch WW** (see above), which also left behind a `resolveResourceBoxSize`
+helper that **Batch XX** — `PAGSEG`'s real `(*SIZE height width)` being
+parsed but discarded in favor of a fixed placeholder — then reused (see
+above; the two batches landed concurrently in separate sessions and were
+merged together). Still open: `ENDPAGE` having zero constraint validation
+(**Batch YY**), and a small field-level bundle — a wrong `TIMFMT` option,
+two unvalidated mutual exclusions, and unvalidated `ALIAS` uniqueness
+(**Batch ZZ**). None of these remaining ones are started yet — see
+`docs/TASKS.md`'s Batch YY–ZZ detail sections for full scope per batch.
 
-- [ ] **Batch WW — model `GDF`** (record-level, PSF-only resource keyword).
+
 - [ ] **Batch YY — `ENDPAGE` constraint validation.**
 - [ ] **Batch ZZ — field-level small-fix bundle** (`TIMFMT`, `EDTCDE`/`EDTWRD` vs `DFT`, `MSGCON`, `ALIAS`).
 
