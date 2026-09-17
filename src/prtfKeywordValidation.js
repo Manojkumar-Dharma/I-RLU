@@ -1,6 +1,6 @@
 "use strict";
 /**
- * Batch F/G/B keyword-applicability validation hints, surfaced in the
+ * Batch F/G/B/TT keyword-applicability validation hints, surfaced in the
  * properties panel. None of these keywords affect page-preview layout —
  * they're print-time/physical-printer behavior, or documented restrictions
  * — so this is validation-only: CRTPRTF remains the real enforcement
@@ -56,7 +56,7 @@ function looksLikeAfpds(model) {
   );
 }
 
-/** Validation hints for a single record's keywords — currently just the ZFOLD/STAPLE PSF-only notice. Returns [] when there's nothing to flag. */
+/** Validation hints for a single record's keywords — the ZFOLD/STAPLE PSF-only notice (Batch F) plus the Batch TT "no indicators allowed" check. Returns [] when there's nothing to flag. */
 function validateRecordKeywords(record) {
   const warnings = [];
   PSF_ONLY_KEYWORDS.forEach((name) => {
@@ -67,10 +67,10 @@ function validateRecordKeywords(record) {
       });
     }
   });
-  return warnings;
+  return warnings.concat(validateKeywordIndicators(record.keywords));
 }
 
-/** Validation hints scoped to the whole file — currently just the *AFPDS file-level SKIPA/SKIPB restriction (folded into this batch per docs/TASKS.md). Returns [] when there's nothing to flag. */
+/** Validation hints scoped to the whole file — the *AFPDS file-level SKIPA/SKIPB restriction (Batch F) plus the Batch TT "no indicators allowed" check. Returns [] when there's nothing to flag. */
 function validateFileLevelKeywords(model) {
   const warnings = [];
   ["SKIPA", "SKIPB"].forEach((name) => {
@@ -83,7 +83,7 @@ function validateFileLevelKeywords(model) {
       });
     }
   });
-  return warnings;
+  return warnings.concat(validateKeywordIndicators(model.fileLevel.keywords));
 }
 
 // --- Batch G: field-level data/edit keywords (ALIAS, BLKFOLD, CVTDTA,
@@ -139,7 +139,7 @@ function validateFieldKeywords(field) {
       warnings.push({ keyword: "TXTRTT", message: "TXTRTT's rotation must be 0, 90, 180, or 270 degrees, not " + deg + "." });
     }
   }
-  return warnings;
+  return warnings.concat(validateKeywordIndicators(field.keywords));
 }
 
 /**
@@ -219,6 +219,55 @@ function collectIndicatorDescriptions(model, record) {
   return result;
 }
 
+// --- Batch TT: centralized "option indicators not valid for this
+// keyword" validation (docs/AUDIT-FILE-LEVEL.md §5, docs/AUDIT-RECORD-
+// LEVEL.md §6, docs/AUDIT-FIELD-LEVEL.md §4) -----------------------------
+//
+// IBM's DDS reference explicitly documents that certain keywords may
+// never carry their OWN conditioning indicators, even though the
+// field/record/file they sit on can still be conditioned normally via
+// positions 7-16 (the entry's own `conditions`, distinct from a
+// keyword's own `conditions` — see prtfModel.ts's Keyword.conditions
+// comment). A keyword only ends up with its own `conditions` when
+// prtfParser.ts recognizes a genuine "attached keyword-only" continuation
+// line (the classic RLU technique for e.g. two mutually-exclusive COLOR
+// keywords, one under indicator 05, the other under N05) — so this is
+// exactly the shape IBM's restriction applies to, and exactly the gap the
+// audit trilogy found: nothing anywhere stopped one of these keywords
+// from being given that treatment. This is one shared table consulted at
+// all three levels (file/record/field), per the audit's own
+// recommendation, rather than a per-batch/per-panel patch.
+const NO_INDICATOR_KEYWORDS = [
+  // File-level (docs/AUDIT-FILE-LEVEL.md §5)
+  "REF", "INDARA", "RELPOS", "INDTXT", "CCSID",
+  // Field-level, additional to the above (docs/AUDIT-FIELD-LEVEL.md §4)
+  "ALIAS", "REFFLD", "MSGCON", "DATE", "DATFMT", "DATSEP", "TIMFMT", "TIMSEP",
+];
+
+/**
+ * Scans a keyword array for any NO_INDICATOR_KEYWORDS entry that was
+ * parsed with its own attached-line conditioning (`kw.conditions`,
+ * non-empty) and flags it. Deliberately does NOT look at the owning
+ * entry's own `conditions` — conditioning the field/record/constant as a
+ * whole via positions 7-16 is always valid for every keyword here; only
+ * a keyword-specific attached conditioning line is the documented
+ * restriction. Returns [] when there's nothing to flag.
+ */
+function validateKeywordIndicators(keywords) {
+  const warnings = [];
+  (keywords || []).forEach((kw) => {
+    if (NO_INDICATOR_KEYWORDS.indexOf(kw.name) !== -1 && kw.conditions && kw.conditions.length) {
+      warnings.push({
+        keyword: kw.name,
+        message:
+          kw.name +
+          " does not accept its own conditioning indicators — option indicators are not valid for this keyword (the field/record/constant it's on can still be conditioned normally).",
+      });
+    }
+  });
+  return warnings;
+}
+
 const mod = {
   // Batch F
   VALUELESS_KEYWORDS,
@@ -232,6 +281,9 @@ const mod = {
   collectIndicatorDescriptions,
   // Batch B
   validateFontKeywords,
+  // Batch TT
+  NO_INDICATOR_KEYWORDS,
+  validateKeywordIndicators,
 };
 if (typeof module !== "undefined" && module.exports) module.exports = mod;
 if (typeof window !== "undefined") window.PrtfKeywordValidation = mod;

@@ -12,11 +12,12 @@
  *   - prtfLayout.js           — geometry/cursor placement/resolveLayout,
  *                               listRecordNames, collectIndicators.
  *   - prtfReferenceField.js   — resolveReferenceTarget (REF/REFFLD).
- *   - prtfKeywordValidation.js — the Batch F/G/B keyword-applicability
+ *   - prtfKeywordValidation.js — the Batch F/G/B/TT keyword-applicability
  *                               validators (validateRecordKeywords,
  *                               validateFileLevelKeywords,
  *                               validateFieldKeywords, validateFontKeywords,
- *                               INDTXT parsing/collection).
+ *                               validateKeywordIndicators, INDTXT
+ *                               parsing/collection).
  *
  * This file just re-exports all of them under the same `PrtfEngine`/`mod`
  * shape every existing caller (extension.ts, prtfEdits.ts,
@@ -116,6 +117,12 @@ const mod = {
   // FieldEntry.sampleValue for the "why transient, not written to DDS
   // source" scope decision).
   formatSampleValue: Layout.formatSampleValue,
+  // Batch TT — centralized "option indicators not valid for this keyword"
+  // validation, folded into validateFileLevelKeywords/validateRecordKeywords/
+  // validateFieldKeywords above; also exported standalone so callers (and
+  // any future scope, e.g. constants) can check an arbitrary keyword array.
+  NO_INDICATOR_KEYWORDS: KeywordValidation.NO_INDICATOR_KEYWORDS,
+  validateKeywordIndicators: KeywordValidation.validateKeywordIndicators,
 };
 if (typeof module !== "undefined" && module.exports) module.exports = mod;
 if (typeof window !== "undefined") window.PrtfEngine = mod;

@@ -803,6 +803,24 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       `docs/TASKS.md` Batch RR for the full writeup. 1 new test in
       `test/webviewLayout.test.ts`; full suite now 570, all passing.
 
+- [x] **Batch TT — centralized "option indicators not valid for this
+      keyword" validation.** Found via the file/record/field audit
+      trilogy: 13 keywords (`REF`, `INDARA`, `RELPOS`, `INDTXT`, `CCSID`,
+      `ALIAS`, `REFFLD`, `MSGCON`, `DATE`, `DATFMT`, `DATSEP`, `TIMFMT`,
+      `TIMSEP`) are explicitly documented as never accepting their own
+      option indicators, and nothing in I-RLU checked for it. The key
+      nuance: the restriction is on the *keyword itself* (its own attached-
+      conditioning-line indicators, `Keyword.conditions`), not on the
+      field/record/constant it sits on, which can still be conditioned
+      normally via positions 7–16 — so the check reads `kw.conditions`,
+      never the owning entry's own `conditions`. New shared
+      `NO_INDICATOR_KEYWORDS`/`validateKeywordIndicators()` in
+      `src/prtfKeywordValidation.js`, folded into the existing
+      `validateFileLevelKeywords`/`validateRecordKeywords`/
+      `validateFieldKeywords` rather than 13 separate per-keyword patches.
+      See `docs/TASKS.md` Batch TT for the full writeup. 6 new tests in
+      `test/prtfBatchTT.test.ts`; full suite now 576, all passing.
+
 - [x] **Batch O — real AFP resource rendering (page segments/overlays as
       actual images) — done for the common image-content case.** Real
       Apache-2.0-licensed AFP resource fixtures from Apache FOP's own test
@@ -835,8 +853,9 @@ against the full text of IBM's official DDS printer-file reference
 per Manoj's request. Headline finding: `PAGSIZE` and `DEVTYPE` aren't real
 DDS keywords at all (both are `CRTPRTF`/`CHGPRTF`/`OVRPRTF` command
 parameters only) yet are parsed/written as if they were, baked into all 3
-test fixtures — **Batch SS**. Also filed: a centralized fix for 13 keywords
-missing "option indicators not valid" enforcement (**Batch TT**), `RELPOS`
+test fixtures — **Batch SS**. Also filed and since landed: a centralized
+fix for 13 keywords missing "option indicators not valid" enforcement
+(**Batch TT**, done). Still open: `RELPOS`
 going completely unmodeled while its behavior is applied unconditionally
 anyway (**Batch UU**), unvalidated `SKIPA`/`SKIPB`/`SPACEA`/`SPACEB`
 constraints plus a record-/file-level rendering no-op (**Batch VV**), `GDF`
@@ -846,11 +865,10 @@ parsed but discarded in favor of a fixed placeholder (**Batch XX**),
 `ENDPAGE` having zero constraint validation (**Batch YY**), and a small
 field-level bundle — a wrong `TIMFMT` option, two unvalidated mutual
 exclusions, and unvalidated `ALIAS` uniqueness (**Batch ZZ**). None of
-these are started yet — see `docs/TASKS.md`'s Batch SS–ZZ detail sections
-for full scope per batch.
+these remaining ones are started yet — see `docs/TASKS.md`'s Batch SS/UU–ZZ
+detail sections for full scope per batch.
 
 - [ ] **Batch SS — bug fix: `PAGSIZE`/`DEVTYPE` aren't real DDS keywords.**
-- [ ] **Batch TT — centralized "no option indicators" validation** (13 keywords).
 - [ ] **Batch UU — model `RELPOS`** (file-level `+n`-positioning semantics).
 - [ ] **Batch VV — `SKIPA`/`SKIPB`/`SPACEA`/`SPACEB` constraints + layout fix.**
 - [ ] **Batch WW — model `GDF`** (record-level, PSF-only resource keyword).
