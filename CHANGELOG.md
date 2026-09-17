@@ -17,6 +17,23 @@ it does not replace those two documents.
 Nothing yet — see `docs/TASKS.md` for what's currently in flight or filed
 for a future batch.
 
+## [0.0.20] - Batch VV
+
+### Added
+- `SKIPA`/`SKIPB`/`SPACEA`/`SPACEB` constraint validation: all four
+  keywords are now flagged when specified alongside `BOX`/`ENDPAGE`/
+  `GDF`/`LINE`/`OVERLAY`/`PAGSEG` (record level) or `POSITION` (any field
+  in the record), or on a record format where one or more fields carry an
+  explicit Location line number (columns 39-41). Cardinality is also
+  checked (once at file/record level, once per field), and file-level
+  `SKIPA`/`SKIPB` now requires at least one option indicator (previously
+  only the `*AFPDS` file-level restriction was checked).
+- `resolveLayout()` bug fix: record- and file-level `SKIPB` previously had
+  zero effect on the preview (it always started at line 1 regardless).
+  The preview's starting cursor line is now resolved from a record-level
+  `SKIPB` first, falling back to file-level `SKIPB`, matching what's
+  documented as already "rendered" in `docs/KEYWORD-INVENTORY.md`.
+
 ## [0.0.19] - Batch UU
 
 ### Added

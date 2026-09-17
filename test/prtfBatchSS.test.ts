@@ -80,7 +80,17 @@ test("resolveLayout: a bare PAGSIZE keyword in source has NO effect — page siz
 // --- looksLikeAfpds (via validateFileLevelKeywords) --------------------
 
 test("validateFileLevelKeywords: DEVTYPE(*AFPDS) alone (no AFPDS-typical keyword) is never trusted as authoritative", () => {
-  const src = buildSource("DEVTYPE(*AFPDS) SKIPB(1)", "SKIPB(2)");
+  const lines = [
+    "      * Batch SS test fixture",
+    "",
+    ...emitWithKeywords(buildPositional({ conditions: [{ indicator: "05", negate: false }] }), "DEVTYPE(*AFPDS) SKIPB(1)"),
+    ...emitWithKeywords(buildPositional({ nameType: "R", name: "RECORD1" }), "SKIPB(2)"),
+    ...emitWithKeywords(
+      buildPositional({ name: "FIELD1", length: 5, dataType: "A", usage: "O", lineNo: 1, position: 1 }),
+      ""
+    ),
+  ];
+  const src = lines.join("\n") + "\n";
   const model = parseSource(src);
   assert.deepEqual(PrtfEngine.validateFileLevelKeywords(model), []);
 });

@@ -860,6 +860,32 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
       reference's own worked example. 6 new tests in
       `test/prtfBatchUU.test.ts`; full suite now 590, all passing.
 
+- [x] **Batch VV — `SKIPA`/`SKIPB`/`SPACEA`/`SPACEB` constraints + layout
+      fix.** Two problems bundled because they're the same four keywords.
+      (1) None of their documented constraints were checked anywhere:
+      file-level `SKIPA`/`SKIPB` require an option indicator; all four are
+      invalid on a record that also has `BOX`/`ENDPAGE`/`GDF`/`LINE`/
+      `OVERLAY`/`PAGSEG` (record level) or `POSITION` (any field in the
+      record); all four are invalid on a record where one or more fields
+      carry an explicit Location line number (columns 39-41); and
+      cardinality (once at file/record level, once per field) went
+      unchecked. New shared `recordHasSkipSpaceExclusion()`/
+      `recordHasLineNumbers()`/`validateSkipSpaceKeywords()` in
+      `src/prtfKeywordValidation.js`, consulted from `validateRecordKeywords`
+      and (via a new optional `record` parameter) `validateFieldKeywords`,
+      rather than duplicating the checks per level. (2) Record- and
+      file-level `SKIPB` had zero effect on the preview — `resolveLayout()`
+      always started at line 1 regardless. Now resolves the starting
+      cursor line from record-level `SKIPB` first, falling back to
+      file-level `SKIPB`, matching the "more specific scope wins"
+      convention `resolveCpiLpi` already uses; record-/file-level `SKIPA`
+      is deliberately left unapplied (it affects the next record/page, not
+      this one). See `docs/TASKS.md` Batch VV for the full writeup. New
+      `test/prtfBatchVV.test.ts`, plus fixture-only updates to two existing
+      tests whose file-level `SKIPB` fixtures needed an option indicator
+      once that rule started being checked; full suite now 610, all
+      passing.
+
 - [x] **Batch O — real AFP resource rendering (page segments/overlays as
       actual images) — done for the common image-content case.** Real
       Apache-2.0-licensed AFP resource fixtures from Apache FOP's own test
@@ -898,19 +924,18 @@ valid" enforcement, fixed as **Batch TT** (see above). `RELPOS` going
 completely unmodeled while its behavior is applied unconditionally
 anyway was investigated and fixed as **Batch UU** (see above — the `+n`
 math itself turned out already correct; `RELPOS` recognition/validation
-was the actual gap). Still open: unvalidated
-`SKIPA`/`SKIPB`/`SPACEA`/`SPACEB`
-constraints plus a record-/file-level rendering no-op (**Batch VV**), `GDF`
+was the actual gap). Unvalidated `SKIPA`/`SKIPB`/`SPACEA`/`SPACEB`
+constraints plus a record-/file-level rendering no-op were investigated
+and fixed as **Batch VV** (see above). Still open: `GDF`
 having no placeholder rendering unlike its `OVERLAY`/`PAGSEG`/`AFPRSC`
 siblings (**Batch WW**), `PAGSEG`'s real `(*SIZE height width)` being
 parsed but discarded in favor of a fixed placeholder (**Batch XX**),
 `ENDPAGE` having zero constraint validation (**Batch YY**), and a small
 field-level bundle — a wrong `TIMFMT` option, two unvalidated mutual
 exclusions, and unvalidated `ALIAS` uniqueness (**Batch ZZ**). None of
-these remaining ones are started yet — see `docs/TASKS.md`'s Batch VV–ZZ
+these remaining ones are started yet — see `docs/TASKS.md`'s Batch WW–ZZ
 detail sections for full scope per batch.
 
-- [ ] **Batch VV — `SKIPA`/`SKIPB`/`SPACEA`/`SPACEB` constraints + layout fix.**
 - [ ] **Batch WW — model `GDF`** (record-level, PSF-only resource keyword).
 - [ ] **Batch XX — `PAGSEG`'s real `(*SIZE height width)`.**
 - [ ] **Batch YY — `ENDPAGE` constraint validation.**

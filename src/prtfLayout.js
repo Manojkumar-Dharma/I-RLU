@@ -683,7 +683,21 @@ function resolveLayout(model, recordName, indicatorState, uom, pageSize) {
   const resources = resolveResourcePlaceholders(record, cpi, lpi, uom, indicatorState);
   const pageGroupKeywords = collectPageGroupMetadata(record, indicatorState);
 
-  let cursorLine = 1;
+  // Batch VV (docs/TASKS.md) — record- and file-level SKIPB previously had
+  // zero effect on the preview: this used to always start at line 1
+  // regardless of a record- or file-level SKIPB keyword, even though
+  // SKIPB is genuinely valid (and documented as "rendered" in
+  // docs/KEYWORD-INVENTORY.md) at all three levels. Record-level wins over
+  // file-level when both are present, same "more specific scope wins"
+  // fallback this file already uses for CPI/LPI just above. File- or
+  // record-level SKIPA is deliberately NOT applied here — it fires AFTER
+  // this record's own lines print (affecting the next record/page, which
+  // this single-record preview doesn't model), unlike SKIPB which fires
+  // before, so it's the only one of the two that can actually change
+  // *this* record's own starting cursor line.
+  const recordSkipB = findActiveKeyword(record.keywords, "SKIPB", indicatorState);
+  const fileSkipB = findActiveKeyword(model.fileLevel.keywords, "SKIPB", indicatorState);
+  let cursorLine = numericParam(recordSkipB || fileSkipB, 1);
   let cursorCol = 1;
   const cells = [];
   const skipped = [];
@@ -791,7 +805,7 @@ function resolveLayout(model, recordName, indicatorState, uom, pageSize) {
       refTarget: entry.kind === "field" && entry.reference ? resolveReferenceTarget(model, record, entry) : undefined,
       // Batch G (docs/TASKS.md) — field-level applicability warnings for
       // data/edit keywords (e.g. FLTPCN on a non-F field).
-      fieldWarnings: entry.kind === "field" ? validateFieldKeywords(entry) : undefined,
+      fieldWarnings: entry.kind === "field" ? validateFieldKeywords(entry, record) : undefined,
       barcode: barcodeKw ? parseBarcodeGeometry(barcodeKw, lpi, uom) : undefined,
       // Batch C (docs/TASKS.md) — the full structured parse of every
       // BARCODE parameter (not just the geometry subset `barcode` above

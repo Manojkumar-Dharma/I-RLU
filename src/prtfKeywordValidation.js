@@ -56,7 +56,67 @@ function looksLikeAfpds(model) {
   );
 }
 
-/** Validation hints for a single record's keywords — the ZFOLD/STAPLE PSF-only notice (Batch F) plus the Batch TT "no indicators allowed" check. Returns [] when there's nothing to flag. */
+// --- Batch VV: SKIPA/SKIPB/SPACEA/SPACEB constraint validation
+// (docs/AUDIT-FILE-LEVEL.md §4) -----------------------------------------
+//
+// All four keywords share the same three documented restrictions, worded
+// near-identically in each of their own reference sections:
+//  - Not valid at record or field level on a record format that also has
+//    BOX, ENDPAGE, GDF, LINE, OVERLAY, PAGSEG, or POSITION specified
+//    anywhere in that record format. The first six are record-level
+//    keywords (checked via record.keywords); POSITION is field-level, so
+//    it's checked across every field in the record instead.
+//  - Not valid at record or field level on a record format where one or
+//    more fields carry an explicit Location line number (columns 39-41) —
+//    "the line number entries are flagged as errors" per the reference.
+//  - Cardinality: at most once at record level and once per field
+//    (SKIPA/SKIPB additionally once at file level — see
+//    validateFileLevelKeywords).
+const SKIP_SPACE_KEYWORDS = ["SKIPA", "SKIPB", "SPACEA", "SPACEB"];
+const SKIP_SPACE_RECORD_EXCLUSION_KEYWORDS = ["BOX", "ENDPAGE", "GDF", "LINE", "OVERLAY", "PAGSEG"];
+
+/** true if `record` carries BOX/ENDPAGE/GDF/LINE/OVERLAY/PAGSEG (record-level) or POSITION on any of its fields — the shared exclusion set SKIPA/SKIPB/SPACEA/SPACEB are all invalid alongside. */
+function recordHasSkipSpaceExclusion(record) {
+  if (SKIP_SPACE_RECORD_EXCLUSION_KEYWORDS.some((name) => findKeyword(record.keywords, name))) return true;
+  return (record.fields || []).some((f) => findKeyword(f.keywords, "POSITION"));
+}
+
+/** true if any field/constant in `record` carries an explicit Location line number (columns 39-41) — the other condition SKIPA/SKIPB/SPACEA/SPACEB are all invalid alongside. */
+function recordHasLineNumbers(record) {
+  return (record.fields || []).some((f) => f.line !== undefined);
+}
+
+/** Shared SKIPA/SKIPB/SPACEA/SPACEB constraint warnings for one keyword array (record.keywords or a field's keywords), given the owning record's exclusion/line-number state. `scope` ("record" or "field") only changes the cardinality wording. */
+function validateSkipSpaceKeywords(keywords, record, scope) {
+  const warnings = [];
+  const hasExclusion = recordHasSkipSpaceExclusion(record);
+  const hasLineNumbers = recordHasLineNumbers(record);
+  SKIP_SPACE_KEYWORDS.forEach((name) => {
+    const matches = findAllKeywords(keywords, name);
+    if (matches.length === 0) return;
+    if (hasExclusion) {
+      warnings.push({
+        keyword: name,
+        message: name + " is not valid at the " + scope + " level because this record format also has BOX, ENDPAGE, GDF, LINE, OVERLAY, PAGSEG, or POSITION specified.",
+      });
+    }
+    if (hasLineNumbers) {
+      warnings.push({
+        keyword: name,
+        message: name + " is not valid at the " + scope + " level for a record format that has line numbers specified (positions 39-41) on one or more fields — those entries are flagged as errors.",
+      });
+    }
+    if (matches.length > 1) {
+      warnings.push({
+        keyword: name,
+        message: name + " can only be specified once " + (scope === "record" ? "at the record level" : "per field") + ".",
+      });
+    }
+  });
+  return warnings;
+}
+
+/** Validation hints for a single record's keywords — the ZFOLD/STAPLE PSF-only notice (Batch F), the Batch VV SKIPA/SKIPB/SPACEA/SPACEB constraints, plus the Batch TT "no indicators allowed" check. Returns [] when there's nothing to flag. */
 function validateRecordKeywords(record) {
   const warnings = [];
   PSF_ONLY_KEYWORDS.forEach((name) => {
@@ -67,6 +127,7 @@ function validateRecordKeywords(record) {
       });
     }
   });
+  warnings.push(...validateSkipSpaceKeywords(record.keywords, record, "record"));
   return warnings.concat(validateKeywordIndicators(record.keywords));
 }
 
@@ -74,13 +135,30 @@ function validateRecordKeywords(record) {
 function validateFileLevelKeywords(model) {
   const warnings = [];
   ["SKIPA", "SKIPB"].forEach((name) => {
-    if (findKeyword(model.fileLevel.keywords, name) && looksLikeAfpds(model)) {
+    const matches = findAllKeywords(model.fileLevel.keywords, name);
+    if (matches.length === 0) return;
+    if (looksLikeAfpds(model)) {
       warnings.push({
         keyword: name,
         message:
           name +
           " isn't allowed at the file level for *AFPDS spooled files (this file appears to target AFPDS — other AFPDS-typical keywords are present). Move it to the record level, or confirm this file actually compiles as SCS.",
       });
+      return;
+    }
+    // Batch VV (docs/TASKS.md) — "If you specify the keyword at the file
+    // level, you must option it with one or more indicators" (both
+    // SKIPA's and SKIPB's own reference sections). Only checked in the
+    // non-AFPDS branch above, since a file-level SKIPA/SKIPB isn't valid
+    // at all under *AFPDS — that's already the stronger warning.
+    if (!matches.some((kw) => kw.conditions && kw.conditions.length)) {
+      warnings.push({
+        keyword: name,
+        message: name + " requires at least one option indicator when specified at the file level.",
+      });
+    }
+    if (matches.length > 1) {
+      warnings.push({ keyword: name, message: name + " can only be specified once at the file level." });
     }
   });
   // Batch UU (docs/TASKS.md) — RELPOS only has an effect for *AFPDS
@@ -118,9 +196,16 @@ const FIELD_LEVEL_VALUELESS_KEYWORDS = ["BLKFOLD", "DLTEDT", "TRNSPY", "FLTFIXDE
  * reference restricts several of these to a specific data type or to
  * reference fields, but the data-description processor is the only thing
  * that actually enforces it at compile time; this just surfaces the same
- * rule live in the designer. Returns [] when there's nothing to flag.
+ * rule live in the designer. `record` (optional, added by Batch VV) is the
+ * owning record format — when provided, also surfaces the SKIPA/SKIPB/
+ * SPACEA/SPACEB constraint warnings, which need the whole record's other
+ * keywords/fields to evaluate. Every existing caller that already had a
+ * record in scope (prtfLayout.js's resolveLayout) now passes it; callers
+ * that only have the field in isolation (some existing tests) simply skip
+ * those specific checks, same as before this batch. Returns [] when
+ * there's nothing to flag.
  */
-function validateFieldKeywords(field) {
+function validateFieldKeywords(field, record) {
   const warnings = [];
   if (findKeyword(field.keywords, "DLTEDT") && !field.reference) {
     warnings.push({
@@ -151,6 +236,9 @@ function validateFieldKeywords(field) {
     if (deg && ["0", "90", "180", "270"].indexOf(deg) === -1) {
       warnings.push({ keyword: "TXTRTT", message: "TXTRTT's rotation must be 0, 90, 180, or 270 degrees, not " + deg + "." });
     }
+  }
+  if (record) {
+    warnings.push(...validateSkipSpaceKeywords(field.keywords, record, "field"));
   }
   return warnings.concat(validateKeywordIndicators(field.keywords));
 }
@@ -290,6 +378,10 @@ const mod = {
   // Batch G
   FIELD_LEVEL_VALUELESS_KEYWORDS,
   validateFieldKeywords,
+  // Batch VV
+  SKIP_SPACE_KEYWORDS,
+  recordHasSkipSpaceExclusion,
+  recordHasLineNumbers,
   parseIndtxt,
   collectIndicatorDescriptions,
   // Batch B

@@ -123,6 +123,14 @@ const mod = {
   // any future scope, e.g. constants) can check an arbitrary keyword array.
   NO_INDICATOR_KEYWORDS: KeywordValidation.NO_INDICATOR_KEYWORDS,
   validateKeywordIndicators: KeywordValidation.validateKeywordIndicators,
+  // Batch VV — SKIPA/SKIPB/SPACEA/SPACEB constraint validation, folded into
+  // validateFileLevelKeywords/validateRecordKeywords/validateFieldKeywords
+  // above; also exported standalone for direct testing/reuse (e.g. by
+  // Batch YY's ENDPAGE exclusion check, which validates the same rule from
+  // the other direction).
+  SKIP_SPACE_KEYWORDS: KeywordValidation.SKIP_SPACE_KEYWORDS,
+  recordHasSkipSpaceExclusion: KeywordValidation.recordHasSkipSpaceExclusion,
+  recordHasLineNumbers: KeywordValidation.recordHasLineNumbers,
 };
 if (typeof module !== "undefined" && module.exports) module.exports = mod;
 if (typeof window !== "undefined") window.PrtfEngine = mod;
