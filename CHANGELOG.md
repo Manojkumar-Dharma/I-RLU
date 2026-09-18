@@ -17,6 +17,28 @@ it does not replace those two documents.
 Nothing yet — see `docs/TASKS.md` for what's currently in flight or filed
 for a future batch.
 
+## [0.0.25] - Batch AAA
+
+### Fixed
+- `CPI`/`LPI` were resolved with a fallback to `fileLevel.keywords` —
+  neither has a file-level DDS keyword form (`CPI` is record-level-or-
+  field-level only; `LPI` is record-level only), so this checked a source
+  position where a real `CPI`/`LPI` keyword line could never legitimately
+  appear — the same command-parameter-vs-keyword conflation `PAGSIZE`/
+  `DEVTYPE` were before Batch SS. Both now fall straight through to their
+  hardcoded default (10 CPI / 6 LPI) instead.
+
+### Added
+- `CPI`'s documented field-level override: a field's own `CPI`, when
+  present, is now resolved and exposed on its layout cell (`cell.cpi`).
+  When it genuinely differs from the record's resolved `CPI`, a
+  `fieldWarnings` note explains that the rendered preview still lays
+  every entry out on the record's one shared character grid, so the
+  real per-field density difference (which DDS allows and doesn't
+  diagnose overlap for) isn't reflected visually — an explicit,
+  documented rendering approximation rather than a silently dropped
+  keyword.
+
 ## [0.0.24] - Batch ZZ
 
 ### Fixed

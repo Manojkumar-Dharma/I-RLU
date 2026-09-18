@@ -62,11 +62,41 @@ const AfpCodedFontMetrics =
  * (10 CPI, 6 LPI) match traditional SCS/line-printer defaults; real AFPDS
  * jobs may differ per font, so this is a rendering approximation, not a
  * production measurement.
+ *
+ * Batch AAA (docs/TASKS.md, docs/AUDIT-CROSS-LEVEL.md §1) — this used to
+ * also fall back to `findActiveKeyword(fileLevel.keywords, name, ...)`
+ * for both CPI and LPI. Neither is a real file-level DDS keyword: CPI is
+ * record-level-or-field-level only, LPI is record-level only. Both
+ * sections' own text ("if you do not specify CPI/LPI, the value is set
+ * by the CPI/LPI parameter on the CRTPRTF, CHGPRTF, or OVRPRTF command")
+ * describes a *command-parameter* default, not a file-level keyword — the
+ * exact same conflation `PAGSIZE`/`DEVTYPE` were before Batch SS fixed
+ * them. That command-parameter default isn't visible to a DDS-source-only
+ * tool like this one anyway, so falling through to the hardcoded 10/6
+ * default (same as `PAGSIZE`'s own resolution already does) is the
+ * correct fallback, not a lookup at a source position where a real
+ * CPI/LPI keyword line can never legitimately appear.
  */
-function resolveCpiLpi(record, fileLevel, indicatorState) {
-  const cpiKw = findActiveKeyword(record.keywords, "CPI", indicatorState) || findActiveKeyword(fileLevel.keywords, "CPI", indicatorState);
-  const lpiKw = findActiveKeyword(record.keywords, "LPI", indicatorState) || findActiveKeyword(fileLevel.keywords, "LPI", indicatorState);
+function resolveCpiLpi(record, indicatorState) {
+  const cpiKw = findActiveKeyword(record.keywords, "CPI", indicatorState);
+  const lpiKw = findActiveKeyword(record.keywords, "LPI", indicatorState);
   return { cpi: numericParam(cpiKw, 10), lpi: numericParam(lpiKw, 6) };
+}
+
+/**
+ * Batch AAA (docs/TASKS.md) — CPI's field-level override. Per the
+ * reference: "If you specify CPI at the record level, all fields in the
+ * record format are at the same density except those for which you
+ * specify CPI at the field level." `entry` here is a field or constant
+ * (both are "field"-type entries in DDS terms, and CPI's own wording
+ * — "the record format or field" — doesn't restrict it to named fields
+ * only). Falls back to the record-resolved `recordCpi` when the entry has
+ * no CPI of its own, mirroring the "nearest specification wins" cascade
+ * `resolveFontKeyword` already uses for FONT/CDEFNT/FNTCHRSET/FONTNAME.
+ */
+function resolveEntryCpi(entry, recordCpi, indicatorState) {
+  const kw = findActiveKeyword(entry.keywords, "CPI", indicatorState);
+  return kw ? numericParam(kw, recordCpi) : recordCpi;
 }
 
 /**
@@ -670,7 +700,7 @@ function resolveLayout(model, recordName, indicatorState, uom, pageSize) {
   if (!record) return null;
 
   const { lines: pageLines, cols: pageCols } = resolvePageSize(pageSize);
-  const { cpi, lpi } = resolveCpiLpi(record, model.fileLevel, indicatorState);
+  const { cpi, lpi } = resolveCpiLpi(record, indicatorState);
 
   // Batch OO (docs/TASKS.md) — now resolved via resolveDrawsWithKeywordIndex
   // rather than the plain findAllActiveKeywords+map pipeline this used to
@@ -772,6 +802,28 @@ function resolveLayout(model, recordName, indicatorState, uom, pageSize) {
     const font = resolveFont(entry, record, model.fileLevel, indicatorState);
     const fontDisplay = resolveFontDisplay(font);
     const style = resolveStyle(entry, record, indicatorState);
+    // Batch AAA (docs/TASKS.md) — this entry's own effective CPI, and,
+    // when it differs from the record's shared CPI, a fieldWarnings note
+    // explaining the rendering approximation: this preview lays every
+    // field out on one uniform character grid sized from the record's
+    // CPI, so a field printed at a genuinely different density (which
+    // DDS allows, and doesn't diagnose overlap for) isn't shown any
+    // narrower or wider here than its neighbors.
+    const entryCpi = resolveEntryCpi(entry, cpi, indicatorState);
+    const cpiOverrideNote =
+      entryCpi !== cpi
+        ? {
+            keyword: "CPI",
+            message:
+              "This " +
+              (entry.kind === "field" ? "field" : "constant") +
+              " specifies its own CPI(" +
+              entryCpi +
+              "), different from the record's CPI(" +
+              cpi +
+              "). DDS prints it at that density (and doesn't diagnose any resulting overlap with neighboring fields), but this preview renders every entry on the record's shared character grid, so the width difference isn't shown here.",
+          }
+        : undefined;
 
     cells.push({
       id: entry.id,
@@ -791,6 +843,9 @@ function resolveLayout(model, recordName, indicatorState, uom, pageSize) {
       // intentional, flagged choice rather than an accidental one).
       relativePosition: !!entry.relativePosition,
       length,
+      // Batch AAA (docs/TASKS.md) — this entry's own effective CPI
+      // (field/constant CPI if present, else the record's).
+      cpi: entryCpi,
       // Extra properties so the webview's edit panel can prefill a form
       // without a second round trip to the extension host.
       dataType: entry.kind === "field" ? entry.dataType : undefined,
@@ -807,8 +862,13 @@ function resolveLayout(model, recordName, indicatorState, uom, pageSize) {
       reference: entry.kind === "field" ? !!entry.reference : undefined,
       refTarget: entry.kind === "field" && entry.reference ? resolveReferenceTarget(model, record, entry) : undefined,
       // Batch G (docs/TASKS.md) — field-level applicability warnings for
-      // data/edit keywords (e.g. FLTPCN on a non-F field).
-      fieldWarnings: entry.kind === "field" ? validateFieldKeywords(entry, record) : undefined,
+      // data/edit keywords (e.g. FLTPCN on a non-F field). Batch AAA adds
+      // the CPI-divergence note above onto the same array (field-only,
+      // matching validateFieldKeywords' own existing field-only scope).
+      fieldWarnings:
+        entry.kind === "field"
+          ? validateFieldKeywords(entry, record).concat(cpiOverrideNote ? [cpiOverrideNote] : [])
+          : undefined,
       barcode: barcodeKw ? parseBarcodeGeometry(barcodeKw, lpi, uom) : undefined,
       // Batch C (docs/TASKS.md) — the full structured parse of every
       // BARCODE parameter (not just the geometry subset `barcode` above

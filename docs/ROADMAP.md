@@ -1002,6 +1002,34 @@ significant change so it stays a trustworthy snapshot rather than aspirational.
 This closes out the full SS–ZZ audit series (see "Next up" below for the
 series' own history) — every finding from all three audits has now landed.
 
+- [x] **Batch AAA — `CPI`/`LPI` file-level-lookup bug fix + `CPI`
+      field-level override.** Found via `docs/AUDIT-CROSS-LEVEL.md` §1, a
+      fourth audit pass checking every keyword's full set of valid levels
+      against where I-RLU actually handles it. `CPI` is
+      record-level-or-field-level only; `LPI` is record-level only —
+      neither has a file-level DDS keyword form, so `resolveCpiLpi`'s
+      `fileLevel.keywords` fallback for both was checking a source
+      position where a real `CPI`/`LPI` keyword line could never
+      legitimately appear — the exact same command-parameter-vs-keyword
+      conflation `PAGSIZE`/`DEVTYPE` were before Batch SS. Dropped
+      entirely; both now fall straight through to their hardcoded default
+      (10 CPI / 6 LPI) instead. Separately, `CPI`'s documented field-level
+      override had zero effect on the rendered preview — `resolveCpiLpi`
+      was called once per record, never per field. New
+      `resolveEntryCpi(entry, recordCpi, indicatorState)` resolves each
+      entry's own effective CPI (mirroring `resolveFontKeyword`'s
+      "nearest specification wins" cascade), exposed as `cell.cpi`; since
+      the architecture renders every entry on one uniform, record-wide
+      character grid, a genuinely different per-field density can't be
+      shown visually without a much larger redesign, so rather than
+      silently drop that difference, a `fieldWarnings` note explains the
+      approximation when an entry's resolved CPI diverges from the
+      record's — honest-limitation documentation over silent scope drop.
+      Corrected an existing test (`test/prtfLayoutGeometry.test.ts`) that
+      had encoded the file-level fallback bug as expected behavior. See
+      `docs/TASKS.md` Batch AAA for the full writeup. Full suite now 679,
+      all passing.
+
 ## Next up
 
 Batches SS–ZZ were filed from a full three-part audit
@@ -1039,21 +1067,21 @@ than one level (file+record, record+field, or all three) that I-RLU only
 actually handles at one. It found: `CPI`/`LPI` resolved against a
 nonexistent file-level DDS keyword, the same command-parameter-vs-keyword
 conflation `PAGSIZE`/`DEVTYPE` were, plus `CPI`'s field-level override
-having zero effect on the rendered preview (**Batch AAA**); 15 further
-keywords missing from `NO_INDICATOR_KEYWORDS` beyond Batch TT's original
-13 (**Batch BBB**); `CHRID` over-exposed at the record level plus two
-unvalidated `BARCODE` record-level exclusions (**Batch CCC**); `TEXT`
-entirely unmodeled (**Batch DDD**); `PRTQLTY` missing field-level UI plus
-an unvalidated dependency (**Batch EEE**); `DTASTMCMD` missing field-level
-UI (**Batch FFF**); and, the largest one, no file-level properties panel
-existing in the webview at all, leaving `REF`/`RELPOS`/`INDARA`/`DFNCHR`
-and the file-level slice of `CCSID`/`FNTCHRSET`/`FONTNAME`/`INDTXT`/
-`SKIPA`/`SKIPB` unexposed for editing (**Batch GGG**). None of Batches
-AAA–GGG are started yet — see `docs/TASKS.md`'s own detail sections for
-full scope per batch. Batch naming continues as `AAA`, `BBB`, ... since
-`A`–`Z` and `AA`–`ZZ` are both now fully used.
+having zero effect on the rendered preview — investigated and fixed as
+**Batch AAA** (see above). Still open: 15 further keywords missing from
+`NO_INDICATOR_KEYWORDS` beyond Batch TT's original 13 (**Batch BBB**);
+`CHRID` over-exposed at the record level plus two unvalidated `BARCODE`
+record-level exclusions (**Batch CCC**); `TEXT` entirely unmodeled
+(**Batch DDD**); `PRTQLTY` missing field-level UI plus an unvalidated
+dependency (**Batch EEE**); `DTASTMCMD` missing field-level UI (**Batch
+FFF**); and, the largest one, no file-level properties panel existing in
+the webview at all, leaving `REF`/`RELPOS`/`INDARA`/`DFNCHR` and the
+file-level slice of `CCSID`/`FNTCHRSET`/`FONTNAME`/`INDTXT`/`SKIPA`/
+`SKIPB` unexposed for editing (**Batch GGG**). None of Batches BBB–GGG
+are started yet — see `docs/TASKS.md`'s own detail sections for full
+scope per batch. Batch naming continues as `AAA`, `BBB`, ... since `A`–`Z`
+and `AA`–`ZZ` are both now fully used.
 
-- [ ] **Batch AAA — `CPI`/`LPI` file-level-lookup bug fix + `CPI` field-level override.**
 - [ ] **Batch BBB — `NO_INDICATOR_KEYWORDS` missing 15 of 28 documented keywords.**
 - [ ] **Batch CCC — `CHRID` over-exposure + `BARCODE`'s additional record-level exclusions.**
 - [ ] **Batch DDD — Model `TEXT` (record-level-or-field-level documentation keyword).**

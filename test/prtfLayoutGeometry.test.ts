@@ -271,15 +271,33 @@ test("layout: BARCODE with no recognizable height falls back to the 2-line place
 
 // --- CPI/LPI resolution --------------------------------------------------
 
-test("layout: record-level CPI/LPI overrides file-level CPI/LPI", () => {
+test("layout: record-level CPI/LPI is used when present", () => {
   const model = buildModel({
-    fileKeywordLines: ["CPI(15)", "LPI(8)"],
-    recordKeywordLines: ["CPI(12)"],
+    recordKeywordLines: ["CPI(12)", "LPI(8)"],
     fields: [{ name: "F1" }],
   });
   const layout = PrtfEngine.resolveLayout(model, "REC", {});
-  assert.equal(layout.grid.cpi, 12); // record-level wins over file-level
-  assert.equal(layout.grid.lpi, 8); // falls back to file-level when record doesn't set it
+  assert.equal(layout.grid.cpi, 12);
+  assert.equal(layout.grid.lpi, 8);
+});
+
+// Batch AAA (docs/TASKS.md, docs/AUDIT-CROSS-LEVEL.md §1) — CPI is
+// record-level-or-field-level only, and LPI is record-level only; neither
+// has a file-level DDS keyword form (both sections' own text describes a
+// CRTPRTF/CHGPRTF/OVRPRTF *command-parameter* default instead, not
+// visible to a DDS-source-only tool). resolveCpiLpi used to also check
+// fileLevel.keywords as a fallback — a real bug, since a CPI/LPI keyword
+// line there could never legitimately occur in valid DDS. This regression
+// test replaces "layout: record-level CPI/LPI overrides file-level
+// CPI/LPI", which encoded that bug as the expected behavior.
+test("layout: file-level CPI/LPI keyword lines have zero effect — neither is a real file-level DDS keyword", () => {
+  const model = buildModel({
+    fileKeywordLines: ["CPI(15)", "LPI(9)"],
+    fields: [{ name: "F1" }],
+  });
+  const layout = PrtfEngine.resolveLayout(model, "REC", {});
+  assert.equal(layout.grid.cpi, 10); // falls through to the hardcoded default, not the file-level line
+  assert.equal(layout.grid.lpi, 6);
 });
 
 test("layout: CPI/LPI default to 10/6 when neither file nor record specify them", () => {
@@ -287,4 +305,60 @@ test("layout: CPI/LPI default to 10/6 when neither file nor record specify them"
   const layout = PrtfEngine.resolveLayout(model, "REC", {});
   assert.equal(layout.grid.cpi, 10);
   assert.equal(layout.grid.lpi, 6);
+});
+
+// --- CPI's field-level override (Batch AAA) -------------------------------
+
+test("layout: a field's own CPI is exposed on its cell, overriding the record's for that field", () => {
+  const model = buildModel({
+    recordKeywordLines: ["CPI(10)"],
+    fields: [{ name: "F1", keywordLines: ["CPI(15)"] }],
+  });
+  const layout = PrtfEngine.resolveLayout(model, "REC", {});
+  const cell = layout.cells.find((c: any) => c.name === "F1");
+  assert.equal(cell.cpi, 15);
+  assert.equal(layout.grid.cpi, 10); // the record's shared grid CPI is unaffected
+});
+
+test("layout: a field with no CPI of its own inherits the record's resolved CPI on its cell", () => {
+  const model = buildModel({
+    recordKeywordLines: ["CPI(12)"],
+    fields: [{ name: "F1" }],
+  });
+  const layout = PrtfEngine.resolveLayout(model, "REC", {});
+  const cell = layout.cells.find((c: any) => c.name === "F1");
+  assert.equal(cell.cpi, 12);
+});
+
+test("layout: a field's own CPI differing from the record's adds a CPI note to fieldWarnings", () => {
+  const model = buildModel({
+    recordKeywordLines: ["CPI(10)"],
+    fields: [{ name: "F1", keywordLines: ["CPI(15)"] }],
+  });
+  const layout = PrtfEngine.resolveLayout(model, "REC", {});
+  const cell = layout.cells.find((c: any) => c.name === "F1");
+  assert.equal(
+    (cell.fieldWarnings || []).some((w: any) => w.keyword === "CPI" && /CPI\(15\)/.test(w.message) && /CPI\(10\)/.test(w.message)),
+    true
+  );
+});
+
+test("layout: a field's own CPI equal to the record's adds no CPI note (no actual divergence)", () => {
+  const model = buildModel({
+    recordKeywordLines: ["CPI(10)"],
+    fields: [{ name: "F1", keywordLines: ["CPI(10)"] }],
+  });
+  const layout = PrtfEngine.resolveLayout(model, "REC", {});
+  const cell = layout.cells.find((c: any) => c.name === "F1");
+  assert.equal((cell.fieldWarnings || []).some((w: any) => w.keyword === "CPI"), false);
+});
+
+test("layout: a field with no CPI of its own adds no CPI note", () => {
+  const model = buildModel({
+    recordKeywordLines: ["CPI(10)"],
+    fields: [{ name: "F1" }],
+  });
+  const layout = PrtfEngine.resolveLayout(model, "REC", {});
+  const cell = layout.cells.find((c: any) => c.name === "F1");
+  assert.equal((cell.fieldWarnings || []).some((w: any) => w.keyword === "CPI"), false);
 });
