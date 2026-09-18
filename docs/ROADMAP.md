@@ -1027,14 +1027,39 @@ helper that **Batch XX** — `PAGSEG`'s real `(*SIZE height width)` being
 parsed but discarded in favor of a fixed placeholder — then reused (see
 above; the two batches landed concurrently in separate sessions and were
 merged together). `ENDPAGE` having zero constraint validation was
-investigated and fixed as **Batch YY** (see above). Finally, a small
-field-level bundle — a wrong `TIMFMT` option, two unvalidated mutual
-exclusions, and unvalidated `ALIAS` uniqueness — was fixed as **Batch ZZ**
-(see above), closing out the series: every finding from all three audits
-has now landed. Nothing is currently filed for a future batch — the next
-work item will need a fresh look at the codebase or a new request to seed
-it.
-fresh look at the codebase or a new request to seed it.
+investigated and fixed as **Batch YY** (see above). A small field-level
+bundle — a wrong `TIMFMT` option, two unvalidated mutual exclusions, and
+unvalidated `ALIAS` uniqueness — was fixed as **Batch ZZ** (see above),
+closing out that three-part series: every finding from all three
+per-level audits had landed.
+
+A fourth audit (`docs/AUDIT-CROSS-LEVEL.md`) then specifically checked the
+seam the first three couldn't, by construction — a keyword valid at more
+than one level (file+record, record+field, or all three) that I-RLU only
+actually handles at one. It found: `CPI`/`LPI` resolved against a
+nonexistent file-level DDS keyword, the same command-parameter-vs-keyword
+conflation `PAGSIZE`/`DEVTYPE` were, plus `CPI`'s field-level override
+having zero effect on the rendered preview (**Batch AAA**); 15 further
+keywords missing from `NO_INDICATOR_KEYWORDS` beyond Batch TT's original
+13 (**Batch BBB**); `CHRID` over-exposed at the record level plus two
+unvalidated `BARCODE` record-level exclusions (**Batch CCC**); `TEXT`
+entirely unmodeled (**Batch DDD**); `PRTQLTY` missing field-level UI plus
+an unvalidated dependency (**Batch EEE**); `DTASTMCMD` missing field-level
+UI (**Batch FFF**); and, the largest one, no file-level properties panel
+existing in the webview at all, leaving `REF`/`RELPOS`/`INDARA`/`DFNCHR`
+and the file-level slice of `CCSID`/`FNTCHRSET`/`FONTNAME`/`INDTXT`/
+`SKIPA`/`SKIPB` unexposed for editing (**Batch GGG**). None of Batches
+AAA–GGG are started yet — see `docs/TASKS.md`'s own detail sections for
+full scope per batch. Batch naming continues as `AAA`, `BBB`, ... since
+`A`–`Z` and `AA`–`ZZ` are both now fully used.
+
+- [ ] **Batch AAA — `CPI`/`LPI` file-level-lookup bug fix + `CPI` field-level override.**
+- [ ] **Batch BBB — `NO_INDICATOR_KEYWORDS` missing 15 of 28 documented keywords.**
+- [ ] **Batch CCC — `CHRID` over-exposure + `BARCODE`'s additional record-level exclusions.**
+- [ ] **Batch DDD — Model `TEXT` (record-level-or-field-level documentation keyword).**
+- [ ] **Batch EEE — `PRTQLTY` field-level UI exposure + its unvalidated dependency.**
+- [ ] **Batch FFF — `DTASTMCMD` field-level UI exposure.**
+- [ ] **Batch GGG — Build a file-level properties panel** (larger initiative).
 
 As of the RLU screen-capture review (`docs/KEYWORD-INVENTORY.md`), the
 remaining work is re-organized into the parallel-session task batches in
