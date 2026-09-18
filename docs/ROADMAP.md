@@ -1043,6 +1043,26 @@ series' own history) — every finding from all three audits has now landed.
       from. See `docs/TASKS.md` Batch BBB for the full writeup. New
       `test/prtfBatchBBB.test.ts`; full suite now 714, all passing.
 
+- [x] **Batch CCC — `CHRID` over-exposure + `BARCODE`'s additional
+      record-level exclusions.** Found via `docs/AUDIT-CROSS-LEVEL.md`
+      §4/§9: `CHRID` is field-level-only per IBM's reference, but the
+      shared `FONT_SIZING_SPECS` array the Font & sizing panel
+      (`renderFontSizingPanel`, `media/webviewClient.js`) uses identically
+      at both its record-level and field-level call sites let a person add
+      `CHRID` to a *record* — invalid DDS — with no warning. Separately,
+      `BARCODE` has two further record-scoped exclusions from the same
+      reference section that were unchecked anywhere: it can't share a
+      record format with `BLKFOLD`/`CPI`/`DFNCHR`, and it can't appear on
+      any field within a record that also carries record-level `CHRSIZ`.
+      Fixed by threading a `level` ("record"/"field") parameter through
+      `renderFontSizingPanel` (drops `CHRID` from the rendered list at the
+      record level) and `validateFontKeywords` (flags a record-level
+      `CHRID` outright, defense-in-depth for hand-typed source), plus a
+      new record-scoped `validateBarcodeRecordKeywords` folded into
+      `validateRecordKeywords`. See `docs/TASKS.md` Batch CCC for the full
+      writeup. New `test/prtfBatchCCC.test.ts`; full suite now 731, all
+      passing.
+
 ## Next up
 
 Batches SS–ZZ were filed from a full three-part audit
@@ -1083,20 +1103,20 @@ conflation `PAGSIZE`/`DEVTYPE` were, plus `CPI`'s field-level override
 having zero effect on the rendered preview — investigated and fixed as
 **Batch AAA** (see above). 15 further keywords missing from
 `NO_INDICATOR_KEYWORDS` beyond Batch TT's original 13 were found and fixed
-as **Batch BBB** (see above). Still open: `CHRID` over-exposed at the
-record level plus two unvalidated `BARCODE` record-level exclusions
-(**Batch CCC**); `TEXT` entirely unmodeled (**Batch DDD**); `PRTQLTY`
-missing field-level UI plus an unvalidated dependency (**Batch EEE**);
-`DTASTMCMD` missing field-level UI (**Batch FFF**); and, the largest one,
-no file-level properties panel existing in the webview at all, leaving
-`REF`/`RELPOS`/`INDARA`/`DFNCHR` and the file-level slice of
+as **Batch BBB** (see above). `CHRID` over-exposed at the record level
+plus two unvalidated `BARCODE` record-level exclusions were investigated
+and fixed as **Batch CCC** (see above). Still open: `TEXT` entirely
+unmodeled (**Batch DDD**); `PRTQLTY` missing field-level UI plus an
+unvalidated dependency (**Batch EEE**); `DTASTMCMD` missing field-level UI
+(**Batch FFF**); and, the largest one, no file-level properties panel
+existing in the webview at all, leaving `REF`/`RELPOS`/`INDARA`/`DFNCHR`
+and the file-level slice of
 `CCSID`/`FNTCHRSET`/`FONTNAME`/`INDTXT`/`SKIPA`/`SKIPB` unexposed for
-editing (**Batch GGG**). None of Batches CCC–GGG are started yet — see
+editing (**Batch GGG**). None of Batches DDD–GGG are started yet — see
 `docs/TASKS.md`'s own detail sections for full scope per batch. Batch
 naming continues as `AAA`, `BBB`, ... since `A`–`Z` and `AA`–`ZZ` are
 both now fully used.
 
-- [ ] **Batch CCC — `CHRID` over-exposure + `BARCODE`'s additional record-level exclusions.** [In progress]
 - [ ] **Batch DDD — Model `TEXT` (record-level-or-field-level documentation keyword).**
 - [ ] **Batch EEE — `PRTQLTY` field-level UI exposure + its unvalidated dependency.**
 - [ ] **Batch FFF — `DTASTMCMD` field-level UI exposure.**

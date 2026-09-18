@@ -159,7 +159,46 @@ function validateEndpageKeywords(record, model) {
   return warnings;
 }
 
-/** Validation hints for a single record's keywords — the ZFOLD/STAPLE/GDF PSF-only notice (Batch F/WW), the Batch VV SKIPA/SKIPB/SPACEA/SPACEB constraints, the Batch YY ENDPAGE constraints, plus the Batch TT "no indicators allowed" check. `model` (optional, added by Batch YY) enables the ENDPAGE *AFPDS heuristic check — callers without a model in scope (some existing tests) simply skip that one check, same "optional context param" convention Batch VV's `validateFieldKeywords(field, record)` established. Returns [] when there's nothing to flag. */
+// --- Batch CCC: BARCODE's two record-level-only exclusions
+// (docs/AUDIT-CROSS-LEVEL.md §9) --------------------------------------
+//
+// `prtfBarcodeParams.js`'s BARCODE_EXCLUDED_KEYWORDS already checks the
+// field-level "do not specify BARCODE in the same field with..." list.
+// Two further constraints from the same reference section are scoped to
+// the whole record format instead of a single field, so they belong here
+// rather than in that field-scoped module:
+//  - "You cannot specify BARCODE on the same record format with BLKFOLD,
+//    CPI, or DFNCHR" — those three are record-level keywords, checked
+//    against record.keywords directly.
+//  - "If you specify CHRSIZ at the record level, it applies to all
+//    fields in that record. If you specify BARCODE in one of those
+//    fields, the BARCODE keyword is not allowed" — record-level CHRSIZ
+//    combined with ANY field in the record carrying BARCODE.
+const BARCODE_RECORD_EXCLUSION_KEYWORDS = ["BLKFOLD", "CPI", "DFNCHR"];
+
+/** Record-scoped BARCODE exclusion warnings for `record` — see the Batch CCC comment above. Returns [] when the record has no field/constant with BARCODE at all (nothing to check against). */
+function validateBarcodeRecordKeywords(record) {
+  const warnings = [];
+  const hasBarcodeField = (record.fields || []).some((f) => findKeyword(f.keywords, "BARCODE"));
+  if (!hasBarcodeField) return warnings;
+  BARCODE_RECORD_EXCLUSION_KEYWORDS.forEach((name) => {
+    if (findKeyword(record.keywords, name)) {
+      warnings.push({
+        keyword: name,
+        message: "BARCODE (used on a field in this record) can't be combined with " + name + " on the same record format — CRTPRTF will reject this combination.",
+      });
+    }
+  });
+  if (findKeyword(record.keywords, "CHRSIZ")) {
+    warnings.push({
+      keyword: "CHRSIZ",
+      message: "Record-level CHRSIZ applies to every field in this record — BARCODE is not allowed on any field within a record that also has record-level CHRSIZ.",
+    });
+  }
+  return warnings;
+}
+
+/** Validation hints for a single record's keywords — the ZFOLD/STAPLE/GDF PSF-only notice (Batch F/WW), the Batch VV SKIPA/SKIPB/SPACEA/SPACEB constraints, the Batch YY ENDPAGE constraints, the Batch CCC BARCODE record-level exclusions, plus the Batch TT "no indicators allowed" check. `model` (optional, added by Batch YY) enables the ENDPAGE *AFPDS heuristic check — callers without a model in scope (some existing tests) simply skip that one check, same "optional context param" convention Batch VV's `validateFieldKeywords(field, record)` established. Returns [] when there's nothing to flag. */
 function validateRecordKeywords(record, model) {
   const warnings = [];
   PSF_ONLY_KEYWORDS.forEach((name) => {
@@ -172,6 +211,7 @@ function validateRecordKeywords(record, model) {
   });
   warnings.push(...validateSkipSpaceKeywords(record.keywords, record, "record"));
   warnings.push(...validateEndpageKeywords(record, model));
+  warnings.push(...validateBarcodeRecordKeywords(record));
   return warnings.concat(validateKeywordIndicators(record.keywords));
 }
 
@@ -321,12 +361,25 @@ function validateFieldKeywords(field, record) {
  *    of the few keywords *not* supported under Host Print Transform — this
  *    is always worth a heads-up when CHRSIZ is present, not conditional on
  *    another keyword.
+ *
+ * `level` (optional, added by Batch CCC — docs/AUDIT-CROSS-LEVEL.md §4) is
+ * "record" or "field"; when "record", also flags CHRID itself as invalid,
+ * since CHRID is a field-level-only keyword per IBM's reference (unlike
+ * FONT/CDEFNT/FNTCHRSET/FONTNAME, which are all valid at both levels).
+ * Omitting `level` (every pre-existing call/test) preserves prior
+ * behavior — this check simply never fires.
  * Returns [] when there's nothing to flag.
  */
-function validateFontKeywords(keywords) {
+function validateFontKeywords(keywords, level) {
   const warnings = [];
   const hasCdefnt = !!findKeyword(keywords, "CDEFNT");
   const hasFntchrset = !!findKeyword(keywords, "FNTCHRSET");
+  if (level === "record" && findKeyword(keywords, "CHRID")) {
+    warnings.push({
+      keyword: "CHRID",
+      message: "CHRID is a field-level-only keyword — it isn't valid DDS at the record level and CRTPRTF will reject it.",
+    });
+  }
   if ((hasCdefnt || hasFntchrset) && findKeyword(keywords, "HIGHLIGHT")) {
     warnings.push({
       keyword: "HIGHLIGHT",
@@ -537,6 +590,9 @@ const mod = {
   collectIndicatorDescriptions,
   // Batch B
   validateFontKeywords,
+  // Batch CCC
+  BARCODE_RECORD_EXCLUSION_KEYWORDS,
+  validateBarcodeRecordKeywords,
   // Batch TT
   NO_INDICATOR_KEYWORDS,
   validateKeywordIndicators,

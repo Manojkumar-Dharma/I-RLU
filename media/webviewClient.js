@@ -243,7 +243,8 @@
         record.keywords,
         (name, params) => vscode.postMessage({ type: "edit", edit: { kind: "setRecordKeyword", recordName: record.name, name, params } }),
         (name) => vscode.postMessage({ type: "edit", edit: { kind: "removeRecordKeyword", recordName: record.name, name } }),
-        record.name + " (record)"
+        record.name + " (record)",
+        "record"
       )
     );
     sideCol.appendChild(renderPageGroupPanel(record, layout));
@@ -1123,16 +1124,25 @@
    * or a field's). `applyFn(name, params)`/`removeFn(name)` post the
    * appropriate edit message — record-level and field-level callers supply
    * different ones, but the panel itself doesn't know or care which.
+   *
+   * `level` ("record" or "field", added by Batch CCC — docs/AUDIT-CROSS-
+   * LEVEL.md §4) drops CHRID from the rendered spec list at the record
+   * level: CHRID is field-level-only per IBM's DDS reference, unlike
+   * FONT/CDEFNT/FNTCHRSET/FONTNAME, which are all valid at both levels.
+   * It's also passed through to validateFontKeywords for a defense-in-
+   * depth warning on any pre-existing hand-typed source that already has
+   * a record-level CHRID (the UI itself can no longer add one).
    */
-  function renderFontSizingPanel(keywords, applyFn, removeFn, titleSuffix) {
+  function renderFontSizingPanel(keywords, applyFn, removeFn, titleSuffix, level) {
     const panel = el("div", { class: "props" });
     panel.appendChild(el("h4", {}, ["Font & sizing" + (titleSuffix ? " — " + titleSuffix : "")]));
 
-    (PrtfEngine.validateFontKeywords(keywords) || []).forEach((w) => {
+    (PrtfEngine.validateFontKeywords(keywords, level) || []).forEach((w) => {
       panel.appendChild(el("div", { class: "hint warning" }, [w.message]));
     });
 
-    FONT_SIZING_SPECS.forEach((spec) => {
+    const specsForLevel = level === "record" ? FONT_SIZING_SPECS.filter((spec) => spec.name !== "CHRID") : FONT_SIZING_SPECS;
+    specsForLevel.forEach((spec) => {
       const existing = PrtfEngine.findKeyword(keywords, spec.name);
       const parsed = parseFontSpecKeyword(spec, existing);
 
@@ -2237,7 +2247,8 @@
           cell.keywords,
           (name, params) => vscode.postMessage({ type: "edit", edit: { kind: "setFieldKeyword", id: cell.id, name, params } }),
           (name) => vscode.postMessage({ type: "edit", edit: { kind: "removeFieldKeyword", id: cell.id, name } }),
-          cell.kind === "field" ? cell.name : "constant"
+          cell.kind === "field" ? cell.name : "constant",
+          "field"
         )
       );
       panel.appendChild(renderBatchAKeywordsSection(cell));

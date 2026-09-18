@@ -217,7 +217,7 @@ test("webview layout (Batch RR): Font & sizing panel inputs auto-commit on chang
   // renderFontSizingPanel must actually pass a submit callback as
   // onChange for every paramRow / heightRow / widthRow it creates via
   // pFieldRow, not just leave the Apply button as the only trigger.
-  const panelMatch = source.match(/function renderFontSizingPanel\(keywords, applyFn, removeFn, titleSuffix\) \{([\s\S]*?)\n    return panel;\n  \}\n/);
+  const panelMatch = source.match(/function renderFontSizingPanel\(keywords, applyFn, removeFn, titleSuffix, level\) \{([\s\S]*?)\n    return panel;\n  \}\n/);
   assert.ok(panelMatch, "renderFontSizingPanel function not found");
   const panelBody = panelMatch![1];
   assert.match(panelBody, /const trySubmit = \(\) => \{/, "renderFontSizingPanel must define a shared trySubmit function reused by both the Apply button and each row's onChange");
