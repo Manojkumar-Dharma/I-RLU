@@ -145,7 +145,7 @@ vice versa.
 | ZZ | Field-level small-fix bundle: `TIMFMT` dropdown, `EDTCDE`/`EDTWRD` vs `DFT`, `MSGCON` exclusion set, `ALIAS` uniqueness | `TIMFMT`, `EDTCDE`, `EDTWRD`, `DFT`, `MSGCON`, `ALIAS` | **Done** | none |
 | AAA | **Bug fix:** `CPI`/`LPI` resolved against a nonexistent file-level keyword; `CPI`'s field-level override has no effect on the rendered preview | `CPI`, `LPI` | **Done** | none |
 | BBB | `NO_INDICATOR_KEYWORDS` missing 15 of 28 documented keywords | `BARCODE`, `BLKFOLD`, `CHRID`, `CHRSIZ`, `CVTDTA`, `DFT`, `DLTEDT`, `EDTCDE`, `EDTWRD`, `FLTFIXDEC`, `FLTPCN`, `LPI`, `TEXT`, `TIME`, `TRNSPY` (validation only) | **Done** | none |
-| CCC | `CHRID` over-exposed at record level (invalid DDS, no warning); `BARCODE`'s two additional record-level exclusions (`BLKFOLD`/`CPI`/`DFNCHR`, and `CHRSIZ`-at-record-level) unvalidated | `CHRID`, `BARCODE` (validation) | Open | none |
+| CCC | `CHRID` over-exposed at record level (invalid DDS, no warning); `BARCODE`'s two additional record-level exclusions (`BLKFOLD`/`CPI`/`DFNCHR`, and `CHRSIZ`-at-record-level) unvalidated | `CHRID`, `BARCODE` (validation) | In progress | none |
 | DDD | Model `TEXT` (record + field, documentation-only comment keyword) | `TEXT` | Open | none |
 | EEE | `PRTQLTY` field-level UI exposure + its unvalidated `CHRSIZ`/`BARCODE` dependency | `PRTQLTY` | Open | none |
 | FFF | `DTASTMCMD` field-level UI exposure (currently record-level only) | `DTASTMCMD` | Open | none |

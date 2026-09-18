@@ -1096,7 +1096,7 @@ editing (**Batch GGG**). None of Batches CCC–GGG are started yet — see
 naming continues as `AAA`, `BBB`, ... since `A`–`Z` and `AA`–`ZZ` are
 both now fully used.
 
-- [ ] **Batch CCC — `CHRID` over-exposure + `BARCODE`'s additional record-level exclusions.**
+- [ ] **Batch CCC — `CHRID` over-exposure + `BARCODE`'s additional record-level exclusions.** [In progress]
 - [ ] **Batch DDD — Model `TEXT` (record-level-or-field-level documentation keyword).**
 - [ ] **Batch EEE — `PRTQLTY` field-level UI exposure + its unvalidated dependency.**
 - [ ] **Batch FFF — `DTASTMCMD` field-level UI exposure.**
