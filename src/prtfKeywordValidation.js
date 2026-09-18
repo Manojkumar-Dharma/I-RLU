@@ -404,11 +404,26 @@ function collectIndicatorDescriptions(model, record) {
 // from being given that treatment. This is one shared table consulted at
 // all three levels (file/record/field), per the audit's own
 // recommendation, rather than a per-batch/per-panel patch.
+// Batch BBB (docs/TASKS.md, docs/AUDIT-CROSS-LEVEL.md §8) — a full-text
+// sweep of every "Option indicators are not valid for this keyword"
+// occurrence in docs/DDS-PRINTER-FILE-REFERENCE.txt, mapped back to its
+// enclosing keyword section, found 28 keywords total. Batch TT's own two
+// source audits only picked up keywords whose intro sentence explicitly
+// says "...field-level keyword..." right next to the indicator note;
+// most of the 15 added below state the restriction in a separate
+// sentence further down their section instead, so that original
+// read-through missed them. `LPI` is the only record-level one among
+// them — the record-level audit didn't check for this pattern at all.
 const NO_INDICATOR_KEYWORDS = [
   // File-level (docs/AUDIT-FILE-LEVEL.md §5)
   "REF", "INDARA", "RELPOS", "INDTXT", "CCSID",
   // Field-level, additional to the above (docs/AUDIT-FIELD-LEVEL.md §4)
   "ALIAS", "REFFLD", "MSGCON", "DATE", "DATFMT", "DATSEP", "TIMFMT", "TIMSEP",
+  // Batch BBB — record-level (LPI) and field-level, found by the full-text
+  // sweep above rather than a per-level read-through.
+  "LPI",
+  "BARCODE", "BLKFOLD", "CHRID", "CHRSIZ", "CVTDTA", "DFT", "DLTEDT",
+  "EDTCDE", "EDTWRD", "FLTFIXDEC", "FLTPCN", "TEXT", "TIME", "TRNSPY",
 ];
 
 /**

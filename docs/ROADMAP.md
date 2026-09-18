@@ -1030,6 +1030,19 @@ series' own history) — every finding from all three audits has now landed.
       `docs/TASKS.md` Batch AAA for the full writeup. Full suite now 679,
       all passing.
 
+- [x] **Batch BBB — `NO_INDICATOR_KEYWORDS` missing 15 of 28 documented
+      keywords.** Found via `docs/AUDIT-CROSS-LEVEL.md` §8: a full-text
+      sweep of every "Option indicators are not valid for this keyword"
+      occurrence in `docs/DDS-PRINTER-FILE-REFERENCE.txt`, mapped back to
+      its enclosing keyword section, found 28 keywords total —
+      `NO_INDICATOR_KEYWORDS` (Batch TT) only had 13. Added the missing
+      15: `BARCODE`, `BLKFOLD`, `CHRID`, `CHRSIZ`, `CVTDTA`, `DFT`,
+      `DLTEDT`, `EDTCDE`, `EDTWRD`, `FLTFIXDEC`, `FLTPCN`, `LPI`, `TEXT`,
+      `TIME`, `TRNSPY` — purely additive, since `validateKeywordIndicators`
+      already scans the array generically at every level it's called
+      from. See `docs/TASKS.md` Batch BBB for the full writeup. New
+      `test/prtfBatchBBB.test.ts`; full suite now 714, all passing.
+
 ## Next up
 
 Batches SS–ZZ were filed from a full three-part audit
@@ -1068,21 +1081,21 @@ actually handles at one. It found: `CPI`/`LPI` resolved against a
 nonexistent file-level DDS keyword, the same command-parameter-vs-keyword
 conflation `PAGSIZE`/`DEVTYPE` were, plus `CPI`'s field-level override
 having zero effect on the rendered preview — investigated and fixed as
-**Batch AAA** (see above). Still open: 15 further keywords missing from
-`NO_INDICATOR_KEYWORDS` beyond Batch TT's original 13 (**Batch BBB**);
-`CHRID` over-exposed at the record level plus two unvalidated `BARCODE`
-record-level exclusions (**Batch CCC**); `TEXT` entirely unmodeled
-(**Batch DDD**); `PRTQLTY` missing field-level UI plus an unvalidated
-dependency (**Batch EEE**); `DTASTMCMD` missing field-level UI (**Batch
-FFF**); and, the largest one, no file-level properties panel existing in
-the webview at all, leaving `REF`/`RELPOS`/`INDARA`/`DFNCHR` and the
-file-level slice of `CCSID`/`FNTCHRSET`/`FONTNAME`/`INDTXT`/`SKIPA`/
-`SKIPB` unexposed for editing (**Batch GGG**). None of Batches BBB–GGG
-are started yet — see `docs/TASKS.md`'s own detail sections for full
-scope per batch. Batch naming continues as `AAA`, `BBB`, ... since `A`–`Z`
-and `AA`–`ZZ` are both now fully used.
+**Batch AAA** (see above). 15 further keywords missing from
+`NO_INDICATOR_KEYWORDS` beyond Batch TT's original 13 were found and fixed
+as **Batch BBB** (see above). Still open: `CHRID` over-exposed at the
+record level plus two unvalidated `BARCODE` record-level exclusions
+(**Batch CCC**); `TEXT` entirely unmodeled (**Batch DDD**); `PRTQLTY`
+missing field-level UI plus an unvalidated dependency (**Batch EEE**);
+`DTASTMCMD` missing field-level UI (**Batch FFF**); and, the largest one,
+no file-level properties panel existing in the webview at all, leaving
+`REF`/`RELPOS`/`INDARA`/`DFNCHR` and the file-level slice of
+`CCSID`/`FNTCHRSET`/`FONTNAME`/`INDTXT`/`SKIPA`/`SKIPB` unexposed for
+editing (**Batch GGG**). None of Batches CCC–GGG are started yet — see
+`docs/TASKS.md`'s own detail sections for full scope per batch. Batch
+naming continues as `AAA`, `BBB`, ... since `A`–`Z` and `AA`–`ZZ` are
+both now fully used.
 
-- [ ] **Batch BBB — `NO_INDICATOR_KEYWORDS` missing 15 of 28 documented keywords.**
 - [ ] **Batch CCC — `CHRID` over-exposure + `BARCODE`'s additional record-level exclusions.**
 - [ ] **Batch DDD — Model `TEXT` (record-level-or-field-level documentation keyword).**
 - [ ] **Batch EEE — `PRTQLTY` field-level UI exposure + its unvalidated dependency.**

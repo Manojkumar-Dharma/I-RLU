@@ -17,6 +17,19 @@ it does not replace those two documents.
 Nothing yet — see `docs/TASKS.md` for what's currently in flight or filed
 for a future batch.
 
+## [0.0.26] - Batch BBB
+
+### Added
+- `NO_INDICATOR_KEYWORDS` (the centralized "option indicators not valid
+  for this keyword" list from Batch TT) expanded from 13 to all 28
+  documented keywords, found via a full-text sweep of
+  `docs/DDS-PRINTER-FILE-REFERENCE.txt`. Newly covered: `BARCODE`,
+  `BLKFOLD`, `CHRID`, `CHRSIZ`, `CVTDTA`, `DFT`, `DLTEDT`, `EDTCDE`,
+  `EDTWRD`, `FLTFIXDEC`, `FLTPCN`, `LPI`, `TEXT`, `TIME`, `TRNSPY`.
+  Purely additive — no new validation logic needed, since
+  `validateKeywordIndicators` already scans this list generically at
+  every level it's called from.
+
 ## [0.0.25] - Batch AAA
 
 ### Fixed
