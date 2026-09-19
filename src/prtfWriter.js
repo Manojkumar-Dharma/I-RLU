@@ -310,12 +310,30 @@ function padTo(str, len) {
  * full mechanism (verbatim reuse of untouched original lines, falling
  * back to packKeywordsPreservingLines only for what actually changed).
  */
-function emitEntryWithConditionedKeywords(positional44, keywords, leadingText, formType, rawLines) {
+/**
+ * Batch III (docs/TASKS.md) — `requiresHeaderLine` (default true; pass
+ * `false` only for `model.fileLevel`) controls whether an empty
+ * `headerKeywords` group still gets its own emitted line. For a record,
+ * field, or constant, the "header" line always carries genuine identity
+ * content of its own (the `R RECNAME` declaration, or the field/constant's
+ * name+length+type+position) via `positional44` regardless of whether any
+ * *unconditioned* keyword lands there, so that line must always be
+ * emitted even with zero header keywords — dropping it would silently
+ * delete the entry's own declaration line. `model.fileLevel` has no such
+ * identity of its own — it's nothing but keywords — so when its entire
+ * keyword list is conditioned (no unconditioned group at all, meaning
+ * `headerKeywords` is empty), forcing a line anyway produced a genuinely
+ * content-free, wasted blank line ahead of the conditioned line that
+ * actually carries every one of the entry's keywords: this is the
+ * `PAGSIZE`/`SKIPA`-reproducible round-trip bug Batch III fixes.
+ */
+function emitEntryWithConditionedKeywords(positional44, keywords, leadingText, formType, rawLines, requiresHeaderLine) {
   const groups = groupKeywordsByConditions(keywords);
   const firstGroup = groups[0];
   const firstIsUnconditioned = !firstGroup || !firstGroup.conditions;
   const headerKeywords = firstIsUnconditioned && firstGroup ? firstGroup.keywords : [];
-  const lines = emitGroupKeywordLines(positional44, headerKeywords, formType, rawLines, leadingText);
+  const needsHeaderLine = requiresHeaderLine !== false || headerKeywords.length > 0;
+  const lines = needsHeaderLine ? emitGroupKeywordLines(positional44, headerKeywords, formType, rawLines, leadingText) : [];
   const restGroups = firstIsUnconditioned ? groups.slice(1) : groups;
   for (const group of restGroups) {
     // Batch AA — an attached conditioned-keyword line is its own separate
@@ -537,7 +555,13 @@ function regenerateSource(model) {
         break;
       case "fileLevel": {
         const positional = buildPositional({ formType: entry.formType });
-        outLines.push(...emitEntryWithConditionedKeywords(positional, entry.keywords, undefined, entry.formType, model.rawLines));
+        // Batch III (docs/TASKS.md) — requiresHeaderLine=false: fileLevel
+        // has no identity content of its own (unlike a record's "R NAME"
+        // or a field's own declaration), so an empty header-keywords group
+        // (every keyword conditioned, none unconditioned) shouldn't force
+        // a wasted blank line — see emitEntryWithConditionedKeywords' own
+        // comment for the full "why".
+        outLines.push(...emitEntryWithConditionedKeywords(positional, entry.keywords, undefined, entry.formType, model.rawLines, false));
         break;
       }
       case "record": {

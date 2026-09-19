@@ -1149,6 +1149,25 @@ series' own history) — every finding from all three audits has now landed.
       `docs/TASKS.md` Batch HHH for the full writeup. New
       `test/prtfBatchHHH.test.ts`; full suite now 780, all passing.
 
+- [x] **Batch III — conditioned file-level keyword loses its leading
+      blank/newline on regenerate.** A pre-existing round-trip bug found
+      while testing Batch HHH: `emitEntryWithConditionedKeywords`
+      (`src/prtfWriter.js`) always emitted a "header" line for an entry's
+      first keyword group even when that group was conditioned (leaving
+      it with zero unconditioned keywords to put there). For a record or
+      field that's harmless — the header line always carries the entry's
+      own identity content regardless. `model.fileLevel` has no identity
+      content of its own, so this produced a genuinely wasted, content-
+      free blank line ahead of the entry's actual conditioned keyword
+      line. Fixed with a new `requiresHeaderLine` parameter (default
+      `true`, so every record/field/constant call site is unaffected;
+      `false` only for `fileLevel`) that skips the header line entirely
+      when there's nothing unconditioned to put on it. Verified the fix
+      doesn't regress the mixed unconditioned+conditioned case (either
+      order) or the ordinary all-unconditioned case. See `docs/TASKS.md`
+      Batch III for the full writeup. New `test/prtfBatchIII.test.ts`;
+      full suite now 787, all passing.
+
 ## Next up
 
 Batches SS–ZZ were filed from a full three-part audit
@@ -1200,15 +1219,12 @@ existing in the webview at all was investigated and fixed as **Batch
 GGG** (see above), except for `INDTXT` at the file level and `DFNCHR`'s
 record-level form, deliberately left for a follow-up. `SKIPA`/`SKIPB`/
 `SPACEA`/`SPACEB` having no properties-panel UI at any level was
-investigated and fixed as **Batch HHH** (see above). Still open: a
-conditioned file-level keyword line loses its leading blank/newline on
-regenerate — a pre-existing round-trip bug, not scoped to any specific
-keyword, found while testing Batch HHH (**Batch III**). Not started yet
-— see `docs/TASKS.md`'s own detail section for full scope. Batch naming
-continues as `AAA`, `BBB`, ... since `A`–`Z` and `AA`–`ZZ` are both now
-fully used.
-
-- [ ] **Batch III — conditioned file-level keyword loses its leading blank/newline on regenerate.** [In progress]
+investigated and fixed as **Batch HHH** (see above). A conditioned
+file-level keyword line losing its leading blank/newline on regenerate —
+a pre-existing round-trip bug found while testing Batch HHH — was fixed
+as **Batch III** (see above). No further open batches remain from this
+audit as of Batch III landing. Batch naming continues as `AAA`, `BBB`,
+... since `A`–`Z` and `AA`–`ZZ` are both now fully used.
 
 As of the RLU screen-capture review (`docs/KEYWORD-INVENTORY.md`), the
 remaining work is re-organized into the parallel-session task batches in
