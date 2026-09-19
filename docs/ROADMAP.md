@@ -1149,7 +1149,7 @@ editing (**Batch GGG**). Neither Batch FFF nor GGG is started yet — see
 naming continues as `AAA`, `BBB`, ... since `A`–`Z` and `AA`–`ZZ` are
 both now fully used.
 
-- [ ] **Batch FFF — `DTASTMCMD` field-level UI exposure.**
+- [ ] **Batch FFF — `DTASTMCMD` field-level UI exposure.** [In progress]
 - [ ] **Batch GGG — Build a file-level properties panel** (larger initiative).
 
 As of the RLU screen-capture review (`docs/KEYWORD-INVENTORY.md`), the

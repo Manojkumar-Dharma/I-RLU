@@ -83,7 +83,7 @@ vice versa.
 | `CHRID` (field-only) is editable at the record level via the shared Font & sizing panel with no warning; `BARCODE`'s `BLKFOLD`/`CPI`/`DFNCHR` and record-level-`CHRSIZ` exclusions are unvalidated. See `docs/AUDIT-CROSS-LEVEL.md` §4/§9 | **Done** | Was Batch **CCC** |
 | `TEXT` (record-level-or-field-level documentation keyword) is entirely unmodeled — no UI, no `NO_INDICATOR_KEYWORDS` entry. See `docs/AUDIT-CROSS-LEVEL.md` §7 | **Done** | Was Batch **DDD** |
 | `PRTQLTY` (record-level-or-field-level) is missing field-level UI exposure; its "only valid alongside `CHRSIZ` or `BARCODE`" dependency is unvalidated. See `docs/AUDIT-CROSS-LEVEL.md` §6 | **Done** | Was Batch **EEE** |
-| `DTASTMCMD` (record-level-or-field-level) is missing field-level UI exposure — currently record-level only in both the panel and the layout summary. See `docs/AUDIT-CROSS-LEVEL.md` §5 | Actionable, previously untracked | New **Batch FFF** (no dependency) |
+| `DTASTMCMD` (record-level-or-field-level) is missing field-level UI exposure — currently record-level only in both the panel and the layout summary. See `docs/AUDIT-CROSS-LEVEL.md` §5 | Actionable, previously untracked | New **Batch FFF** (no dependency) — In progress |
 | No file-level properties panel exists in the webview at all — `REF`, `RELPOS`, `INDARA`, `DFNCHR`, and the file-level slice of `CCSID`/`FNTCHRSET`/`FONTNAME`/`INDTXT`/`SKIPA`/`SKIPB` are all unexposed for editing. Larger initiative than the rest of this list. See `docs/AUDIT-CROSS-LEVEL.md` §2/§3 | Actionable, previously untracked | New **Batch GGG** (no dependency, but larger in scope) |
 
 ## Task board
@@ -148,7 +148,7 @@ vice versa.
 | CCC | `CHRID` over-exposed at record level (invalid DDS, no warning); `BARCODE`'s two additional record-level exclusions (`BLKFOLD`/`CPI`/`DFNCHR`, and `CHRSIZ`-at-record-level) unvalidated | `CHRID`, `BARCODE` (validation) | Done | none |
 | DDD | Model `TEXT` (record + field, documentation-only comment keyword) | `TEXT` | Done | none |
 | EEE | `PRTQLTY` field-level UI exposure + its unvalidated `CHRSIZ`/`BARCODE` dependency | `PRTQLTY` | Done | none |
-| FFF | `DTASTMCMD` field-level UI exposure (currently record-level only) | `DTASTMCMD` | Open | none |
+| FFF | `DTASTMCMD` field-level UI exposure (currently record-level only) | `DTASTMCMD` | In progress | none |
 | GGG | Build a file-level properties panel (larger initiative — none exists today); fold in `CCSID`/`FNTCHRSET`/`FONTNAME`'s missing file-level slice once it exists | `REF`, `RELPOS`, `INDARA`, `DFNCHR`, `CCSID`, `FNTCHRSET`, `FONTNAME`, `INDTXT`, `SKIPA`, `SKIPB` (file-level UI) | Open | none |
 
 
