@@ -85,7 +85,7 @@ vice versa.
 | `PRTQLTY` (record-level-or-field-level) is missing field-level UI exposure; its "only valid alongside `CHRSIZ` or `BARCODE`" dependency is unvalidated. See `docs/AUDIT-CROSS-LEVEL.md` §6 | **Done** | Was Batch **EEE** |
 | `DTASTMCMD` (record-level-or-field-level) is missing field-level UI exposure — currently record-level only in both the panel and the layout summary. See `docs/AUDIT-CROSS-LEVEL.md` §5 | **Done** | Was Batch **FFF** |
 | No file-level properties panel exists in the webview at all — `REF`, `RELPOS`, `INDARA`, `DFNCHR`, and the file-level slice of `CCSID`/`FNTCHRSET`/`FONTNAME`/`INDTXT`/`SKIPA`/`SKIPB` are all unexposed for editing. Larger initiative than the rest of this list. See `docs/AUDIT-CROSS-LEVEL.md` §2/§3 | **Done** (`REF`/`RELPOS`/`INDARA`/`DFNCHR`-at-file-level + the `CCSID`/`FNTCHRSET`/`FONTNAME` file-level slice) | Was Batch **GGG**; `INDTXT` at the file level, `DFNCHR`'s record-level form, and `SKIPA`/`SKIPB`/`SPACEA`/`SPACEB` UI (at *any* level — see new finding below) deliberately left for a follow-up |
-| `SKIPA`/`SKIPB`/`SPACEA`/`SPACEB` have no properties-panel UI at *any* level — record, field, or file — despite already being correctly validated (Batch VV) at every level they're valid at. Round-trip-safe only if hand-typed, with no UI surface to act on a validation warning for any of them. Found while scoping Batch GGG | Actionable, previously untracked | New **Batch HHH** (no dependency) |
+| `SKIPA`/`SKIPB`/`SPACEA`/`SPACEB` have no properties-panel UI at *any* level — record, field, or file — despite already being correctly validated (Batch VV) at every level they're valid at. Round-trip-safe only if hand-typed, with no UI surface to act on a validation warning for any of them. Found while scoping Batch GGG | Actionable, previously untracked | New **Batch HHH** (no dependency) — In progress |
 
 ## Task board
 
@@ -151,7 +151,7 @@ vice versa.
 | EEE | `PRTQLTY` field-level UI exposure + its unvalidated `CHRSIZ`/`BARCODE` dependency | `PRTQLTY` | Done | none |
 | FFF | `DTASTMCMD` field-level UI exposure (currently record-level only) | `DTASTMCMD` | Done | none |
 | GGG | Build a file-level properties panel (larger initiative — none exists today); fold in `CCSID`/`FNTCHRSET`/`FONTNAME`'s missing file-level slice once it exists | `REF`, `RELPOS`, `INDARA`, `DFNCHR`, `CCSID`, `FNTCHRSET`, `FONTNAME` (file-level UI) | Done | none |
-| HHH | `SKIPA`/`SKIPB`/`SPACEA`/`SPACEB` have no properties-panel UI at any level (record, field, or file) | `SKIPA`, `SKIPB`, `SPACEA`, `SPACEB` (UI) | Open | none |
+| HHH | `SKIPA`/`SKIPB`/`SPACEA`/`SPACEB` have no properties-panel UI at any level (record, field, or file) | `SKIPA`, `SKIPB`, `SPACEA`, `SPACEB` (UI) | In progress | none |
 
 
 ## Batch detail

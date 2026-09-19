@@ -1191,7 +1191,7 @@ level at all — record, field, or file — found while scoping Batch GGG
 section for full scope. Batch naming continues as `AAA`, `BBB`, ... since
 `A`–`Z` and `AA`–`ZZ` are both now fully used.
 
-- [ ] **Batch HHH — `SKIPA`/`SKIPB`/`SPACEA`/`SPACEB` UI at every level.**
+- [ ] **Batch HHH — `SKIPA`/`SKIPB`/`SPACEA`/`SPACEB` UI at every level.** [In progress]
 
 As of the RLU screen-capture review (`docs/KEYWORD-INVENTORY.md`), the
 remaining work is re-organized into the parallel-session task batches in
