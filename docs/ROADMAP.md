@@ -1135,6 +1135,20 @@ series' own history) — every finding from all three audits has now landed.
       the full writeup. New `test/prtfBatchGGG.test.ts`; full suite now
       774, all passing.
 
+- [x] **Batch HHH — `SKIPA`/`SKIPB`/`SPACEA`/`SPACEB` UI at every level.**
+      Found while scoping Batch GGG: these four keywords were already
+      correctly validated at every level they're valid at (Batch VV), but
+      had zero properties-panel UI anywhere — record, field, or file.
+      Fixed with plain `"text"` rows added to the three existing keyword
+      arrays for the level(s) each is valid at (`SPACEA`/`SPACEB` have no
+      file-level form, so only `SKIPA`/`SKIPB` were added there); no new
+      validation needed since Batch VV's checks already surface through
+      the panels these rows live in. While testing the file-level
+      round-trip, found an unrelated pre-existing round-trip bug —
+      logged separately as **Batch III** rather than fixed here. See
+      `docs/TASKS.md` Batch HHH for the full writeup. New
+      `test/prtfBatchHHH.test.ts`; full suite now 780, all passing.
+
 ## Next up
 
 Batches SS–ZZ were filed from a full three-part audit
@@ -1184,14 +1198,17 @@ its unvalidated dependency were investigated and fixed as **Batch EEE**
 fixed as **Batch FFF** (see above). No file-level properties panel
 existing in the webview at all was investigated and fixed as **Batch
 GGG** (see above), except for `INDTXT` at the file level and `DFNCHR`'s
-record-level form, deliberately left for a follow-up. Still open:
-`SKIPA`/`SKIPB`/`SPACEA`/`SPACEB` have no properties-panel UI at any
-level at all — record, field, or file — found while scoping Batch GGG
-(**Batch HHH**). Not started yet — see `docs/TASKS.md`'s own detail
-section for full scope. Batch naming continues as `AAA`, `BBB`, ... since
-`A`–`Z` and `AA`–`ZZ` are both now fully used.
+record-level form, deliberately left for a follow-up. `SKIPA`/`SKIPB`/
+`SPACEA`/`SPACEB` having no properties-panel UI at any level was
+investigated and fixed as **Batch HHH** (see above). Still open: a
+conditioned file-level keyword line loses its leading blank/newline on
+regenerate — a pre-existing round-trip bug, not scoped to any specific
+keyword, found while testing Batch HHH (**Batch III**). Not started yet
+— see `docs/TASKS.md`'s own detail section for full scope. Batch naming
+continues as `AAA`, `BBB`, ... since `A`–`Z` and `AA`–`ZZ` are both now
+fully used.
 
-- [ ] **Batch HHH — `SKIPA`/`SKIPB`/`SPACEA`/`SPACEB` UI at every level.** [In progress]
+- [ ] **Batch III — conditioned file-level keyword loses its leading blank/newline on regenerate.**
 
 As of the RLU screen-capture review (`docs/KEYWORD-INVENTORY.md`), the
 remaining work is re-organized into the parallel-session task batches in

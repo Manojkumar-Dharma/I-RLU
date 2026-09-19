@@ -1714,6 +1714,17 @@
     // now also picks this field/constant's own DTASTMCMD up, labeled with
     // this field/constant's name.
     { name: "DTASTMCMD", kind: "quotedText", placeholder: "raw AFP data-stream command text, or &field", hint: "Embeds a raw AFP data-stream structured-field command — an escape hatch, not something this tool interprets." },
+    // Batch HHH (docs/TASKS.md, docs/AUDIT-CROSS-LEVEL.md) — SKIPA/SKIPB/
+    // SPACEA/SPACEB at the field level. Their full constraint set (the
+    // shared BOX/ENDPAGE/GDF/LINE/OVERLAY/PAGSEG/POSITION exclusion, the
+    // positional-line-number restriction, cardinality) is already
+    // validated by validateSkipSpaceKeywords (Batch VV) and surfaces via
+    // this field's cell.fieldWarnings, same as PRTQLTY's own dependency
+    // warning above — not re-checked here, just given a row to act on.
+    { name: "SKIPA", kind: "text", placeholder: "1-255", hint: "Skip to this line number after the field prints. Invalid together with BOX/ENDPAGE/GDF/LINE/OVERLAY/PAGSEG/POSITION on this record, or on a record with a positional line number." },
+    { name: "SKIPB", kind: "text", placeholder: "1-255", hint: "Skip to this line number before the field prints. Invalid together with BOX/ENDPAGE/GDF/LINE/OVERLAY/PAGSEG/POSITION on this record, or on a record with a positional line number." },
+    { name: "SPACEA", kind: "text", placeholder: "0-255", hint: "Space this many lines after the field prints. Invalid together with BOX/ENDPAGE/GDF/LINE/OVERLAY/PAGSEG/POSITION on this record, or on a record with a positional line number." },
+    { name: "SPACEB", kind: "text", placeholder: "0-255", hint: "Space this many lines before the field prints. Invalid together with BOX/ENDPAGE/GDF/LINE/OVERLAY/PAGSEG/POSITION on this record, or on a record with a positional line number." },
   ];
 
   const NAMED_COLORS = [
@@ -2618,6 +2629,20 @@
     { name: "RELPOS", kind: "flag", hint: "Positions +n-placed fields relative to the end of the previous field on the line, instead of the beginning of the line. Only has an effect when this file compiles as *AFPDS." },
     { name: "INDARA", kind: "flag", hint: "Moves option indicators out of the record buffer into a separate 99-byte indicator area." },
     { name: "DFNCHR", kind: "text", placeholder: "X'code-point' X'dot-matrix-pattern' ...", hint: "Defines custom characters for 5224/5225 printers — an escape hatch, not something this tool interprets. SCS printers only." },
+    // Batch HHH (docs/TASKS.md, docs/AUDIT-CROSS-LEVEL.md) — SKIPA/SKIPB's
+    // file-level form (SPACEA/SPACEB have no file-level form at all, per
+    // their own reference sections — only added at the record/field level
+    // above and in BATCH_A_SHARED_KEYWORDS). Fully validated already by
+    // validateFileLevelKeywords (Batch VV — the *AFPDS restriction, the
+    // "requires an option indicator" rule, and the once-per-file
+    // cardinality check), surfacing via this panel's own warnings loop —
+    // not re-checked here, just given a row to act on. This simple row
+    // can't attach an option indicator itself, so setting either through
+    // it will trigger that "requires an option indicator" warning until
+    // one's added by hand — a known limitation shared with every other
+    // keyword in this array that supports conditioning (DFNCHR).
+    { name: "SKIPA", kind: "text", placeholder: "1-255", hint: "Skip to this line number after each record prints. Requires an option indicator at the file level, and isn't allowed for *AFPDS files." },
+    { name: "SKIPB", kind: "text", placeholder: "1-255", hint: "Skip to this line number before each record prints. Requires an option indicator at the file level, and isn't allowed for *AFPDS files." },
   ];
 
   /**
@@ -2700,6 +2725,16 @@
     // record format; has no compile or rendering effect, so it's just a
     // quoted-text row like DTASTMCMD's, not a bespoke shape.
     { name: "TEXT", kind: "quotedText", placeholder: "description (first 50 chars used)", hint: "Text description of this record format, for program documentation only. If longer than 50 characters, only the first 50 are used." },
+    // Batch HHH (docs/TASKS.md, docs/AUDIT-CROSS-LEVEL.md) — SKIPA/SKIPB/
+    // SPACEA/SPACEB at the record level. Same as the field-level rows in
+    // BATCH_A_SHARED_KEYWORDS: fully validated already by
+    // validateSkipSpaceKeywords (Batch VV), surfacing via this "Print/
+    // finishing keywords" panel's own validateRecordKeywords warnings —
+    // not re-checked here, just given a row to act on.
+    { name: "SKIPA", kind: "text", placeholder: "1-255", hint: "Skip to this line number after all of this record's lines print. Invalid together with BOX/ENDPAGE/GDF/LINE/OVERLAY/PAGSEG/POSITION on this record, or on a record with a positional line number." },
+    { name: "SKIPB", kind: "text", placeholder: "1-255", hint: "Skip to this line number before any of this record's lines print. Invalid together with BOX/ENDPAGE/GDF/LINE/OVERLAY/PAGSEG/POSITION on this record, or on a record with a positional line number." },
+    { name: "SPACEA", kind: "text", placeholder: "0-255", hint: "Space this many lines after all of this record's lines print. Invalid together with BOX/ENDPAGE/GDF/LINE/OVERLAY/PAGSEG/POSITION on this record, or on a record with a positional line number." },
+    { name: "SPACEB", kind: "text", placeholder: "0-255", hint: "Space this many lines before any of this record's lines print. Invalid together with BOX/ENDPAGE/GDF/LINE/OVERLAY/PAGSEG/POSITION on this record, or on a record with a positional line number." },
   ];
 
   // Batch E (docs/TASKS.md) — the three simple keywords in this batch's
