@@ -1117,7 +1117,7 @@ editing (**Batch GGG**). None of Batches DDD–GGG are started yet — see
 naming continues as `AAA`, `BBB`, ... since `A`–`Z` and `AA`–`ZZ` are
 both now fully used.
 
-- [ ] **Batch DDD — Model `TEXT` (record-level-or-field-level documentation keyword).**
+- [ ] **Batch DDD — Model `TEXT` (record-level-or-field-level documentation keyword).** [In progress]
 - [ ] **Batch EEE — `PRTQLTY` field-level UI exposure + its unvalidated dependency.**
 - [ ] **Batch FFF — `DTASTMCMD` field-level UI exposure.**
 - [ ] **Batch GGG — Build a file-level properties panel** (larger initiative).
