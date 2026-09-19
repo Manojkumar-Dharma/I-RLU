@@ -233,6 +233,11 @@
     const panel = renderPropsPanel(layout);
     if (panel) sideCol.appendChild(panel);
 
+    // Batch GGG (docs/TASKS.md) — file-level keywords aren't tied to the
+    // selected record/field, so this renders once per render() call,
+    // ahead of the record-scoped panels below.
+    sideCol.appendChild(renderFileLevelPanel(state.model));
+
     const record = state.model.records.find((r) => r.name === state.recordName);
     sideCol.appendChild(renderRecordKeywordsPanel(record));
     sideCol.appendChild(renderGeneralRecordKeywordsPanel(record));
@@ -1125,13 +1130,19 @@
    * appropriate edit message — record-level and field-level callers supply
    * different ones, but the panel itself doesn't know or care which.
    *
-   * `level` ("record" or "field", added by Batch CCC — docs/AUDIT-CROSS-
-   * LEVEL.md §4) drops CHRID from the rendered spec list at the record
-   * level: CHRID is field-level-only per IBM's DDS reference, unlike
-   * FONT/CDEFNT/FNTCHRSET/FONTNAME, which are all valid at both levels.
-   * It's also passed through to validateFontKeywords for a defense-in-
-   * depth warning on any pre-existing hand-typed source that already has
-   * a record-level CHRID (the UI itself can no longer add one).
+   * `level` ("record", "field", or "file" — "file" added by Batch GGG,
+   * docs/AUDIT-CROSS-LEVEL.md §3) drops CHRID from the rendered spec list
+   * at the record level: CHRID is field-level-only per IBM's DDS
+   * reference, unlike FONT/CDEFNT/FNTCHRSET/FONTNAME, which are all valid
+   * at both levels. At the file level, only FNTCHRSET/FONTNAME (of this
+   * function's P-field-shaped specs) and CCSID (below) are genuinely
+   * file-level-valid per the level matrix in docs/AUDIT-CROSS-LEVEL.md —
+   * FONT/CDEFNT/CHRID/CHRSIZ are Record+Field only, so both the spec list
+   * and the separate CHRSIZ block are filtered out entirely at that
+   * level. It's also passed through to validateFontKeywords for a
+   * defense-in-depth warning on any pre-existing hand-typed source that
+   * already has a record-level CHRID (the UI itself can no longer add
+   * one).
    */
   function renderFontSizingPanel(keywords, applyFn, removeFn, titleSuffix, level) {
     const panel = el("div", { class: "props" });
@@ -1141,7 +1152,12 @@
       panel.appendChild(el("div", { class: "hint warning" }, [w.message]));
     });
 
-    const specsForLevel = level === "record" ? FONT_SIZING_SPECS.filter((spec) => spec.name !== "CHRID") : FONT_SIZING_SPECS;
+    const specsForLevel =
+      level === "record"
+        ? FONT_SIZING_SPECS.filter((spec) => spec.name !== "CHRID")
+        : level === "file"
+        ? FONT_SIZING_SPECS.filter((spec) => spec.name === "FNTCHRSET" || spec.name === "FONTNAME")
+        : FONT_SIZING_SPECS;
     specsForLevel.forEach((spec) => {
       const existing = PrtfEngine.findKeyword(keywords, spec.name);
       const parsed = parseFontSpecKeyword(spec, existing);
@@ -1194,44 +1210,49 @@
 
     // CHRSIZ and CCSID: plain numeric, no P-field indirection per
     // KEYWORD-INVENTORY §2/§3 (neither is listed among the P-field-capable
-    // parameters there).
-    const chrsizExisting = PrtfEngine.findKeyword(keywords, "CHRSIZ");
-    const chrsizTokens = chrsizExisting ? PrtfEngine.paramTokens(chrsizExisting) : [];
-    const chrsizCbId = "fk-chrsiz-" + Math.random().toString(36).slice(2, 7);
-    const chrsizCb = el("input", { type: "checkbox", id: chrsizCbId });
-    if (chrsizExisting) chrsizCb.setAttribute("checked", "checked");
-    panel.appendChild(
-      el("label", { class: "ind-label", for: chrsizCbId, title: "Character size multipliers 1.0-20.0. Requires an IPDS printer." }, [
-        chrsizCb,
-        " CHRSIZ",
-      ])
-    );
-    const chrsizBody = el("div", { style: chrsizExisting ? "" : "display:none;" });
-    const widthMultRow = labeledInput("Width multiplier", { type: "number", min: "1", max: "20", step: "0.1", value: chrsizTokens[0] || "1.0" });
-    const heightMultRow = labeledInput("Height multiplier", { type: "number", min: "1", max: "20", step: "0.1", value: chrsizTokens[1] || "1.0" });
-    chrsizBody.appendChild(widthMultRow.row);
-    chrsizBody.appendChild(heightMultRow.row);
-    const chrsizApplyBtn = el("button", { class: "btn", type: "button" }, ["Apply CHRSIZ"]);
-    // Batch RR (docs/TASKS.md) — shared by the Apply button's click AND
-    // both inputs' own "change" (blur) events, same auto-commit-on-edit
-    // convention as the P-field rows above.
-    const chrsizSubmit = () => {
-      const w = widthMultRow.input.value || "1.0";
-      const h = heightMultRow.input.value || "1.0";
-      applyFn("CHRSIZ", "(" + w + " " + h + ")");
-    };
-    chrsizApplyBtn.addEventListener("click", chrsizSubmit);
-    widthMultRow.input.addEventListener("change", chrsizSubmit);
-    heightMultRow.input.addEventListener("change", chrsizSubmit);
-    chrsizBody.appendChild(chrsizApplyBtn);
-    panel.appendChild(chrsizBody);
-    chrsizCb.addEventListener("change", () => {
-      if (chrsizCb.checked) chrsizBody.style.display = "";
-      else {
-        chrsizBody.style.display = "none";
-        removeFn("CHRSIZ");
-      }
-    });
+    // parameters there). CHRSIZ is skipped entirely at the file level
+    // (Batch GGG) — it's Record+Field only per the level matrix in
+    // docs/AUDIT-CROSS-LEVEL.md, unlike CCSID just below, which is
+    // genuinely File+Record+Field.
+    if (level !== "file") {
+      const chrsizExisting = PrtfEngine.findKeyword(keywords, "CHRSIZ");
+      const chrsizTokens = chrsizExisting ? PrtfEngine.paramTokens(chrsizExisting) : [];
+      const chrsizCbId = "fk-chrsiz-" + Math.random().toString(36).slice(2, 7);
+      const chrsizCb = el("input", { type: "checkbox", id: chrsizCbId });
+      if (chrsizExisting) chrsizCb.setAttribute("checked", "checked");
+      panel.appendChild(
+        el("label", { class: "ind-label", for: chrsizCbId, title: "Character size multipliers 1.0-20.0. Requires an IPDS printer." }, [
+          chrsizCb,
+          " CHRSIZ",
+        ])
+      );
+      const chrsizBody = el("div", { style: chrsizExisting ? "" : "display:none;" });
+      const widthMultRow = labeledInput("Width multiplier", { type: "number", min: "1", max: "20", step: "0.1", value: chrsizTokens[0] || "1.0" });
+      const heightMultRow = labeledInput("Height multiplier", { type: "number", min: "1", max: "20", step: "0.1", value: chrsizTokens[1] || "1.0" });
+      chrsizBody.appendChild(widthMultRow.row);
+      chrsizBody.appendChild(heightMultRow.row);
+      const chrsizApplyBtn = el("button", { class: "btn", type: "button" }, ["Apply CHRSIZ"]);
+      // Batch RR (docs/TASKS.md) — shared by the Apply button's click AND
+      // both inputs' own "change" (blur) events, same auto-commit-on-edit
+      // convention as the P-field rows above.
+      const chrsizSubmit = () => {
+        const w = widthMultRow.input.value || "1.0";
+        const h = heightMultRow.input.value || "1.0";
+        applyFn("CHRSIZ", "(" + w + " " + h + ")");
+      };
+      chrsizApplyBtn.addEventListener("click", chrsizSubmit);
+      widthMultRow.input.addEventListener("change", chrsizSubmit);
+      heightMultRow.input.addEventListener("change", chrsizSubmit);
+      chrsizBody.appendChild(chrsizApplyBtn);
+      panel.appendChild(chrsizBody);
+      chrsizCb.addEventListener("change", () => {
+        if (chrsizCb.checked) chrsizBody.style.display = "";
+        else {
+          chrsizBody.style.display = "none";
+          removeFn("CHRSIZ");
+        }
+      });
+    }
 
     const ccsidExisting = PrtfEngine.findKeyword(keywords, "CCSID");
     const ccsidCbId = "fk-ccsid-" + Math.random().toString(36).slice(2, 7);
@@ -2574,6 +2595,66 @@
     { name: "STAPLE", kind: "flag", hint: "Staple finishing. Requires PSF printing — no effect under Host Print Transform." },
     { name: "INVMMAP", kind: "text", placeholder: "medium map name", hint: "Invokes a new medium map." },
   ];
+
+  // Batch GGG (docs/TASKS.md, docs/AUDIT-CROSS-LEVEL.md §2) — the four
+  // file-only-or-file+record keywords that had zero properties-panel UI
+  // anywhere before this batch: REF (file-only), RELPOS (file-only),
+  // INDARA (file-only), DFNCHR (file-or-record — only its file-level form
+  // is handled here; DFNCHR's record-level form, and its own cross-level
+  // DRAWER exclusion, are left for a future batch, same "document the gap
+  // honestly" approach the rest of this project's docs already take).
+  // REF's params are an unquoted object reference (matching "text", not
+  // "quotedText" — same distinction FONT_SIZING_SPECS' own comment draws).
+  // DFNCHR's own hex-pair syntax (X'code-point' X'dot-matrix-pattern',
+  // repeatable up to 50 times) isn't modeled as structured inputs — same
+  // "raw escape hatch" treatment this codebase already gives DTASTMCMD/
+  // STRPAGGRP for keywords whose real shape is too free-form to justify
+  // bespoke fields, using the unquoted "text" kind so the hex literals'
+  // own X'...' quoting round-trips untouched. Like OVERLAY/PAGSEG
+  // elsewhere, a file with more than one DFNCHR only ever exposes the
+  // first through this by-name row.
+  const BATCH_GGG_FILE_KEYWORDS = [
+    { name: "REF", kind: "text", placeholder: "[library/]database-file-name [record-format-name]", hint: "Names a database file (and optionally one of its record formats) to retrieve field descriptions from — see REFFLD on individual fields." },
+    { name: "RELPOS", kind: "flag", hint: "Positions +n-placed fields relative to the end of the previous field on the line, instead of the beginning of the line. Only has an effect when this file compiles as *AFPDS." },
+    { name: "INDARA", kind: "flag", hint: "Moves option indicators out of the record buffer into a separate 99-byte indicator area." },
+    { name: "DFNCHR", kind: "text", placeholder: "X'code-point' X'dot-matrix-pattern' ...", hint: "Defines custom characters for 5224/5225 printers — an escape hatch, not something this tool interprets. SCS printers only." },
+  ];
+
+  /**
+   * Batch GGG (docs/TASKS.md, docs/AUDIT-CROSS-LEVEL.md §2) — the file's
+   * own properties panel: before this batch, `model.fileLevel` was never
+   * referenced anywhere in this file except the one
+   * `validateFileLevelKeywords(state.model)` warnings call, so every
+   * genuinely file-level keyword (REF/RELPOS/INDARA/DFNCHR, plus the
+   * file-level slice of the shared Font & sizing panel — CCSID/FNTCHRSET/
+   * FONTNAME, per the level matrix in docs/AUDIT-CROSS-LEVEL.md) was
+   * round-trip-safe only if hand-typed, with no UI to add, edit, or act
+   * on a validation warning for any of them. Unlike every other panel in
+   * this file, file-level keywords aren't tied to a record/field
+   * selection, so this is rendered once per render() call as its own
+   * persistent section at the top of the side column — the same
+   * "always-visible, independently scrollable stack" every other side-col
+   * panel already uses, rather than a new toolbar toggle that would hide
+   * it behind an extra click for no real benefit.
+   */
+  function renderFileLevelPanel(model) {
+    const panel = el("div", { class: "props" });
+    panel.appendChild(el("h4", {}, ["File-level keywords"]));
+
+    (PrtfEngine.validateFileLevelKeywords(model) || []).forEach((w) => {
+      panel.appendChild(el("div", { class: "hint warning" }, [w.message]));
+    });
+
+    const onSet = (name, params) => vscode.postMessage({ type: "edit", edit: { kind: "setFileLevelKeyword", name, params } });
+    const onRemove = (name) => vscode.postMessage({ type: "edit", edit: { kind: "removeFileLevelKeyword", name } });
+    appendKeywordRows(panel, BATCH_GGG_FILE_KEYWORDS, model.fileLevel.keywords, "flk", onSet, onRemove);
+
+    panel.appendChild(
+      renderFontSizingPanel(model.fileLevel.keywords, onSet, onRemove, "file level", "file")
+    );
+
+    return panel;
+  }
 
   function renderRecordKeywordsPanel(record) {
     const panel = el("div", { class: "props" });

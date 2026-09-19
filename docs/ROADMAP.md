@@ -1110,6 +1110,31 @@ series' own history) — every finding from all three audits has now landed.
       the full writeup. New `test/prtfBatchFFF.test.ts`; full suite now
       762, all passing.
 
+- [x] **Batch GGG — Build a file-level properties panel** (larger
+      initiative). Found via `docs/AUDIT-CROSS-LEVEL.md` §2/§3:
+      `model.fileLevel` was never referenced anywhere in the webview
+      except one validation call — no panel let a person view or edit a
+      file-level keyword at all. Built a persistent side-column panel
+      (`renderFileLevelPanel`) rendered ahead of the record-scoped panels
+      on every `render()` call, since file-level keywords aren't tied to
+      a record/field selection. Delivered: simple rows for `REF`
+      (unquoted object reference), `RELPOS`, `INDARA`, and `DFNCHR` (raw
+      escape-hatch text, same treatment as `DTASTMCMD`/`STRPAGGRP`); the
+      file-level slice of the shared Font & sizing panel (`CCSID`/
+      `FNTCHRSET`/`FONTNAME`, via a new `"file"` level that also
+      suppresses the `CHRSIZ` block, which isn't file-level-valid); and a
+      new `setFileLevelKeyword`/`removeFileLevelKeyword` edit-kind pair
+      handling the two edge cases `model.fileLevel` being a
+      conditionally-present singleton in `model.sequence` requires (the
+      first-ever file-level keyword, and removing the last one).
+      Deliberately left for a follow-up rather than silently folded in:
+      `INDTXT` at the file level, `DFNCHR`'s record-level form, and —
+      found only once actually checked — `SKIPA`/`SKIPB`/`SPACEA`/
+      `SPACEB` having zero UI at *any* level, not just the file level,
+      logged as a new **Batch HHH**. See `docs/TASKS.md` Batch GGG for
+      the full writeup. New `test/prtfBatchGGG.test.ts`; full suite now
+      774, all passing.
+
 ## Next up
 
 Batches SS–ZZ were filed from a full three-part audit
@@ -1156,15 +1181,17 @@ and fixed as **Batch CCC** (see above). `TEXT` entirely unmodeled was
 fixed as **Batch DDD** (see above). `PRTQLTY` missing field-level UI plus
 its unvalidated dependency were investigated and fixed as **Batch EEE**
 (see above). `DTASTMCMD` missing field-level UI was investigated and
-fixed as **Batch FFF** (see above). Still open, the largest one: no
-file-level properties panel existing in the webview at all, leaving
-`REF`/`RELPOS`/`INDARA`/`DFNCHR` and the file-level slice of
-`CCSID`/`FNTCHRSET`/`FONTNAME`/`INDTXT`/`SKIPA`/`SKIPB` unexposed for
-editing (**Batch GGG**). Not started yet — see `docs/TASKS.md`'s own
-detail section for full scope. Batch naming continues as `AAA`, `BBB`,
-... since `A`–`Z` and `AA`–`ZZ` are both now fully used.
+fixed as **Batch FFF** (see above). No file-level properties panel
+existing in the webview at all was investigated and fixed as **Batch
+GGG** (see above), except for `INDTXT` at the file level and `DFNCHR`'s
+record-level form, deliberately left for a follow-up. Still open:
+`SKIPA`/`SKIPB`/`SPACEA`/`SPACEB` have no properties-panel UI at any
+level at all — record, field, or file — found while scoping Batch GGG
+(**Batch HHH**). Not started yet — see `docs/TASKS.md`'s own detail
+section for full scope. Batch naming continues as `AAA`, `BBB`, ... since
+`A`–`Z` and `AA`–`ZZ` are both now fully used.
 
-- [ ] **Batch GGG — Build a file-level properties panel** (larger initiative).
+- [ ] **Batch HHH — `SKIPA`/`SKIPB`/`SPACEA`/`SPACEB` UI at every level.**
 
 As of the RLU screen-capture review (`docs/KEYWORD-INVENTORY.md`), the
 remaining work is re-organized into the parallel-session task batches in

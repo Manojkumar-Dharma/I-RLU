@@ -349,6 +349,58 @@ export function applyEditToModel(model: ParsedSource, edit: WebviewEdit): boolea
       if (idx !== -1) record.keywords.splice(idx, 1);
       return true;
     }
+    case "setFileLevelKeyword": {
+      // Batch GGG (docs/TASKS.md, docs/AUDIT-CROSS-LEVEL.md §2) —
+      // file-level analog of setRecordKeyword, targeting
+      // model.fileLevel.keywords. Same non-repeating "replace whichever's
+      // already there" shape — none of this batch's file-level rows
+      // repeat in practice (DFNCHR CAN legitimately repeat per its own
+      // reference section, but — same known limitation OVERLAY/PAGSEG
+      // already have, see resolveResourcePlaceholders' own comment in
+      // prtfLayout.js — the properties panel only edits by keyword name,
+      // so only the first instance is ever reachable here).
+      //
+      // model.fileLevel is a single shared object (see prtfParser.ts)
+      // that's only pushed into model.sequence the first time a
+      // file-level keyword line is actually parsed — a file with NO
+      // file-level keywords at all never puts it there. Setting the
+      // FIRST file-level keyword on such a file therefore also needs to
+      // splice model.fileLevel into model.sequence, right before the
+      // first record (file-level keywords must precede every record
+      // format in real DDS) — falling back to the end of the sequence in
+      // the should-never-happen case of no record entry to anchor on yet
+      // (render() itself requires at least one record before this panel
+      // is ever reachable).
+      const raw = edit.params ? edit.name + edit.params : edit.name;
+      const existingIndex = model.fileLevel.keywords.findIndex((k) => k.name === edit.name);
+      const newKeyword = { name: edit.name, params: edit.params || "", raw, sourceLineIndex: -1 };
+      if (existingIndex !== -1) model.fileLevel.keywords[existingIndex] = newKeyword;
+      else model.fileLevel.keywords.push(newKeyword);
+      if (model.sequence.indexOf(model.fileLevel) === -1) {
+        const firstRecordSeqIndex = model.sequence.findIndex((e) => e.kind === "record");
+        model.sequence.splice(firstRecordSeqIndex === -1 ? model.sequence.length : firstRecordSeqIndex, 0, model.fileLevel);
+      }
+      return true;
+    }
+    case "removeFileLevelKeyword": {
+      const idx = model.fileLevel.keywords.findIndex((k) => k.name === edit.name);
+      if (idx === -1) return false;
+      model.fileLevel.keywords.splice(idx, 1);
+      // Removing the last file-level keyword would otherwise leave
+      // model.fileLevel in model.sequence with an empty keywords array,
+      // which regenerateSource would still emit as one bare,
+      // content-free positional line (see emitGroupKeywordLines' own
+      // "physicalLines.length === 0 -> push one empty-tokens line"
+      // fallback) — a stray junk line with no purpose. Take it out of
+      // the sequence entirely in that case, so "no file-level keywords
+      // left" round-trips the same as "never had any" for a freshly
+      // emptied file.
+      if (model.fileLevel.keywords.length === 0) {
+        const seqIndex = model.sequence.indexOf(model.fileLevel);
+        if (seqIndex !== -1) model.sequence.splice(seqIndex, 1);
+      }
+      return true;
+    }
     case "setFieldKeyword": {
       // Shared by Batch G (ALIAS, BLKFOLD, CVTDTA, DLTEDT, FLTFIXDEC,
       // FLTPCN, TRNSPY, TXTRTT) and Batch B (FONT, CDEFNT, FNTCHRSET,

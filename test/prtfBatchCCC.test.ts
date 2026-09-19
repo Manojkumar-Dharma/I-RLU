@@ -74,7 +74,7 @@ test("webview: renderFontSizingPanel takes a level parameter and drops CHRID fro
   assert.match(source, /function renderFontSizingPanel\(keywords, applyFn, removeFn, titleSuffix, level\)/);
   assert.match(
     source,
-    /const specsForLevel = level === "record" \? FONT_SIZING_SPECS\.filter\(\(spec\) => spec\.name !== "CHRID"\) : FONT_SIZING_SPECS;/
+    /const specsForLevel =\s*\n\s*level === "record"\s*\n\s*\? FONT_SIZING_SPECS\.filter\(\(spec\) => spec\.name !== "CHRID"\)\s*\n\s*: level === "file"\s*\n\s*\? FONT_SIZING_SPECS\.filter\(\(spec\) => spec\.name === "FNTCHRSET" \|\| spec\.name === "FONTNAME"\)\s*\n\s*: FONT_SIZING_SPECS;/
   );
 });
 

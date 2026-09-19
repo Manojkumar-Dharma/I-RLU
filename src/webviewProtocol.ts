@@ -34,6 +34,16 @@ export type WebviewEdit =
   | { kind: "delete"; id: string }
   | { kind: "setRecordKeyword"; recordName: string; name: string; params?: string }
   | { kind: "removeRecordKeyword"; recordName: string; name: string }
+  // Batch GGG (docs/TASKS.md, docs/AUDIT-CROSS-LEVEL.md §2) — file-level
+  // analog of setRecordKeyword/removeRecordKeyword, for the new file-level
+  // properties panel (media/webviewClient.js's renderFileLevelPanel).
+  // Targets model.fileLevel.keywords instead of a specific record's — see
+  // prtfEdits.ts's own cases for the "first file-level keyword ever" and
+  // "last file-level keyword removed" edge cases that model.fileLevel
+  // being a single object only conditionally present in model.sequence
+  // (see prtfParser.ts) requires handling.
+  | { kind: "setFileLevelKeyword"; name: string; params?: string }
+  | { kind: "removeFileLevelKeyword"; name: string }
   | { kind: "setFieldKeyword"; id: string; name: string; params?: string }
   | { kind: "removeFieldKeyword"; id: string; name: string }
   // Batch HH — design-time-only per-field sample value (real RLU's SD
