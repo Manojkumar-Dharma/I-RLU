@@ -1131,7 +1131,7 @@ editing (**Batch GGG**). None of Batches EEE–GGG are started yet — see
 naming continues as `AAA`, `BBB`, ... since `A`–`Z` and `AA`–`ZZ` are
 both now fully used.
 
-- [ ] **Batch EEE — `PRTQLTY` field-level UI exposure + its unvalidated dependency.**
+- [ ] **Batch EEE — `PRTQLTY` field-level UI exposure + its unvalidated dependency.** [In progress]
 - [ ] **Batch FFF — `DTASTMCMD` field-level UI exposure.**
 - [ ] **Batch GGG — Build a file-level properties panel** (larger initiative).
 
