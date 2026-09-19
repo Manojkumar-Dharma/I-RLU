@@ -198,7 +198,25 @@ function validateBarcodeRecordKeywords(record) {
   return warnings;
 }
 
-/** Validation hints for a single record's keywords — the ZFOLD/STAPLE/GDF PSF-only notice (Batch F/WW), the Batch VV SKIPA/SKIPB/SPACEA/SPACEB constraints, the Batch YY ENDPAGE constraints, the Batch CCC BARCODE record-level exclusions, plus the Batch TT "no indicators allowed" check. `model` (optional, added by Batch YY) enables the ENDPAGE *AFPDS heuristic check — callers without a model in scope (some existing tests) simply skip that one check, same "optional context param" convention Batch VV's `validateFieldKeywords(field, record)` established. Returns [] when there's nothing to flag. */
+// --- Batch EEE: PRTQLTY's CHRSIZ/BARCODE dependency
+// (docs/AUDIT-CROSS-LEVEL.md §6) ----------------------------------------
+//
+// Per IBM's reference: "The PRTQLTY keyword is allowed only on records or
+// fields for which a CHRSIZ or BARCODE keyword applies." CHRSIZ has both
+// a record-level form (which "applies to all fields in that record" per
+// its own reference section) and a field-level form; BARCODE has no
+// record-level form at all, so a record-level PRTQLTY can only lean on a
+// BARCODE that's actually coded on one of the record's own fields — this
+// is exactly what IBM's own worked example for PRTQLTY shows (a field
+// with BARCODE, followed by a bare record-level PRTQLTY).
+
+/** true if `record` has something that lets a record-level PRTQLTY apply: its own CHRSIZ, or BARCODE on at least one of its fields (see the Batch EEE comment above). */
+function recordHasPrtqltyBasis(record) {
+  if (findKeyword(record.keywords, "CHRSIZ")) return true;
+  return (record.fields || []).some((f) => findKeyword(f.keywords, "BARCODE"));
+}
+
+/** Validation hints for a single record's keywords — the ZFOLD/STAPLE/GDF PSF-only notice (Batch F/WW), the Batch VV SKIPA/SKIPB/SPACEA/SPACEB constraints, the Batch YY ENDPAGE constraints, the Batch CCC BARCODE record-level exclusions, the Batch EEE PRTQLTY dependency, plus the Batch TT "no indicators allowed" check. `model` (optional, added by Batch YY) enables the ENDPAGE *AFPDS heuristic check — callers without a model in scope (some existing tests) simply skip that one check, same "optional context param" convention Batch VV's `validateFieldKeywords(field, record)` established. Returns [] when there's nothing to flag. */
 function validateRecordKeywords(record, model) {
   const warnings = [];
   PSF_ONLY_KEYWORDS.forEach((name) => {
@@ -212,6 +230,12 @@ function validateRecordKeywords(record, model) {
   warnings.push(...validateSkipSpaceKeywords(record.keywords, record, "record"));
   warnings.push(...validateEndpageKeywords(record, model));
   warnings.push(...validateBarcodeRecordKeywords(record));
+  if (findKeyword(record.keywords, "PRTQLTY") && !recordHasPrtqltyBasis(record)) {
+    warnings.push({
+      keyword: "PRTQLTY",
+      message: "PRTQLTY is only allowed on a record format that also has CHRSIZ at the record level, or BARCODE on at least one of its fields.",
+    });
+  }
   return warnings.concat(validateKeywordIndicators(record.keywords));
 }
 
@@ -337,6 +361,24 @@ function validateFieldKeywords(field, record) {
       message:
         "MSGCON cannot be specified together with DATE, DFT, EDTCDE, EDTWRD, or TIME on the same field — with DFT specifically, the two are documented as functionally equivalent and the file isn't created at all if both are coded.",
     });
+  }
+  // Batch EEE (docs/TASKS.md, docs/AUDIT-CROSS-LEVEL.md §6) — same
+  // CHRSIZ/BARCODE dependency as recordHasPrtqltyBasis above, but scoped
+  // to this one field: its own CHRSIZ or BARCODE satisfies it directly;
+  // failing that, a record-level CHRSIZ still satisfies it, since CHRSIZ
+  // at the record level "applies to all fields in that record" per its
+  // own reference section. A field-level BARCODE elsewhere in the same
+  // record does NOT satisfy it — BARCODE has no record-level form, so it
+  // only ever "applies" to the one field it's actually coded on.
+  if (findKeyword(field.keywords, "PRTQLTY")) {
+    const hasFieldBasis = !!findKeyword(field.keywords, "CHRSIZ") || !!findKeyword(field.keywords, "BARCODE");
+    const hasRecordChrsiz = !!(record && findKeyword(record.keywords, "CHRSIZ"));
+    if (!hasFieldBasis && !hasRecordChrsiz) {
+      warnings.push({
+        keyword: "PRTQLTY",
+        message: "PRTQLTY is only allowed on a field that has its own CHRSIZ or BARCODE keyword, or that belongs to a record with CHRSIZ at the record level.",
+      });
+    }
   }
   if (record) {
     warnings.push(
@@ -593,6 +635,8 @@ const mod = {
   // Batch CCC
   BARCODE_RECORD_EXCLUSION_KEYWORDS,
   validateBarcodeRecordKeywords,
+  // Batch EEE
+  recordHasPrtqltyBasis,
   // Batch TT
   NO_INDICATOR_KEYWORDS,
   validateKeywordIndicators,

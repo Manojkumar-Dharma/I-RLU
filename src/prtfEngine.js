@@ -66,6 +66,8 @@ const mod = {
   // Batch CCC
   BARCODE_RECORD_EXCLUSION_KEYWORDS: KeywordValidation.BARCODE_RECORD_EXCLUSION_KEYWORDS,
   validateBarcodeRecordKeywords: KeywordValidation.validateBarcodeRecordKeywords,
+  // Batch EEE
+  recordHasPrtqltyBasis: KeywordValidation.recordHasPrtqltyBasis,
   // Batch B — shared parsing helpers, reused by the webview's font/sizing
   // properties-panel UI so P-field (&NAME) detection and the FONT
   // nested-*POINTSIZE grammar aren't duplicated between engine and UI code.

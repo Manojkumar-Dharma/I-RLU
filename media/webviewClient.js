@@ -1673,6 +1673,14 @@
   const BATCH_A_SHARED_KEYWORDS = [
     { name: "HIGHLIGHT", kind: "flag", hint: "Highlighted printing. Ignored if CDEFNT or FNTCHRSET is also coded here." },
     { name: "UNDERLINE", kind: "flag", hint: "Underlined printing. May not print correctly on *AFPDS output distributed to System z." },
+    // Batch EEE (docs/TASKS.md) — field-level PRTQLTY, same select shape
+    // as the record-level row in BATCH_A_RECORD_KEYWORDS. Its CHRSIZ/
+    // BARCODE dependency (validateFieldKeywords, src/prtfKeywordValidation.js)
+    // surfaces via cell.fieldWarnings, shown earlier in the same panel by
+    // renderFieldKeywordsSection's "Data/edit keywords" section — not
+    // re-shown here, same as HIGHLIGHT's own CDEFNT/FNTCHRSET conflict
+    // note just above.
+    { name: "PRTQLTY", kind: "select", options: ["*STD", "*DRAFT", "*NLQ", "*FASTDRAFT"], hint: "Print quality: Standard / Draft / Near letter / Fast draft. Only allowed on a field/constant that also has CHRSIZ or BARCODE (its own, or record-level CHRSIZ)." },
     // Batch DDD (docs/TASKS.md) — documentation-only comment for this
     // field/constant; valid on either, has no compile or rendering
     // effect, so it's just a quoted-text row like DTASTMCMD's.
@@ -2595,7 +2603,7 @@
   // validateFontKeywords() — see renderFontSizingPanel, no separate check
   // needed in this panel.
   const BATCH_A_RECORD_KEYWORDS = [
-    { name: "PRTQLTY", kind: "select", options: ["*STD", "*DRAFT", "*NLQ", "*FASTDRAFT"], hint: "Print quality: Standard / Draft / Near letter / Fast draft." },
+    { name: "PRTQLTY", kind: "select", options: ["*STD", "*DRAFT", "*NLQ", "*FASTDRAFT"], hint: "Print quality: Standard / Draft / Near letter / Fast draft. Only allowed on a record format that also has CHRSIZ, or BARCODE on at least one field — see the Print/finishing keywords panel for a warning if that's missing." },
     { name: "DRAWER", kind: "select", options: ["1", "2", "3", "4"], hint: "Forms drawer to select from — which physical drawer each number maps to is printer-specific." },
     { name: "PAGRTT", kind: "select", options: ["0", "90", "180", "270"], hint: "Degrees of page rotation." },
     { name: "HIGHLIGHT", kind: "flag", hint: "Highlighted printing. Ignored if CDEFNT or FNTCHRSET is also coded on this record." },

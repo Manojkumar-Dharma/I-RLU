@@ -1077,6 +1077,23 @@ series' own history) — every finding from all three audits has now landed.
       full writeup. New `test/prtfBatchDDD.test.ts`; full suite now 738,
       all passing.
 
+- [x] **Batch EEE — `PRTQLTY` field-level UI exposure + its unvalidated
+      dependency.** Found via `docs/AUDIT-CROSS-LEVEL.md` §6: `PRTQLTY`
+      is record-level-or-field-level per the reference, but was only
+      wired into the record-level panel, and its "only allowed on
+      records or fields for which a CHRSIZ or BARCODE keyword applies"
+      dependency was unvalidated anywhere. Fixed by adding a matching
+      `select` row to `BATCH_A_SHARED_KEYWORDS` for field/constant level,
+      plus two dependency checks — since CHRSIZ has a record-level form
+      that applies to every field in the record but BARCODE has no
+      record-level form at all: a new `recordHasPrtqltyBasis(record)`
+      (record's own CHRSIZ, or BARCODE on any of its fields) wired into
+      `validateRecordKeywords`, and a field-scoped check directly in
+      `validateFieldKeywords` (the field's own CHRSIZ/BARCODE, or the
+      owning record's CHRSIZ — but never a *different* field's BARCODE).
+      See `docs/TASKS.md` Batch EEE for the full writeup. New
+      `test/prtfBatchEEE.test.ts`; full suite now 754, all passing.
+
 ## Next up
 
 Batches SS–ZZ were filed from a full three-part audit
@@ -1120,18 +1137,18 @@ having zero effect on the rendered preview — investigated and fixed as
 as **Batch BBB** (see above). `CHRID` over-exposed at the record level
 plus two unvalidated `BARCODE` record-level exclusions were investigated
 and fixed as **Batch CCC** (see above). `TEXT` entirely unmodeled was
-fixed as **Batch DDD** (see above). Still open: `PRTQLTY` missing
-field-level UI plus an unvalidated dependency (**Batch EEE**);
-`DTASTMCMD` missing field-level UI (**Batch FFF**); and, the largest one,
-no file-level properties panel existing in the webview at all, leaving
-`REF`/`RELPOS`/`INDARA`/`DFNCHR` and the file-level slice of
+fixed as **Batch DDD** (see above). `PRTQLTY` missing field-level UI plus
+its unvalidated dependency were investigated and fixed as **Batch EEE**
+(see above). Still open: `DTASTMCMD` missing field-level UI (**Batch
+FFF**); and, the largest one, no file-level properties panel existing in
+the webview at all, leaving `REF`/`RELPOS`/`INDARA`/`DFNCHR` and the
+file-level slice of
 `CCSID`/`FNTCHRSET`/`FONTNAME`/`INDTXT`/`SKIPA`/`SKIPB` unexposed for
-editing (**Batch GGG**). None of Batches EEE–GGG are started yet — see
+editing (**Batch GGG**). Neither Batch FFF nor GGG is started yet — see
 `docs/TASKS.md`'s own detail sections for full scope per batch. Batch
 naming continues as `AAA`, `BBB`, ... since `A`–`Z` and `AA`–`ZZ` are
 both now fully used.
 
-- [ ] **Batch EEE — `PRTQLTY` field-level UI exposure + its unvalidated dependency.** [In progress]
 - [ ] **Batch FFF — `DTASTMCMD` field-level UI exposure.**
 - [ ] **Batch GGG — Build a file-level properties panel** (larger initiative).
 
