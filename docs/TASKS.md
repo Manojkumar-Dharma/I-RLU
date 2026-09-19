@@ -153,7 +153,7 @@ vice versa.
 | FFF | `DTASTMCMD` field-level UI exposure (currently record-level only) | `DTASTMCMD` | Done | none |
 | GGG | Build a file-level properties panel (larger initiative — none exists today); fold in `CCSID`/`FNTCHRSET`/`FONTNAME`'s missing file-level slice once it exists | `REF`, `RELPOS`, `INDARA`, `DFNCHR`, `CCSID`, `FNTCHRSET`, `FONTNAME` (file-level UI) | Done | none |
 | HHH | `SKIPA`/`SKIPB`/`SPACEA`/`SPACEB` have no properties-panel UI at any level (record, field, or file) | `SKIPA`, `SKIPB`, `SPACEA`, `SPACEB` (UI) | Done | none |
-| III | A conditioned file-level keyword line loses its leading blank/newline on regenerate (round-trip bug, not scoped to any specific keyword) | writer (`prtfWriter.js`)/parser round-trip fidelity | Open | none |
+| III | A conditioned file-level keyword line loses its leading blank/newline on regenerate (round-trip bug, not scoped to any specific keyword) | writer (`prtfWriter.js`)/parser round-trip fidelity | In progress | none |
 
 
 ## Batch detail

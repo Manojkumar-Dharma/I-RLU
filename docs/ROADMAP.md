@@ -1208,7 +1208,7 @@ keyword, found while testing Batch HHH (**Batch III**). Not started yet
 continues as `AAA`, `BBB`, ... since `A`–`Z` and `AA`–`ZZ` are both now
 fully used.
 
-- [ ] **Batch III — conditioned file-level keyword loses its leading blank/newline on regenerate.**
+- [ ] **Batch III — conditioned file-level keyword loses its leading blank/newline on regenerate.** [In progress]
 
 As of the RLU screen-capture review (`docs/KEYWORD-INVENTORY.md`), the
 remaining work is re-organized into the parallel-session task batches in
