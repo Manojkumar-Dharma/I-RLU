@@ -1063,6 +1063,20 @@ series' own history) — every finding from all three audits has now landed.
       writeup. New `test/prtfBatchCCC.test.ts`; full suite now 731, all
       passing.
 
+- [x] **Batch DDD — Model `TEXT` (record-level-or-field-level
+      documentation keyword).** Found via `docs/AUDIT-CROSS-LEVEL.md` §7:
+      `TEXT('description')` is a program-documentation comment valid at
+      record and field level (first 50 characters used if longer),
+      already added to `NO_INDICATOR_KEYWORDS` by Batch BBB and already
+      round-tripping generically via the parser/writer, but with zero
+      properties-panel exposure at either level. Fixed by adding a plain
+      `quotedText` row (same shape `DTASTMCMD`'s already uses) to
+      `BATCH_A_RECORD_KEYWORDS` (record level) and
+      `BATCH_A_SHARED_KEYWORDS` (field/constant level), each hinting at
+      the 50-character truncation. See `docs/TASKS.md` Batch DDD for the
+      full writeup. New `test/prtfBatchDDD.test.ts`; full suite now 738,
+      all passing.
+
 ## Next up
 
 Batches SS–ZZ were filed from a full three-part audit
@@ -1105,19 +1119,18 @@ having zero effect on the rendered preview — investigated and fixed as
 `NO_INDICATOR_KEYWORDS` beyond Batch TT's original 13 were found and fixed
 as **Batch BBB** (see above). `CHRID` over-exposed at the record level
 plus two unvalidated `BARCODE` record-level exclusions were investigated
-and fixed as **Batch CCC** (see above). Still open: `TEXT` entirely
-unmodeled (**Batch DDD**); `PRTQLTY` missing field-level UI plus an
-unvalidated dependency (**Batch EEE**); `DTASTMCMD` missing field-level UI
-(**Batch FFF**); and, the largest one, no file-level properties panel
-existing in the webview at all, leaving `REF`/`RELPOS`/`INDARA`/`DFNCHR`
-and the file-level slice of
+and fixed as **Batch CCC** (see above). `TEXT` entirely unmodeled was
+fixed as **Batch DDD** (see above). Still open: `PRTQLTY` missing
+field-level UI plus an unvalidated dependency (**Batch EEE**);
+`DTASTMCMD` missing field-level UI (**Batch FFF**); and, the largest one,
+no file-level properties panel existing in the webview at all, leaving
+`REF`/`RELPOS`/`INDARA`/`DFNCHR` and the file-level slice of
 `CCSID`/`FNTCHRSET`/`FONTNAME`/`INDTXT`/`SKIPA`/`SKIPB` unexposed for
-editing (**Batch GGG**). None of Batches DDD–GGG are started yet — see
+editing (**Batch GGG**). None of Batches EEE–GGG are started yet — see
 `docs/TASKS.md`'s own detail sections for full scope per batch. Batch
 naming continues as `AAA`, `BBB`, ... since `A`–`Z` and `AA`–`ZZ` are
 both now fully used.
 
-- [ ] **Batch DDD — Model `TEXT` (record-level-or-field-level documentation keyword).** [In progress]
 - [ ] **Batch EEE — `PRTQLTY` field-level UI exposure + its unvalidated dependency.**
 - [ ] **Batch FFF — `DTASTMCMD` field-level UI exposure.**
 - [ ] **Batch GGG — Build a file-level properties panel** (larger initiative).

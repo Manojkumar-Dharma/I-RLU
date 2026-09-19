@@ -1673,6 +1673,10 @@
   const BATCH_A_SHARED_KEYWORDS = [
     { name: "HIGHLIGHT", kind: "flag", hint: "Highlighted printing. Ignored if CDEFNT or FNTCHRSET is also coded here." },
     { name: "UNDERLINE", kind: "flag", hint: "Underlined printing. May not print correctly on *AFPDS output distributed to System z." },
+    // Batch DDD (docs/TASKS.md) — documentation-only comment for this
+    // field/constant; valid on either, has no compile or rendering
+    // effect, so it's just a quoted-text row like DTASTMCMD's.
+    { name: "TEXT", kind: "quotedText", placeholder: "description (first 50 chars used)", hint: "Text description of this field, for program documentation only. If longer than 50 characters, only the first 50 are used." },
   ];
 
   const NAMED_COLORS = [
@@ -2595,6 +2599,10 @@
     { name: "DRAWER", kind: "select", options: ["1", "2", "3", "4"], hint: "Forms drawer to select from — which physical drawer each number maps to is printer-specific." },
     { name: "PAGRTT", kind: "select", options: ["0", "90", "180", "270"], hint: "Degrees of page rotation." },
     { name: "HIGHLIGHT", kind: "flag", hint: "Highlighted printing. Ignored if CDEFNT or FNTCHRSET is also coded on this record." },
+    // Batch DDD (docs/TASKS.md) — documentation-only comment for the
+    // record format; has no compile or rendering effect, so it's just a
+    // quoted-text row like DTASTMCMD's, not a bespoke shape.
+    { name: "TEXT", kind: "quotedText", placeholder: "description (first 50 chars used)", hint: "Text description of this record format, for program documentation only. If longer than 50 characters, only the first 50 are used." },
   ];
 
   // Batch E (docs/TASKS.md) — the three simple keywords in this batch's
