@@ -1685,6 +1685,14 @@
     // field/constant; valid on either, has no compile or rendering
     // effect, so it's just a quoted-text row like DTASTMCMD's.
     { name: "TEXT", kind: "quotedText", placeholder: "description (first 50 chars used)", hint: "Text description of this field, for program documentation only. If longer than 50 characters, only the first 50 are used." },
+    // Batch FFF (docs/TASKS.md) — DTASTMCMD is record-level-or-field-level
+    // per IBM's reference; only its record-level row (BATCH_E_SIMPLE_KEYWORDS)
+    // existed before this batch. Same quotedText shape and hint as that
+    // row. The "AFP page-group / resource keywords" record panel's own
+    // read-only badge summary (collectPageGroupMetadata, src/prtfLayout.js)
+    // now also picks this field/constant's own DTASTMCMD up, labeled with
+    // this field/constant's name.
+    { name: "DTASTMCMD", kind: "quotedText", placeholder: "raw AFP data-stream command text, or &field", hint: "Embeds a raw AFP data-stream structured-field command — an escape hatch, not something this tool interprets." },
   ];
 
   const NAMED_COLORS = [

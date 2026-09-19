@@ -501,7 +501,9 @@ function resolveResourcePlaceholders(record, cpi, lpi, uom, indicatorState) {
  * DOCIDXTAG/DTASTMCMD occurrence on this record, for a non-positioned
  * "page-group / resource keywords" panel (these four don't place anything
  * on the printed page, so unlike resolveResourcePlaceholders above they
- * don't get row/col geometry).
+ * don't get row/col geometry). Batch FFF extends this to also pick up
+ * DTASTMCMD on the record's own fields/constants, since — unlike the
+ * other three — it's genuinely valid at the field level too.
  */
 function collectPageGroupMetadata(record, indicatorState) {
   const items = [];
@@ -519,6 +521,23 @@ function collectPageGroupMetadata(record, indicatorState) {
   findAllActiveKeywords(record.keywords, "DTASTMCMD", indicatorState).forEach((kw) => {
     const inner = String(kw.params || "").replace(/^\(/, "").replace(/\)$/, "").trim();
     items.push({ keyword: "DTASTMCMD", summary: inner ? "Data stream command: " + inner : "Data stream command" });
+  });
+  // Batch FFF (docs/TASKS.md, docs/AUDIT-CROSS-LEVEL.md §5) — unlike
+  // STRPAGGRP/ENDPAGGRP/DOCIDXTAG above, DTASTMCMD is genuinely valid at
+  // the field level too per its own reference section — this used to
+  // only ever read record.keywords, so a field/constant's own DTASTMCMD
+  // never showed up in this summary at all. Labeled with the owning
+  // field/constant's name so it's distinguishable from a record-level
+  // DTASTMCMD (and from another field's).
+  (record.fields || []).forEach((entry) => {
+    findAllActiveKeywords(entry.keywords, "DTASTMCMD", indicatorState).forEach((kw) => {
+      const inner = String(kw.params || "").replace(/^\(/, "").replace(/\)$/, "").trim();
+      const label = entry.name || "constant";
+      items.push({
+        keyword: "DTASTMCMD",
+        summary: (inner ? "Data stream command: " + inner : "Data stream command") + " (" + label + ")",
+      });
+    });
   });
   return items;
 }

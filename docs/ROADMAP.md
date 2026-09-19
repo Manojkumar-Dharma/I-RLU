@@ -1094,6 +1094,22 @@ series' own history) — every finding from all three audits has now landed.
       See `docs/TASKS.md` Batch EEE for the full writeup. New
       `test/prtfBatchEEE.test.ts`; full suite now 754, all passing.
 
+- [x] **Batch FFF — `DTASTMCMD` field-level UI exposure.** Found via
+      `docs/AUDIT-CROSS-LEVEL.md` §5: `DTASTMCMD` is record-level-or-
+      field-level per the reference, but was wired only into the
+      record-level panel, and the read-only "page-group / resource
+      keywords" badge summary (`collectPageGroupMetadata`,
+      `src/prtfLayout.js`) only ever read `record.keywords`, never a
+      field/constant's own keywords. Fixed by adding a matching
+      `quotedText` row to `BATCH_A_SHARED_KEYWORDS` for field/constant
+      level, and extending `collectPageGroupMetadata` to also scan
+      `record.fields`, labeling each field-level entry with its field's
+      name so it's distinguishable from the record-level one.
+      `STRPAGGRP`/`ENDPAGGRP`/`DOCIDXTAG` were left untouched — they're
+      record-only, unlike `DTASTMCMD`. See `docs/TASKS.md` Batch FFF for
+      the full writeup. New `test/prtfBatchFFF.test.ts`; full suite now
+      762, all passing.
+
 ## Next up
 
 Batches SS–ZZ were filed from a full three-part audit
@@ -1139,17 +1155,15 @@ plus two unvalidated `BARCODE` record-level exclusions were investigated
 and fixed as **Batch CCC** (see above). `TEXT` entirely unmodeled was
 fixed as **Batch DDD** (see above). `PRTQLTY` missing field-level UI plus
 its unvalidated dependency were investigated and fixed as **Batch EEE**
-(see above). Still open: `DTASTMCMD` missing field-level UI (**Batch
-FFF**); and, the largest one, no file-level properties panel existing in
-the webview at all, leaving `REF`/`RELPOS`/`INDARA`/`DFNCHR` and the
-file-level slice of
+(see above). `DTASTMCMD` missing field-level UI was investigated and
+fixed as **Batch FFF** (see above). Still open, the largest one: no
+file-level properties panel existing in the webview at all, leaving
+`REF`/`RELPOS`/`INDARA`/`DFNCHR` and the file-level slice of
 `CCSID`/`FNTCHRSET`/`FONTNAME`/`INDTXT`/`SKIPA`/`SKIPB` unexposed for
-editing (**Batch GGG**). Neither Batch FFF nor GGG is started yet — see
-`docs/TASKS.md`'s own detail sections for full scope per batch. Batch
-naming continues as `AAA`, `BBB`, ... since `A`–`Z` and `AA`–`ZZ` are
-both now fully used.
+editing (**Batch GGG**). Not started yet — see `docs/TASKS.md`'s own
+detail section for full scope. Batch naming continues as `AAA`, `BBB`,
+... since `A`–`Z` and `AA`–`ZZ` are both now fully used.
 
-- [ ] **Batch FFF — `DTASTMCMD` field-level UI exposure.** [In progress]
 - [ ] **Batch GGG — Build a file-level properties panel** (larger initiative).
 
 As of the RLU screen-capture review (`docs/KEYWORD-INVENTORY.md`), the
